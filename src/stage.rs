@@ -1,5 +1,7 @@
 //! Bandeja de ações e palco central (o aparelho desenhado com as teclas).
+use crate::config::schema::ButtonConfig;
 use crate::theme::{self, Palette};
+use crate::tokens::{radius, text};
 use crate::{key_view, runtime, widgets, App, TAB_GAP};
 use eframe::egui::{
     self, pos2, vec2, Align, Color32, Frame, Layout, Margin, Rect, RichText, Rounding, Sense,
@@ -20,6 +22,18 @@ const AMBIENT_STEPS: u8 = 8;
 const AMBIENT_STEP_GROW: f32 = 2.0;
 const AMBIENT_STEP_ALPHA: f32 = 0.014;
 const TRAY_HOVER_TINT: f32 = 0.10;
+
+/// Nome que o leitor de tela anuncia: posição, o que a tecla mostra e se está selecionada.
+fn key_widget_info(index: usize, b: &ButtonConfig, selected: bool) -> egui::WidgetInfo {
+    let shown = &b.current_appearance().text;
+    let what = if shown.is_empty() { "vazia" } else { shown };
+    egui::WidgetInfo::selected(
+        egui::WidgetType::Button,
+        true,
+        selected,
+        format!("Tecla {}, {what}", index + 1),
+    )
+}
 
 impl App {
     /// Bandeja de ações: categorias, busca e cartões que se aplicam por clique ou arrasto.
@@ -46,9 +60,7 @@ impl App {
                 ui.horizontal(|ui| {
                     for (i, c) in cats.iter().enumerate() {
                         let on = i == self.tray_cat && self.query.is_empty();
-                        if widgets::tab(ui, &widgets::spaced(&c.to_uppercase()), on, accent, pal)
-                            .clicked()
-                        {
+                        if widgets::tab(ui, &c.to_uppercase(), on, accent, pal).clicked() {
                             self.tray_cat = i;
                             self.query.clear();
                         }
@@ -57,7 +69,7 @@ impl App {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.add(
                             egui::TextEdit::singleline(&mut self.query)
-                                .hint_text("Buscar ação")
+                                .hint_text(widgets::hint("Buscar ação", pal))
                                 .desired_width(200.0),
                         );
                     });
@@ -92,34 +104,35 @@ impl App {
                             let p = &self.presets[i];
                             let (rect, resp) =
                                 ui.allocate_exact_size(TRAY_CARD, Sense::click_and_drag());
-                            let border = if resp.hovered() { accent } else { pal.line };
+                            resp.widget_info(|| {
+                                egui::WidgetInfo::labeled(egui::WidgetType::Button, true, p.label)
+                            });
+                            let ink = theme::ink(accent, pal);
+                            let border = if resp.hovered() { ink } else { pal.control };
                             let painter = ui.painter();
                             let fill = if resp.hovered() {
                                 theme::mix(pal.raise, accent, TRAY_HOVER_TINT)
                             } else {
                                 pal.raise
                             };
-                            painter.rect_filled(rect, Rounding::same(12.0), fill);
+                            painter.rect_filled(rect, Rounding::same(radius::CARD), fill);
                             painter.rect_stroke(
                                 rect,
-                                Rounding::same(12.0),
+                                Rounding::same(radius::CARD),
                                 Stroke::new(1.0_f32, border),
                             );
-                            if resp.hovered() {
-                                widgets::glow(painter, rect, 12.0, accent);
-                            }
                             widgets::paint_icon(
                                 painter,
                                 pos2(rect.center().x, rect.top() + 24.0),
                                 24.0,
                                 p.icon,
-                                accent,
+                                ink,
                             );
                             painter.text(
                                 pos2(rect.center().x, rect.bottom() - 11.0),
                                 egui::Align2::CENTER_CENTER,
                                 p.label,
-                                egui::FontId::proportional(13.0),
+                                egui::FontId::proportional(text::BODY - 1.0),
                                 pal.fg,
                             );
                             if resp.clicked() {
@@ -186,7 +199,7 @@ impl App {
                                 accent.gamma_multiply(AMBIENT_STEP_ALPHA),
                             );
                         }
-                        painter.rect_filled(rect, Rounding::same(22.0), pal.bezel);
+                        painter.rect_filled(rect, Rounding::same(radius::DEVICE), pal.bezel);
                         painter.rect_filled(rect.shrink(8.0), Rounding::same(16.0), pal.device);
                         painter.rect_stroke(
                             rect.shrink(8.0),
@@ -195,7 +208,7 @@ impl App {
                         );
                         painter.rect_stroke(
                             rect,
-                            Rounding::same(22.0),
+                            Rounding::same(radius::DEVICE),
                             Stroke::new(1.5_f32, accent.gamma_multiply(0.4)),
                         );
                         let led = if g.connected { accent } else { pal.bad };
@@ -217,12 +230,13 @@ impl App {
                                     rect.top() + DEVICE_PAD + r as f32 * (key + DEVICE_GAP),
                                 );
                                 let kr = Rect::from_min_size(origin, vec2(key, key));
-                                let resp = ui.interact(
-                                    kr,
-                                    ui.id().with(("key", i)),
-                                    Sense::click_and_drag(),
-                                );
+                                let resp = ui.interact(kr, ui.id().with(("key", i)), Sense::click_and_drag());
                                 let button = &g.cfg.page().buttons[i];
+                                resp.widget_info(|| key_widget_info(i, button, i == self.selected));
+                                // Tab e setas (navegação nativa do egui) movem o foco; a seleção o acompanha.
+                                if resp.has_focus() {
+                                    self.selected = i;
+                                }
                                 let tex = self.key_tex.get(ctx, i, button, g.icon_px);
                                 widgets::paint_key(
                                     &painter,
@@ -235,6 +249,8 @@ impl App {
                                 );
                                 if resp.clicked() {
                                     self.selected = i;
+                                    // O egui só dá foco por Tab; sem isto, as setas não funcionam após o clique.
+                                    resp.request_focus();
                                 }
                                 if let Some(preset) = resp.dnd_release_payload::<usize>() {
                                     dropped = Some((i, *preset));
@@ -244,10 +260,10 @@ impl App {
                         ui.add_space(6.0);
                         ui.label(
                             RichText::new(
-                                "Clique num botão para editar · arraste uma ação da bandeja",
+                                "Clique num botão (ou use Tab e as setas) para editar · arraste uma ação da bandeja",
                             )
                             .monospace()
-                            .size(11.0)
+                            .size(text::CAPTION)
                             .color(pal.muted),
                         );
                     })

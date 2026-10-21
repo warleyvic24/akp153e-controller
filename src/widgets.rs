@@ -1,18 +1,19 @@
 //! Peças de desenho da interface: ícones, teclas do aparelho, pílulas, abas e rótulos de seção.
-use crate::theme::{readable_on, Palette};
+use crate::theme::Palette;
+use crate::tokens::{radius, space, text, TARGET_MIN, TEXT_MIN_CONTRAST};
 use eframe::egui::{
     self, pos2, vec2, Align2, Color32, FontId, Painter, Pos2, Rect, Response, RichText, Rounding,
     Stroke, Ui,
 };
 
-const KEY_RADIUS: f32 = 10.0;
+const KEY_RADIUS: f32 = radius::KEY;
+const PILL_ACTIVE_TINT: f32 = 0.22;
+const KEY_NUMBER_ALPHA: u8 = 130; // 4,5:1 sobre o preto da tecla
 const SHINE_ALPHA: u8 = 5; // pré-multiplicado: soma poucos níveis de cor (from_white_alpha clareia demais)
 const MIN_LABEL_WIDTH: f32 = 60.0;
 const HUD_CORNER: f32 = 8.0;
-const PLUS_DIM: f32 = 0.35;
-const EMPTY_HINT_MIN_WIDTH: f32 = 80.0;
+const EMPTY_HINT_MIN_WIDTH: f32 = 96.0; // a dica em 12 px não cabe em teclas menores
 const LETTER_GAP: char = '\u{2009}';
-const PILL_RADIUS: f32 = 12.0;
 const CHIP_FILL: f32 = 0.14;
 const CHIP_STROKE: f32 = 0.45;
 const SWATCH_HOVER_GROW: f32 = 1.5;
@@ -112,7 +113,12 @@ pub fn paint_key(
             rect,
             accent.gamma_multiply(if hovered { 0.9 } else { 0.28 }),
         );
-        let plus = accent.gamma_multiply(if hovered || selected { 1.0 } else { PLUS_DIM });
+        // O "+" é a única pista de que a tecla aceita uma ação: precisa de contraste, não de brilho.
+        let plus = if hovered || selected {
+            accent
+        } else {
+            pal.device_fg
+        };
         p.text(
             rect.center(),
             Align2::CENTER_CENTER,
@@ -125,8 +131,8 @@ pub fn paint_key(
                 rect.center() + vec2(0.0, 20.0),
                 Align2::CENTER_CENTER,
                 "Arraste uma ação",
-                FontId::proportional(10.5),
-                pal.muted,
+                FontId::proportional(text::CAPTION),
+                pal.device_fg,
             );
         }
     } else if let Some(tex) = k.tex {
@@ -156,13 +162,12 @@ pub fn paint_key(
         );
     }
     if rect.width() >= 56.0 {
-        let alpha = if k.off { 70 } else { 120 };
         p.text(
             rect.min + vec2(7.0, 5.0),
             Align2::LEFT_TOP,
             k.number,
-            FontId::monospace(10.0),
-            Color32::from_white_alpha(alpha),
+            FontId::monospace(11.0),
+            Color32::from_white_alpha(KEY_NUMBER_ALPHA),
         );
     }
     if !k.off && k.tex.is_none() {
@@ -198,68 +203,82 @@ fn paint_key_content(p: &Painter, rect: Rect, k: &KeyView) {
     }
 }
 
-/// Botão arredondado; o ativo usa a cor de destaque.
+/// Opção selecionável arredondada. A ativa leva contorno e véu na cor de destaque, e o texto
+/// continua na cor normal: o preenchimento sólido é reservado à ação primária da tela ("Testar").
+/// Expõe o estado ativo aos leitores de tela (`selected`), que cor sozinha não transmite.
 pub fn pill(ui: &mut Ui, text: &str, active: bool, accent: Color32, pal: &Palette) -> Response {
-    let fg = if active {
-        readable_on(accent)
+    let ink = crate::theme::ink(accent, pal);
+    let (fg, fill, stroke) = if active {
+        (
+            pal.fg,
+            ink.gamma_multiply(PILL_ACTIVE_TINT),
+            Stroke::new(1.5_f32, ink),
+        )
     } else {
-        pal.muted
+        (
+            pal.muted,
+            Color32::TRANSPARENT,
+            Stroke::new(1.0_f32, pal.control),
+        )
     };
-    let fill = if active { accent } else { Color32::TRANSPARENT };
-    let stroke = Stroke::new(1.0_f32, if active { accent } else { pal.line });
     let r = ui.add(
-        egui::Button::new(RichText::new(text).size(13.0).color(fg))
+        egui::Button::new(RichText::new(text).size(text::BODY - 1.0).color(fg))
             .fill(fill)
             .stroke(stroke)
-            .rounding(Rounding::same(99.0))
-            .min_size(vec2(0.0, 24.0)),
+            .selected(active)
+            .rounding(Rounding::same(radius::PILL))
+            .min_size(vec2(0.0, TARGET_MIN)),
     );
-    if active {
-        glow(ui.painter(), r.rect, PILL_RADIUS, accent);
-    }
+    r.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, active, text)
+    });
     r
 }
 
-/// Aba com sublinhado na cor de destaque.
+/// Aba com sublinhado na cor de destaque (2 px, 3:1 no mínimo sobre o fundo).
 pub fn tab(ui: &mut Ui, text: &str, on: bool, accent: Color32, pal: &Palette) -> Response {
     let color = if on { pal.fg } else { pal.muted };
     let r = ui.add(egui::Button::new(RichText::new(text).color(color)).frame(false));
+    r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, on, text));
     if on {
         let y = r.rect.bottom() + 1.0;
         let span = [pos2(r.rect.left() + 6.0, y), pos2(r.rect.right() - 6.0, y)];
         ui.painter()
-            .line_segment(span, Stroke::new(6.0_f32, accent.gamma_multiply(0.18)));
-        ui.painter()
-            .line_segment(span, Stroke::new(2.0_f32, accent));
+            .line_segment(span, Stroke::new(2.0_f32, crate::theme::ink(accent, pal)));
     }
     r
 }
 
-/// Rótulo de seção em caixa alta monoespaçada.
+/// Rótulo de seção em caixa alta. Sem espaçamento artificial entre letras: o espaço fino que
+/// simulava isso era lido letra por letra por leitores de tela e quebrava busca e cópia.
 pub fn section(ui: &mut Ui, text: &str, pal: &Palette) {
-    ui.add_space(6.0);
+    ui.add_space(space::XS + 2.0);
     ui.label(
-        RichText::new(spaced(&text.to_uppercase()))
-            .font(crate::theme::display_font(12.0))
+        RichText::new(text.to_uppercase())
+            .font(crate::theme::display_font(text::CAPTION))
             .color(pal.muted),
     );
 }
 
-/// Etiqueta de estado com ponto e fundo na própria cor (conectado, salvo...).
-pub fn status_chip(ui: &mut Ui, text: &str, color: Color32) {
+/// Etiqueta de estado com ponto e fundo na própria cor (conectado, salvo...). O texto nunca fica
+/// abaixo de 4,5:1 sobre o fundo tingido; o estado vai por escrito, não só pela cor.
+pub fn status_chip(ui: &mut Ui, label: &str, color: Color32) -> Response {
+    let fill = crate::theme::mix(ui.visuals().panel_fill, color, CHIP_FILL);
+    let ink = crate::theme::ensure_contrast(color, fill, TEXT_MIN_CONTRAST);
     egui::Frame::none()
-        .fill(color.gamma_multiply(CHIP_FILL))
+        .fill(fill)
         .stroke(Stroke::new(1.0_f32, color.gamma_multiply(CHIP_STROKE)))
-        .rounding(Rounding::same(99.0))
-        .inner_margin(egui::Margin::symmetric(10.0, 3.0))
+        .rounding(Rounding::same(radius::PILL))
+        .inner_margin(egui::Margin::symmetric(space::MD - 2.0, 3.0))
         .show(ui, |ui| {
             ui.label(
-                RichText::new(format!("● {text}"))
+                RichText::new(format!("● {label}"))
                     .monospace()
-                    .size(11.5)
-                    .color(color),
+                    .size(text::CAPTION)
+                    .color(ink),
             )
-        });
+        })
+        .response
 }
 
 /// Amostra de cor clicável; a escolhida ganha um anel afastado, e o mouse em cima a destaca.
@@ -294,14 +313,24 @@ pub fn swatch(
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
+/// Placeholder de campo. O tema força a cor do texto (`override_text_color`), o que deixava a dica
+/// idêntica a um valor digitado; com cor própria (`muted`, 4,5:1) ela se distingue sem sumir.
+pub fn hint(text: &str, pal: &Palette) -> RichText {
+    RichText::new(text).color(pal.muted)
+}
+
 /// Texto de tecla ao estilo "kbd".
-pub fn kbd(ui: &mut Ui, text: &str, pal: &Palette) {
+pub fn kbd(ui: &mut Ui, label: &str, pal: &Palette) {
     egui::Frame::none()
         .fill(pal.raise)
         .stroke(Stroke::new(1.0_f32, pal.line))
         .rounding(Rounding::same(5.0))
         .inner_margin(egui::Margin::symmetric(8.0, 2.0))
         .show(ui, |ui| {
-            ui.label(RichText::new(text.to_uppercase()).monospace().size(12.0))
+            ui.label(
+                RichText::new(label.to_uppercase())
+                    .monospace()
+                    .size(text::CAPTION),
+            )
         });
 }

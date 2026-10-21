@@ -17,6 +17,7 @@ mod shell;
 mod stage;
 mod textlist;
 mod theme;
+mod tokens;
 mod usb;
 mod widgets;
 
@@ -31,11 +32,14 @@ use theme::Palette;
 use usb::UsbCmd;
 
 const AUTOSAVE_DELAY: Duration = Duration::from_millis(300);
+const SAVE_RETRY_DELAY: Duration = Duration::from_secs(3);
 const REPAINT_EVERY: Duration = Duration::from_millis(100);
 const INSPECTOR_WIDTH: f32 = 300.0;
 const TAB_GAP: f32 = 10.0;
 const QUICK_BUTTON_PAD_X: f32 = 9.0;
-const FOCUS_GLOW_RADIUS: f32 = 8.0;
+const FOCUS_RING_GAP: f32 = 2.0;
+const FOCUS_RING_RADIUS: f32 = 10.0;
+const FOCUS_RING_WIDTH: f32 = 2.0;
 const TAB_NAMES: [&str; 3] = ["Aparência", "Ação", "Estados"];
 
 struct App {
@@ -49,6 +53,8 @@ struct App {
     /// Config ao fim do quadro anterior, base do histórico de desfazer.
     baseline: Option<AppConfig>,
     dirty_since: Option<Instant>,
+    /// Último erro ao gravar a config; some quando uma gravação der certo.
+    save_error: Option<String>,
     presets: Vec<library::Preset>,
     history: history::History<AppConfig>,
     edited: bool,
@@ -73,6 +79,7 @@ impl App {
             nav_dirty: false,
             baseline: None,
             dirty_since: None,
+            save_error: None,
             presets: library::presets(),
             history: history::History::new(),
             edited: false,
@@ -151,9 +158,15 @@ impl App {
                 self.dirty = false;
                 self.nav_dirty = false;
                 self.dirty_since = None;
+                self.save_error = None;
                 let _ = shell::send("reload");
             }
-            Err(e) => log::error!("salvar: {e}"),
+            Err(e) => {
+                log::error!("salvar: {e}");
+                self.save_error = Some(e.to_string());
+                // Instante no futuro: `autosave` só tenta de novo depois da espera, em vez de a cada quadro.
+                self.dirty_since = Some(Instant::now() + SAVE_RETRY_DELAY);
+            }
         }
     }
 
@@ -210,6 +223,7 @@ impl App {
             return;
         }
         let mut open = true;
+        let pal = theme::palette(g.cfg.ui.theme);
         let mut chosen: Option<apps::InstalledApp> = None;
         egui::Window::new("Apps instalados")
             .open(&mut open)
@@ -218,7 +232,7 @@ impl App {
             .show(ctx, |ui| {
                 ui.add(
                     egui::TextEdit::singleline(&mut self.picker.query)
-                        .hint_text("Buscar app")
+                        .hint_text(widgets::hint("Buscar app", &pal))
                         .desired_width(ui.available_width()),
                 );
                 let Some(list) = &self.picker.apps else {
@@ -291,8 +305,7 @@ impl App {
                     .color(theme::readable_on(accent)),
             )
             .fill(accent);
-            let test = ui.add(test);
-            widgets::glow(ui.painter(), test.rect, 8.0, accent);
+            let test = ui.add(test.stroke(Stroke::new(1.0_f32, theme::ink(accent, pal))));
             if test.clicked() {
                 runtime::trigger(g, &self.tx, &self.exec, sel, Duration::ZERO);
             }
@@ -365,7 +378,7 @@ impl App {
                         ui.label(
                             RichText::new(format!("BOTÃO {}", sel + 1))
                                 .monospace()
-                                .size(11.0)
+                                .size(tokens::text::CAPTION)
                                 .color(pal.muted),
                         );
                         let name = if b.appearance.text.is_empty() {
@@ -373,7 +386,9 @@ impl App {
                         } else {
                             b.appearance.text.as_str()
                         };
-                        ui.label(RichText::new(name).font(theme::display_font(20.0)));
+                        ui.label(
+                            RichText::new(name).font(theme::display_font(tokens::text::TITLE)),
+                        );
                     });
                 });
                 if is_blank(b) {
@@ -428,7 +443,9 @@ impl Drop for App {
     }
 }
 
-fn focus_glow(ctx: &egui::Context, accent: Color32) {
+/// Anel de foco do teclado: traço sólido na cor do texto (contraste máximo nos dois temas),
+/// afastado do controle. Fica distinto de hover (tinta) e de seleção (brilho de destaque).
+fn focus_ring(ctx: &egui::Context, color: Color32) {
     let Some(rect) = ctx
         .memory(|m| m.focused())
         .and_then(|id| ctx.read_response(id))
@@ -438,9 +455,13 @@ fn focus_glow(ctx: &egui::Context, accent: Color32) {
     };
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Foreground,
-        egui::Id::new("focus_glow"),
+        egui::Id::new("focus_ring"),
     ));
-    widgets::glow(&painter, rect, FOCUS_GLOW_RADIUS, accent);
+    painter.rect_stroke(
+        rect.expand(FOCUS_RING_GAP),
+        Rounding::same(FOCUS_RING_RADIUS),
+        Stroke::new(FOCUS_RING_WIDTH, color),
+    );
 }
 
 fn c32(c: RGBAColor) -> Color32 {
@@ -528,7 +549,7 @@ impl eframe::App for App {
         self.tray(ctx, g, &pal, accent);
         self.inspector(ctx, g, &pal, accent);
         self.stage(ctx, g, &pal, accent);
-        focus_glow(ctx, accent);
+        focus_ring(ctx, pal.fg);
         self.app_picker(ctx, g);
 
         if want_undo || want_redo {

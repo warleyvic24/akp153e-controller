@@ -1,11 +1,12 @@
 //! Barras do editor: topo (estado, perfis, páginas, menus) e rodapé (desfazer/refazer).
 use crate::config::schema::*;
 use crate::theme::Palette;
+use crate::tokens::{text::TITLE, TARGET_MIN};
 use crate::{runtime, theme, widgets, App};
 use eframe::egui::{self, Align, Color32, Frame, Layout, Margin, RichText};
 
-const ACCENT_SWATCH_SIZE: f32 = 20.0;
-const ACCENT_SWATCH_GAP: f32 = 9.0;
+const ACCENT_SWATCH_SIZE: f32 = TARGET_MIN;
+const ACCENT_SWATCH_GAP: f32 = 10.0;
 
 impl App {
     pub(crate) fn top_bar(
@@ -24,7 +25,7 @@ impl App {
                 ui.horizontal(|ui| {
                     ui.label(
                         RichText::new(widgets::spaced("AKP153E"))
-                            .font(theme::display_font(20.0))
+                            .font(theme::display_font(TITLE))
                             .strong(),
                     );
                     let (text, color) = if g.connected {
@@ -84,13 +85,14 @@ impl App {
             .on_hover_text("Nova página")
             .clicked()
         {
-            g.cfg.profiles[prof].add_page(&format!("Page {}", pages + 1));
+            g.cfg.profiles[prof].add_page(&format!("Página {}", pages + 1));
             self.touch();
         }
     }
 
     pub(crate) fn appearance_menu(&mut self, ui: &mut egui::Ui, g: &mut runtime::Shared) {
-        ui.menu_button("Aparência", |ui| {
+        // "Aparência" já nomeia a aba do botão no inspetor; este menu é do programa todo.
+        ui.menu_button("Tema", |ui| {
             for (theme, name) in [(Theme::Dark, "Escuro"), (Theme::Light, "Claro (azul)")] {
                 if ui.selectable_label(g.cfg.ui.theme == theme, name).clicked() {
                     g.cfg.ui.theme = theme;
@@ -210,7 +212,10 @@ impl App {
                         .on_hover_text("Ctrl+Shift+Z")
                         .clicked();
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if self.dirty {
+                        if let Some(err) = &self.save_error {
+                            widgets::status_chip(ui, "Falha ao salvar", pal.bad)
+                                .on_hover_text(format!("{err}\nNova tentativa em instantes."));
+                        } else if self.dirty {
                             widgets::status_chip(ui, "Salvando…", pal.muted);
                         } else {
                             widgets::status_chip(ui, "Salvo", pal.ok);

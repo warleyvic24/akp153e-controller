@@ -2,6 +2,7 @@
 use crate::config::schema::*;
 use crate::picker::{app_buttons, AppPicker};
 use crate::theme::Palette;
+use crate::tokens::text;
 use crate::{c32, engine, icons, library, textlist, widgets};
 use eframe::egui::{self, vec2, Color32, RichText, Rounding, Sense, Stroke};
 const IMAGE_FIELD_RESERVED: f32 = 172.0;
@@ -57,7 +58,11 @@ pub fn appearance_pane(
     let mut changed = false;
     widgets::section(ui, "Rótulo", pal);
     changed |= ui
-        .add(egui::TextEdit::singleline(&mut b.appearance.text).desired_width(ui.available_width()))
+        .add(
+            egui::TextEdit::singleline(&mut b.appearance.text)
+                .hint_text(widgets::hint("Texto na tecla (ex.: Mudo)", pal))
+                .desired_width(ui.available_width()),
+        )
         .changed();
     widgets::section(ui, "Cor do botão", pal);
     ui.horizontal_wrapped(|ui| {
@@ -82,6 +87,7 @@ pub fn appearance_pane(
         changed |= color_picker(ui, "Texto", &mut b.appearance.text_color);
     });
     widgets::section(ui, "Ícone", pal);
+    let ink = crate::theme::ink(accent, pal);
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
         let none_on = b.appearance.icon.is_none();
@@ -100,7 +106,7 @@ pub fn appearance_pane(
                 Rounding::same(8.0),
                 Stroke::new(
                     if on { 2.0_f32 } else { 1.0_f32 },
-                    if on { accent } else { pal.line },
+                    if on { ink } else { pal.control },
                 ),
             );
             if id.is_empty() {
@@ -112,7 +118,7 @@ pub fn appearance_pane(
                     pal.muted,
                 );
             } else {
-                widgets::paint_icon(p, rect.center(), 20.0, id, if on { accent } else { pal.fg });
+                widgets::paint_icon(p, rect.center(), 20.0, id, if on { ink } else { pal.fg });
             }
             if resp.on_hover_text(name).clicked() {
                 b.appearance.icon = (!id.is_empty()).then(|| id.to_string());
@@ -393,7 +399,12 @@ fn action_editor(
                 }
             });
             if *rec == Some(id) {
-                ui.label(RichText::new("Pressione as teclas… (Esc cancela)").color(pal.bad));
+                // Gravar não é erro: vermelho aqui diria "algo deu errado" a quem está só digitando um atalho.
+                ui.label(
+                    RichText::new("● Pressione as teclas… (Esc cancela)")
+                        .strong()
+                        .color(crate::theme::ink(accent, pal)),
+                );
                 match capture_hotkey(ctx) {
                     Some(Capture::Keys(k)) => {
                         *keys = k;
@@ -416,7 +427,7 @@ fn action_editor(
             }
             ui.label(
                 RichText::new("Digitar (ex: meta+d)")
-                    .size(11.0)
+                    .size(text::CAPTION)
                     .color(pal.muted),
             );
             let field_id = ui.id().with((id, "keys"));
@@ -435,7 +446,7 @@ fn action_editor(
             if !invalid.is_empty() {
                 ui.label(
                     RichText::new(format!("Tecla desconhecida: {}", invalid.join(", ")))
-                        .size(11.0)
+                        .size(text::CAPTION)
                         .color(pal.bad),
                 );
             }

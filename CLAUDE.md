@@ -32,6 +32,7 @@ cargo build --release           # -> target\release\akp153e.exe
 - Comentários e mensagens ao usuário em português; nomes de código em inglês. Constantes nomeadas em vez de números soltos.
 - Nenhum arquivo acima de 800 linhas (hoje: `main.rs` ~690, `schema.rs` ~700). Painéis em `panes.rs`, barras em `bars.rs`, palco em `stage.rs`, CLI em `cli.rs`.
 - Unsafe só em `shell.rs`, sempre com `// SAFETY:`.
+- Interface: siga `docs/DESIGN.md` (tokens em `tokens.rs`, cores em `theme::Palette`, texto mínimo 12 px, alvo mínimo 24 px, contraste imposto por testes em `theme.rs`). Confira nos dois temas: `AKP153E_PREVIEW_THEME=light` (só debug).
 
 ## Hardware
 

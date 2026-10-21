@@ -1,5 +1,8 @@
 //! Aparência da interface: paleta escura/clara, cor de destaque do usuário, fontes do Windows e estilo dos widgets.
 use crate::config::schema::{Theme, UiSettings};
+#[cfg(test)]
+use crate::tokens::TEXT_MIN_CONTRAST;
+use crate::tokens::{radius, space, text, COMPONENT_MIN_CONTRAST};
 use eframe::egui::{
     self, vec2, Color32, Context, FontData, FontDefinitions, FontFamily, FontId, Stroke, TextStyle,
     Visuals,
@@ -15,8 +18,9 @@ pub const ACCENTS: [(&str, [u8; 3]); 6] = [
     ("Azul", [70, 130, 255]),
 ];
 
-const LUMINANCE_THRESHOLD: f32 = 150.0;
 const HOVER_TINT: f32 = 0.16;
+const CONTRAST_STEPS: u8 = 20;
+const DEVICE_FG: [u8; 3] = [176, 184, 210];
 const RAIL_TINT: f32 = 0.2;
 const FONT_FILES: [(&str, &str); 3] = [
     ("ui", r"C:\Windows\Fonts\segoeui.ttf"),
@@ -40,10 +44,25 @@ pub struct Palette {
     pub keyoff: Color32,
     pub ok: Color32,
     pub bad: Color32,
+    /// Borda de controles interativos (campos, botões): derivada de `line` até dar 3:1.
+    pub control: Color32,
+    /// Texto e símbolos sobre as teclas, que são escuras nos dois temas.
+    pub device_fg: Color32,
 }
 
 pub fn palette(theme: Theme) -> Palette {
+    let mut p = base_palette(theme);
+    p.control = ensure_contrast(
+        ensure_contrast(p.line, p.raise, COMPONENT_MIN_CONTRAST),
+        p.panel,
+        COMPONENT_MIN_CONTRAST,
+    );
+    p
+}
+
+fn base_palette(theme: Theme) -> Palette {
     let c = |r, g, b| Color32::from_rgb(r, g, b);
+    let device_fg = c(DEVICE_FG[0], DEVICE_FG[1], DEVICE_FG[2]);
     match theme {
         Theme::Dark => Palette {
             bg: c(7, 8, 16),
@@ -58,6 +77,8 @@ pub fn palette(theme: Theme) -> Palette {
             keyoff: c(0, 0, 0),
             ok: c(52, 211, 153),
             bad: c(248, 113, 113),
+            control: Color32::TRANSPARENT,
+            device_fg,
         },
         Theme::Light => Palette {
             bg: c(233, 237, 243),
@@ -70,8 +91,10 @@ pub fn palette(theme: Theme) -> Palette {
             device: c(20, 23, 29),
             bezel: c(42, 47, 58),
             keyoff: c(0, 0, 0),
-            ok: c(22, 132, 90),
-            bad: c(201, 58, 71),
+            ok: c(16, 110, 74),
+            bad: c(185, 40, 55),
+            control: Color32::TRANSPARENT,
+            device_fg,
         },
     }
 }
@@ -80,10 +103,55 @@ pub fn accent_color(ui: &UiSettings) -> Color32 {
     Color32::from_rgb(ui.accent[0], ui.accent[1], ui.accent[2])
 }
 
-/// Branco ou preto, o que ficar mais legível sobre `bg`.
+/// Luminância relativa WCAG (0 a 1); a transparência é ignorada.
+pub fn luminance(c: Color32) -> f32 {
+    let channel = |v: u8| {
+        let s = v as f32 / 255.0;
+        if s <= 0.03928 {
+            s / 12.92
+        } else {
+            ((s + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * channel(c.r()) + 0.7152 * channel(c.g()) + 0.0722 * channel(c.b())
+}
+
+/// Razão de contraste WCAG entre duas cores (1 a 21).
+pub fn contrast(a: Color32, b: Color32) -> f32 {
+    let (x, y) = (luminance(a), luminance(b));
+    (x.max(y) + 0.05) / (x.min(y) + 0.05)
+}
+
+/// Clareia ou escurece `fg` (rumo ao branco ou ao preto, o que afastar de `bg`) só o necessário
+/// para atingir `min`. Se já atinge, devolve `fg` intacta: o tema escuro não muda de aparência.
+pub fn ensure_contrast(fg: Color32, bg: Color32, min: f32) -> Color32 {
+    if contrast(fg, bg) >= min {
+        return fg;
+    }
+    let target = if luminance(bg) > 0.5 {
+        Color32::BLACK
+    } else {
+        Color32::WHITE
+    };
+    (1..=CONTRAST_STEPS)
+        .map(|i| mix(fg, target, f32::from(i) / f32::from(CONTRAST_STEPS)))
+        .find(|c| contrast(*c, bg) >= min)
+        .unwrap_or(target)
+}
+
+/// A cor de destaque usada como traço, ícone ou texto: a mesma, mas nunca abaixo de 3:1 sobre as
+/// superfícies do tema (no claro, ciano e verde-ácido sumiriam sobre o branco).
+pub fn ink(accent: Color32, pal: &Palette) -> Color32 {
+    ensure_contrast(
+        ensure_contrast(accent, pal.raise, COMPONENT_MIN_CONTRAST),
+        pal.panel,
+        COMPONENT_MIN_CONTRAST,
+    )
+}
+
+/// Branco ou preto, o que tiver maior razão de contraste sobre `bg`.
 pub fn readable_on(bg: Color32) -> Color32 {
-    let luminance = 0.299 * bg.r() as f32 + 0.587 * bg.g() as f32 + 0.114 * bg.b() as f32;
-    if luminance > LUMINANCE_THRESHOLD {
+    if contrast(Color32::BLACK, bg) >= contrast(Color32::WHITE, bg) {
         Color32::BLACK
     } else {
         Color32::WHITE
@@ -155,8 +223,9 @@ pub fn apply(ctx: &Context, ui: &UiSettings) {
     v.extreme_bg_color = p.field;
     v.faint_bg_color = p.raise;
     v.override_text_color = Some(p.fg);
-    v.window_rounding = egui::Rounding::same(12.0);
-    v.window_stroke = Stroke::new(1.0_f32, p.line);
+    let ink = ink(accent, &p);
+    v.window_rounding = egui::Rounding::same(radius::CARD);
+    v.window_stroke = Stroke::new(1.0_f32, p.control);
     let shadow = egui::epaint::Shadow {
         offset: vec2(0.0, 8.0),
         blur: 24.0,
@@ -165,8 +234,8 @@ pub fn apply(ctx: &Context, ui: &UiSettings) {
     };
     v.window_shadow = shadow;
     v.popup_shadow = shadow;
-    v.menu_rounding = egui::Rounding::same(10.0);
-    let round = egui::Rounding::same(8.0);
+    v.menu_rounding = egui::Rounding::same(radius::CARD);
+    let round = egui::Rounding::same(radius::CONTROL);
     let base = if ui.theme == Theme::Dark {
         Color32::from_rgb(32, 37, 58)
     } else {
@@ -187,26 +256,29 @@ pub fn apply(ctx: &Context, ui: &UiSettings) {
     }
     // A trilha do slider usa `bg_fill`; com o mesmo cinza do painel ela some.
     v.widgets.inactive.bg_fill = mix(p.raise, p.fg, RAIL_TINT);
-    v.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, accent);
-    v.widgets.active.bg_stroke = Stroke::new(1.0_f32, accent);
+    // Controles em repouso precisam de borda com 3:1 (WCAG 1.4.11); `line` fica para separadores.
+    v.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, p.control);
+    v.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, ink);
+    v.widgets.active.bg_stroke = Stroke::new(1.0_f32, ink);
     v.selection.bg_fill = accent;
     v.selection.stroke = Stroke::new(1.0_f32, readable_on(accent));
-    v.hyperlink_color = accent;
+    v.hyperlink_color = ink;
     ctx.set_visuals(v);
     ctx.style_mut(|s| {
-        s.spacing.item_spacing = egui::vec2(8.0, 8.0);
-        s.spacing.button_padding = egui::vec2(12.0, 6.0);
+        s.spacing.item_spacing = egui::vec2(space::SM, space::SM);
+        s.spacing.button_padding = egui::vec2(space::MD, 6.0);
         s.spacing.interact_size.y = 28.0;
         s.visuals.slider_trailing_fill = true;
-        s.text_styles.insert(TextStyle::Heading, display_font(22.0));
         s.text_styles
-            .insert(TextStyle::Body, FontId::proportional(14.0));
+            .insert(TextStyle::Heading, display_font(text::DISPLAY));
         s.text_styles
-            .insert(TextStyle::Button, FontId::proportional(14.0));
+            .insert(TextStyle::Body, FontId::proportional(text::BODY));
         s.text_styles
-            .insert(TextStyle::Small, FontId::proportional(11.5));
+            .insert(TextStyle::Button, FontId::proportional(text::BODY));
         s.text_styles
-            .insert(TextStyle::Monospace, FontId::monospace(12.0));
+            .insert(TextStyle::Small, FontId::proportional(text::CAPTION));
+        s.text_styles
+            .insert(TextStyle::Monospace, FontId::monospace(text::CAPTION));
     });
 }
 
@@ -221,14 +293,85 @@ mod tests {
         assert_eq!(readable_on(Color32::from_rgb(20, 30, 90)), Color32::WHITE);
     }
 
+    fn rgb(c: [u8; 3]) -> Color32 {
+        Color32::from_rgb(c[0], c[1], c[2])
+    }
+
     #[test]
-    fn every_suggested_accent_has_readable_selection_text() {
-        for (_, c) in ACCENTS {
-            let bg = Color32::from_rgb(c[0], c[1], c[2]);
-            let l_bg = bg.r() as f32 * 0.299 + bg.g() as f32 * 0.587 + bg.b() as f32 * 0.114;
-            let l_fg = readable_on(bg).r() as f32;
-            assert!((l_bg - l_fg).abs() > 60.0, "contraste baixo em {c:?}");
+    fn text_on_every_suggested_accent_meets_aa() {
+        for (name, c) in ACCENTS {
+            let bg = rgb(c);
+            let ratio = contrast(readable_on(bg), bg);
+            assert!(ratio >= TEXT_MIN_CONTRAST, "{name}: {ratio:.2}:1");
         }
+    }
+
+    #[test]
+    fn accent_ink_is_visible_on_every_surface_of_both_themes() {
+        for t in [Theme::Dark, Theme::Light] {
+            let p = palette(t);
+            for (name, c) in ACCENTS {
+                let ink = ink(rgb(c), &p);
+                for (surface, bg) in [("panel", p.panel), ("raise", p.raise)] {
+                    let ratio = contrast(ink, bg);
+                    assert!(
+                        ratio >= COMPONENT_MIN_CONTRAST,
+                        "{name} sobre {surface} ({t:?}): {ratio:.2}:1"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn dark_theme_accents_are_not_altered_by_ink() {
+        let p = palette(Theme::Dark);
+        for (_, c) in ACCENTS {
+            assert_eq!(ink(rgb(c), &p), rgb(c));
+        }
+    }
+
+    #[test]
+    fn palettes_meet_wcag_for_text_and_controls() {
+        for t in [Theme::Dark, Theme::Light] {
+            let p = palette(t);
+            for (name, fg) in [
+                ("fg", p.fg),
+                ("muted", p.muted),
+                ("ok", p.ok),
+                ("bad", p.bad),
+            ] {
+                for (surface, bg) in [("panel", p.panel), ("raise", p.raise), ("bg", p.bg)] {
+                    let ratio = contrast(fg, bg);
+                    assert!(
+                        ratio >= TEXT_MIN_CONTRAST,
+                        "{name} sobre {surface} ({t:?}): {ratio:.2}:1"
+                    );
+                }
+            }
+            for (surface, bg) in [("panel", p.panel), ("raise", p.raise)] {
+                let ratio = contrast(p.control, bg);
+                assert!(
+                    ratio >= COMPONENT_MIN_CONTRAST,
+                    "borda de controle sobre {surface} ({t:?}): {ratio:.2}:1"
+                );
+            }
+            let ratio = contrast(p.device_fg, p.keyoff);
+            assert!(
+                ratio >= TEXT_MIN_CONTRAST,
+                "símbolos na tecla ({t:?}): {ratio:.2}:1"
+            );
+        }
+    }
+
+    #[test]
+    fn ensure_contrast_keeps_good_colors_and_fixes_bad_ones() {
+        let white = Color32::WHITE;
+        let cyan = Color32::from_rgb(0, 229, 255);
+        assert_eq!(ensure_contrast(Color32::BLACK, white, 4.5), Color32::BLACK);
+        let fixed = ensure_contrast(cyan, white, COMPONENT_MIN_CONTRAST);
+        assert_ne!(fixed, cyan);
+        assert!(contrast(fixed, white) >= COMPONENT_MIN_CONTRAST);
     }
 
     #[test]

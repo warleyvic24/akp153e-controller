@@ -69,7 +69,17 @@ pub(crate) fn run_editor() -> eframe::Result {
         .build()
         .expect("tokio");
     let exec = Executor::new(rt.handle().clone());
-    let sh = runtime::new_state(AppConfig::load(), usb::ICON_SIZE as u32);
+    #[allow(unused_mut)]
+    let mut cfg = AppConfig::load();
+    // Só em debug: `AKP153E_PREVIEW_THEME=light` mostra o tema sem mexer no arquivo (nada é gravado
+    // enquanto o usuário não editar algo). Serve para conferir o visual nos dois temas.
+    #[cfg(debug_assertions)]
+    match std::env::var("AKP153E_PREVIEW_THEME").as_deref() {
+        Ok("light") => cfg.ui.theme = Theme::Light,
+        Ok("dark") => cfg.ui.theme = Theme::Dark,
+        _ => {}
+    }
+    let sh = runtime::new_state(cfg, usb::ICON_SIZE as u32);
     runtime::spawn_status_poll(sh.clone());
     let (tx, rx) = channel::<UsbCmd>();
     drop(rx); // o editor não fala com o aparelho; quem desenha nele é o serviço
