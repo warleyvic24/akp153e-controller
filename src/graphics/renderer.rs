@@ -4,6 +4,7 @@ use image::{imageops, Rgba, RgbaImage};
 use std::sync::OnceLock;
 
 const FONT_FILES: [&str; 3] = ["segoeui.ttf", "arial.ttf", "tahoma.ttf"];
+const BOLD_FONT_FILES: [&str; 2] = ["segoeuib.ttf", "arialbd.ttf"];
 
 /// Pasta de fontes do Windows, mesmo que o sistema não esteja em `C:`.
 fn font_dir() -> std::path::PathBuf {
@@ -14,33 +15,42 @@ const MIN_FONT_PX: f32 = 6.0;
 const JPEG_QUALITY: u8 = 90;
 const ICON_STEP_PX: f32 = 0.35;
 
+fn load_font(files: &[&str]) -> Option<FontArc> {
+    let dir = font_dir();
+    files.iter().find_map(|f| {
+        std::fs::read(dir.join(f))
+            .ok()
+            .and_then(|d| FontArc::try_from_vec(d).ok())
+    })
+}
+
 fn font() -> Option<&'static FontArc> {
     static FONT: OnceLock<Option<FontArc>> = OnceLock::new();
     FONT.get_or_init(|| {
-        let dir = font_dir();
-        FONT_FILES
-            .iter()
-            .find_map(|f| {
-                std::fs::read(dir.join(f))
-                    .ok()
-                    .and_then(|d| FontArc::try_from_vec(d).ok())
-            })
-            .or_else(|| {
-                log::warn!("nenhuma fonte do sistema encontrada; texto não será renderizado");
-                None
-            })
+        load_font(&FONT_FILES).or_else(|| {
+            log::warn!("nenhuma fonte do sistema encontrada; texto não será renderizado");
+            None
+        })
     })
     .as_ref()
 }
 
-fn blend(dst: &mut Rgba<u8>, src: RGBAColor, coverage: f32) {
+/// Fonte em negrito; sem ela, cai na normal.
+pub(super) fn bold_font() -> Option<&'static FontArc> {
+    static FONT: OnceLock<Option<FontArc>> = OnceLock::new();
+    FONT.get_or_init(|| load_font(&BOLD_FONT_FILES))
+        .as_ref()
+        .or_else(font)
+}
+
+pub(super) fn blend(dst: &mut Rgba<u8>, src: RGBAColor, coverage: f32) {
     let a = coverage * src.a as f32 / 255.0;
     for (d, s) in dst.0.iter_mut().zip([src.r, src.g, src.b]) {
         *d = (*d as f32 * (1.0 - a) + s as f32 * a).round() as u8;
     }
 }
 
-fn text_width(font: &FontArc, scale: PxScale, text: &str) -> f32 {
+pub(super) fn text_width(font: &FontArc, scale: PxScale, text: &str) -> f32 {
     let s = font.as_scaled(scale);
     text.chars().map(|c| s.h_advance(s.glyph_id(c))).sum()
 }
@@ -61,7 +71,49 @@ fn draw_text(img: &mut RgbaImage, text: &str, size: f32, color: RGBAColor, botto
     } else {
         (h as f32 - line_h) / 2.0
     };
-    let baseline = top + scaled.ascent();
+    draw_glyphs(img, font, scale, text, (x0, top + scaled.ascent()), color);
+}
+
+/// Uma linha de `text` centrada na horizontal com o topo em `top`; encolhe (até `min_px`) para caber
+/// e, se mesmo assim não couber, corta com reticências.
+pub(super) fn draw_line(
+    img: &mut RgbaImage,
+    font: &FontArc,
+    text: &str,
+    (size, min_px): (f32, f32),
+    color: RGBAColor,
+    top: f32,
+) {
+    let width = img.width() as f32 - 4.0;
+    let mut px = size;
+    while px > min_px && text_width(font, PxScale::from(px), text) > width {
+        px -= 1.0;
+    }
+    let scale = PxScale::from(px);
+    let shown = if text_width(font, scale, text) <= width {
+        text.to_string()
+    } else {
+        (1..text.chars().count())
+            .rev()
+            .map(|n| format!("{}…", text.chars().take(n).collect::<String>()))
+            .find(|cut| text_width(font, scale, cut) <= width)
+            .unwrap_or_else(|| "…".into())
+    };
+    let x0 = (img.width() as f32 - text_width(font, scale, &shown)) / 2.0;
+    let baseline = top + font.as_scaled(scale).ascent();
+    draw_glyphs(img, font, scale, &shown, (x0, baseline), color);
+}
+
+fn draw_glyphs(
+    img: &mut RgbaImage,
+    font: &FontArc,
+    scale: PxScale,
+    text: &str,
+    (x0, baseline): (f32, f32),
+    color: RGBAColor,
+) {
+    let scaled = font.as_scaled(scale);
+    let (w, h) = img.dimensions();
     let mut x = x0;
     for c in text.chars() {
         let id = scaled.glyph_id(c);
@@ -93,7 +145,14 @@ fn stamp(mask: &mut [f32], w: u32, h: u32, x: f32, y: f32, r: f32) {
 }
 
 /// Desenha um ícone vetorial centrado em (cx, cy) com lado `size`, com bordas suavizadas.
-fn draw_icon(img: &mut RgbaImage, name: &str, cx: f32, cy: f32, size: f32, color: RGBAColor) {
+pub(super) fn draw_icon(
+    img: &mut RgbaImage,
+    name: &str,
+    cx: f32,
+    cy: f32,
+    size: f32,
+    color: RGBAColor,
+) {
     let (w, h) = img.dimensions();
     let scale = size / 24.0;
     let radius = (scale * 1.9).max(1.4) / 2.0;

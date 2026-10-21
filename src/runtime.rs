@@ -2,8 +2,9 @@
 //! e redesenha os botões. A UI e este módulo compartilham o estado via `SharedState`.
 use crate::config::schema::{AppConfig, ButtonAction, ButtonConfig, RGBAColor};
 use crate::engine::actions::Executor;
-use crate::graphics::renderer::render_button_frame;
-use crate::mixer::{MixerData, MixerEffect, MixerView};
+use crate::graphics::mixer_art::render_mixer_key;
+use crate::graphics::renderer::{encode_frame, render_button_frame};
+use crate::mixer::{MixerData, MixerEffect, MixerKey, MixerView};
 use crate::usb::{UsbCmd, UsbEvent};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -49,24 +50,44 @@ const SWEEP_STEP: u32 = 2;
 /// Cópia dos botões da página ativa. Desenhar e codificar JPEG é lento: com a cópia, isso roda
 /// depois de soltar o lock, e o servidor de controle continua respondendo a `status`.
 pub struct Snapshot {
-    buttons: Vec<ButtonConfig>,
+    frames: Vec<Frame>,
     px: u32,
+}
+
+/// Uma tecla a desenhar: botão da configuração ou tecla do mixer (que tem desenho próprio).
+enum Frame {
+    Button(Box<ButtonConfig>),
+    Mixer(MixerKey),
 }
 
 impl Snapshot {
     pub fn take(sh: &Shared) -> Self {
         Self {
-            buttons: sh
-                .mixer
-                .as_ref()
-                .map_or_else(|| sh.cfg.page().buttons.clone(), MixerView::buttons),
+            frames: match &sh.mixer {
+                Some(mixer) => {
+                    let [r, g, b] = sh.cfg.ui.accent;
+                    let accent = RGBAColor { r, g, b, a: 255 };
+                    mixer.keys(accent).into_iter().map(Frame::Mixer).collect()
+                }
+                None => sh
+                    .cfg
+                    .page()
+                    .buttons
+                    .iter()
+                    .cloned()
+                    .map(|b| Frame::Button(Box::new(b)))
+                    .collect(),
+            },
             px: sh.icon_px,
         }
     }
 
     pub fn render(&self, tx: &Sender<UsbCmd>) {
-        for (index, b) in self.buttons.iter().enumerate() {
-            let data = render_button_frame(b, self.px, self.px);
+        for (index, frame) in self.frames.iter().enumerate() {
+            let data = match frame {
+                Frame::Button(b) => render_button_frame(b, self.px, self.px),
+                Frame::Mixer(key) => encode_frame(&render_mixer_key(key, self.px)),
+            };
             let _ = tx.send(UsbCmd::Frame { index, data });
         }
     }

@@ -3,7 +3,8 @@
 //! Esta parte é pura (sem áudio nem USB), por isso é testada sem o aparelho.
 use crate::apps::{extract_icon, InstalledApp};
 use crate::audio::{self, AudioSession, MasterVolume};
-use crate::config::schema::{ButtonConfig, RGBAColor, BLANK_BACKGROUND};
+use crate::config::schema::RGBAColor;
+use crate::strings::t;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
@@ -15,19 +16,6 @@ const APP_COLUMNS: usize = COLS - 1;
 const CONTROL_COLUMN: usize = COLS - 1;
 /// Passo de cada aperto em +/−, em fração do volume (5%).
 pub const VOLUME_STEP: f32 = 0.05;
-
-const TILE: RGBAColor = RGBAColor {
-    r: 16,
-    g: 24,
-    b: 44,
-    a: 255,
-};
-const MUTED: RGBAColor = RGBAColor {
-    r: 130,
-    g: 24,
-    b: 24,
-    a: 255,
-};
 
 /// Um app na grade, com o ícone do programa quando já foi extraído.
 #[derive(Clone, Debug, PartialEq)]
@@ -122,6 +110,48 @@ impl MixerEffect {
     }
 }
 
+/// O que uma tecla mostra; o desenho fica em `graphics::mixer_art`.
+#[derive(Clone, Debug, PartialEq)]
+pub enum KeyFace {
+    Empty,
+    Plus,
+    Minus,
+    App {
+        name: String,
+        icon_path: Option<String>,
+    },
+    Master,
+    More,
+    Back,
+}
+
+/// Uma tecla da página: o que mostrar, o texto de valor (porcentagem) e o trecho do medidor.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MixerKey {
+    pub face: KeyFace,
+    /// Nome curto da tecla de controle (ex.: "VOLTAR"); vazio nas demais.
+    pub label: String,
+    /// Porcentagem de volume, ex.: "62%"; vazio nas teclas sem valor.
+    pub value: String,
+    pub muted: bool,
+    /// Quanto deste trecho do medidor está cheio (0 a 1); `None` fora das colunas de app.
+    pub meter: Option<f32>,
+    pub accent: RGBAColor,
+}
+
+impl MixerKey {
+    fn plain(face: KeyFace, accent: RGBAColor) -> Self {
+        Self {
+            face,
+            label: String::new(),
+            value: String::new(),
+            muted: false,
+            meter: None,
+            accent,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct MixerView {
     data: MixerData,
@@ -154,40 +184,58 @@ impl MixerView {
         self.data.apps.len() > APP_COLUMNS
     }
 
-    /// As 15 teclas na ordem da grade (linha por linha).
-    pub fn buttons(&self) -> Vec<ButtonConfig> {
+    /// As 15 teclas na ordem da grade (linha por linha); `accent` é a cor de destaque da interface.
+    pub fn keys(&self, accent: RGBAColor) -> Vec<MixerKey> {
         (0..KEY_COUNT)
-            .map(|index| self.button(index / COLS, index % COLS))
+            .map(|index| self.key_at(index / COLS, index % COLS, accent))
             .collect()
     }
 
-    fn button(&self, row: usize, column: usize) -> ButtonConfig {
+    fn key_at(&self, row: usize, column: usize, accent: RGBAColor) -> MixerKey {
         if column == CONTROL_COLUMN {
-            return self.control_button(row);
+            return self.control_key(row, accent);
         }
         let Some(app) = self.app_at(column) else {
-            return ButtonConfig::blank();
+            return MixerKey::plain(KeyFace::Empty, accent);
         };
-        match row {
-            0 => key("volup", "", BLANK_BACKGROUND),
-            1 => tile(app),
-            _ => key("voldown", "", BLANK_BACKGROUND),
+        let session = &app.session;
+        let face = match row {
+            0 => KeyFace::Plus,
+            1 => KeyFace::App {
+                name: session.name.clone(),
+                icon_path: app.icon_path.clone(),
+            },
+            _ => KeyFace::Minus,
+        };
+        MixerKey {
+            value: if row == 1 {
+                percent_text(session.volume)
+            } else {
+                String::new()
+            },
+            muted: session.muted,
+            meter: Some(meter_slice(session.volume, row)),
+            ..MixerKey::plain(face, accent)
         }
     }
 
-    fn control_button(&self, row: usize) -> ButtonConfig {
+    fn control_key(&self, row: usize, accent: RGBAColor) -> MixerKey {
+        let labeled = |face, label: &str| MixerKey {
+            label: t(label).to_string(),
+            ..MixerKey::plain(face, accent)
+        };
         match row {
-            0 if self.has_more_apps() => key("next", "", BLANK_BACKGROUND),
+            0 if self.has_more_apps() => labeled(KeyFace::More, "MAIS"),
             1 => match self.data.master {
-                Some(m) => key(
-                    "mute",
-                    &percent_text(m.volume, m.muted),
-                    background(m.muted),
-                ),
-                None => ButtonConfig::blank(),
+                Some(m) => MixerKey {
+                    value: percent_text(m.volume),
+                    muted: m.muted,
+                    ..labeled(KeyFace::Master, "GERAL")
+                },
+                None => MixerKey::plain(KeyFace::Empty, accent),
             },
-            2 => key("prev", "", BLANK_BACKGROUND),
-            _ => ButtonConfig::blank(),
+            2 => labeled(KeyFace::Back, "VOLTAR"),
+            _ => MixerKey::plain(KeyFace::Empty, accent),
         }
     }
 
@@ -255,46 +303,27 @@ fn step(session: &mut AudioSession, delta: f32) -> MixerEffect {
     }
 }
 
-fn background(muted: bool) -> RGBAColor {
-    if muted {
-        MUTED
-    } else {
-        TILE
-    }
+fn percent_text(volume: f32) -> String {
+    format!("{}%", (volume * 100.0).round() as u32)
 }
 
-fn percent_text(volume: f32, muted: bool) -> String {
-    if muted {
-        "MUDO".into()
-    } else {
-        format!("{}%", (volume * 100.0).round() as u32)
-    }
-}
-
-fn key(icon: &str, text: &str, background: RGBAColor) -> ButtonConfig {
-    let mut b = ButtonConfig::blank();
-    b.appearance.icon = Some(icon.into());
-    b.appearance.text = text.into();
-    b.appearance.background = background;
-    b
-}
-
-fn tile(app: &MixerApp) -> ButtonConfig {
-    let mut b = key(
-        "app",
-        &percent_text(app.session.volume, app.session.muted),
-        background(app.session.muted),
-    );
-    if let Some(path) = &app.icon_path {
-        b.appearance.icon = None;
-        b.appearance.icon_path = Some(path.clone());
-    }
-    b
+/// Parte do medidor da coluna que cabe na tecla da linha `row` (0 = de cima): o nível sobe de baixo
+/// para cima atravessando as três teclas, como uma barra só.
+fn meter_slice(volume: f32, row: usize) -> f32 {
+    let keys_below = (ROWS - 1 - row) as f32;
+    (volume.clamp(0.0, 1.0) * ROWS as f32 - keys_below).clamp(0.0, 1.0)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const ACCENT: RGBAColor = RGBAColor {
+        r: 0,
+        g: 229,
+        b: 255,
+        a: 255,
+    };
 
     fn app(pid: u32, volume: f32) -> MixerApp {
         MixerApp {
@@ -327,8 +356,44 @@ mod tests {
     }
 
     #[test]
-    fn page_has_one_button_per_key() {
-        assert_eq!(view(2).buttons().len(), KEY_COUNT);
+    fn page_has_one_key_per_button() {
+        assert_eq!(view(2).keys(ACCENT).len(), KEY_COUNT);
+    }
+
+    #[test]
+    fn app_tile_shows_name_and_percentage() {
+        let mut v = view(1);
+        v.data.apps[0].session.name = "Spotify".into();
+        v.data.apps[0].session.volume = 0.62;
+        let tile = &v.keys(ACCENT)[5];
+        assert_eq!(tile.value, "62%");
+        assert!(matches!(&tile.face, KeyFace::App { name, .. } if name == "Spotify"));
+    }
+
+    #[test]
+    fn muted_tile_keeps_the_percentage_and_is_flagged() {
+        let mut v = view(1);
+        v.press(5);
+        let tile = &v.keys(ACCENT)[5];
+        assert!(tile.muted);
+        assert_eq!(tile.value, "50%");
+    }
+
+    #[test]
+    fn meter_runs_across_the_three_keys_of_a_column() {
+        assert_eq!(meter_slice(0.0, 2), 0.0);
+        assert_eq!(meter_slice(1.0, 0), 1.0);
+        assert_eq!(meter_slice(0.5, 2), 1.0);
+        assert!((meter_slice(0.5, 1) - 0.5).abs() < 1e-6);
+        assert_eq!(meter_slice(0.5, 0), 0.0);
+    }
+
+    #[test]
+    fn only_app_columns_have_a_meter() {
+        let keys = view(1).keys(ACCENT);
+        assert!(keys[0].meter.is_some() && keys[5].meter.is_some() && keys[10].meter.is_some());
+        assert!(keys[1].meter.is_none());
+        assert!(keys[9].meter.is_none());
     }
 
     #[test]
@@ -349,7 +414,7 @@ mod tests {
     }
 
     #[test]
-    fn tile_toggles_mute_and_shows_it() {
+    fn tile_toggles_mute() {
         let mut v = view(1);
         assert_eq!(
             v.press(5),
@@ -358,7 +423,6 @@ mod tests {
                 muted: true
             }
         );
-        assert_eq!(v.buttons()[5].appearance.text, "MUDO");
         assert_eq!(
             v.press(5),
             MixerEffect::SetMute {
@@ -366,7 +430,6 @@ mod tests {
                 muted: false
             }
         );
-        assert_eq!(v.buttons()[5].appearance.text, "50%");
     }
 
     #[test]
@@ -399,10 +462,11 @@ mod tests {
     }
 
     #[test]
-    fn master_mute_toggles() {
+    fn master_tile_shows_percentage_and_toggles_mute() {
         let mut v = view(0);
+        assert_eq!(v.keys(ACCENT)[9].value, "80%");
         assert_eq!(v.press(9), MixerEffect::SetMasterMute { muted: true });
-        assert_eq!(v.buttons()[9].appearance.text, "MUDO");
+        assert!(v.keys(ACCENT)[9].muted);
     }
 
     #[test]
@@ -419,7 +483,7 @@ mod tests {
     #[test]
     fn more_apps_key_is_hidden_when_everything_fits() {
         let mut v = view(4);
-        assert_eq!(v.buttons()[4], ButtonConfig::blank());
+        assert_eq!(v.keys(ACCENT)[4].face, KeyFace::Empty);
         v.press(4);
         assert_eq!(v.first_app, 0);
     }
@@ -433,12 +497,26 @@ mod tests {
         assert_eq!(v.first_app, 0);
     }
 
+    /// Gera uma imagem das 15 teclas para conferir o visual:
+    /// `PREVIEW_OUT=pasta/mixer.png cargo test mixer_preview -- --ignored`.
     #[test]
-    fn muted_tile_is_red_and_app_without_icon_uses_the_builtin_one() {
-        let mut v = view(1);
-        v.press(5);
-        let tile = &v.buttons()[5];
-        assert_eq!(tile.appearance.background, MUTED);
-        assert_eq!(tile.appearance.icon.as_deref(), Some("app"));
+    #[ignore]
+    fn mixer_preview() {
+        let mut v = view(2);
+        v.data.apps[0].session.name = "Spotify".into();
+        v.data.apps[0].session.volume = 0.62;
+        v.data.apps[1].session.name = "Google Chrome".into();
+        v.data.apps[1].session.volume = 0.3;
+        v.press(6);
+        let px = 85u32;
+        let mut sheet = image::RgbaImage::new((px + 6) * 5, (px + 6) * 3);
+        for (i, key) in v.keys(ACCENT).iter().enumerate() {
+            let img = crate::graphics::mixer_art::render_mixer_key(key, px);
+            let (x, y) = ((i % COLS) as u32 * (px + 6), (i / COLS) as u32 * (px + 6));
+            image::imageops::overlay(&mut sheet, &img, x as i64, y as i64);
+        }
+        sheet
+            .save(std::env::var("PREVIEW_OUT").expect("defina PREVIEW_OUT"))
+            .unwrap();
     }
 }
