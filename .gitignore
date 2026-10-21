@@ -1,0 +1,11 @@
+# Build
+/target
+
+# Artefatos de execução
+*.log
+akp153e_probe.txt
+*.bak*
+
+# Segredos
+.env
+.env.*

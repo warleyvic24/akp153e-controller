@@ -1,0 +1,717 @@
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RGBAColor {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    pub a: u8,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ButtonAppearance {
+    pub background: RGBAColor,
+    pub text_color: RGBAColor,
+    pub text: String,
+    pub font: String,
+    pub font_size: f32,
+    pub icon_path: Option<String>,
+    /// Ícone vetorial embutido (ver `icons.rs`); tem prioridade sobre `icon_path`.
+    #[serde(default)]
+    pub icon: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum ButtonAction {
+    None,
+    Hotkey {
+        keys: Vec<String>,
+    },
+    LaunchApp {
+        path: String,
+        #[serde(default)]
+        args: Vec<String>,
+    },
+    HttpWebhook {
+        url: String,
+        #[serde(default = "get")]
+        method: String,
+        #[serde(default)]
+        body: Option<String>,
+    },
+    MediaKey {
+        key: String,
+    },
+    SwitchPage {
+        page: u64,
+    },
+    SwitchProfile {
+        profile: u64,
+    },
+}
+fn get() -> String {
+    "GET".into()
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ButtonConfig {
+    pub appearance: ButtonAppearance,
+    pub action: ButtonAction,
+    #[serde(default)]
+    pub long_press_action: Option<ButtonAction>,
+    #[serde(default = "threshold")]
+    pub long_press_threshold_ms: u64,
+    #[serde(default)]
+    pub toggle_state: bool,
+    #[serde(default)]
+    pub toggled_appearance: Option<ButtonAppearance>,
+}
+fn threshold() -> u64 {
+    500
+}
+
+/// Fundo padrão de um botão novo: preto (no display LCD, preto = pixel apagado).
+pub const BLANK_BACKGROUND: RGBAColor = RGBAColor {
+    r: 0,
+    g: 0,
+    b: 0,
+    a: 255,
+};
+/// Fundo padrão das versões anteriores; é migrado para preto ao carregar.
+const LEGACY_BLANK_BACKGROUND: RGBAColor = RGBAColor {
+    r: 30,
+    g: 30,
+    b: 30,
+    a: 255,
+};
+
+impl ButtonConfig {
+    pub fn blank() -> Self {
+        Self {
+            appearance: ButtonAppearance {
+                background: BLANK_BACKGROUND,
+                text_color: RGBAColor {
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                    a: 255,
+                },
+                text: String::new(),
+                font: "default".into(),
+                font_size: 14.0,
+                icon_path: None,
+                icon: None,
+            },
+            action: ButtonAction::None,
+            long_press_action: None,
+            long_press_threshold_ms: 500,
+            toggle_state: false,
+            toggled_appearance: None,
+        }
+    }
+    pub fn current_appearance(&self) -> &ButtonAppearance {
+        match (&self.toggled_appearance, self.toggle_state) {
+            (Some(a), true) => a,
+            _ => &self.appearance,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Page {
+    #[serde(default)]
+    pub id: u64,
+    pub name: String,
+    pub rows: usize,
+    pub cols: usize,
+    pub buttons: Vec<ButtonConfig>,
+}
+impl Page {
+    pub fn new(name: &str, rows: usize, cols: usize) -> Self {
+        Self {
+            id: 0,
+            name: name.into(),
+            rows,
+            cols,
+            buttons: (0..rows * cols).map(|_| ButtonConfig::blank()).collect(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Profile {
+    #[serde(default)]
+    pub id: u64,
+    pub name: String,
+    pub pages: Vec<Page>,
+    #[serde(default)]
+    pub active_page: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AppConfig {
+    #[serde(default = "legacy_version")]
+    pub schema_version: u32,
+    pub profiles: Vec<Profile>,
+    #[serde(default)]
+    pub active_profile: usize,
+    #[serde(default)]
+    pub ui: UiSettings,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Theme {
+    #[default]
+    Dark,
+    Light,
+}
+
+/// Preferências da interface (não afetam o aparelho).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UiSettings {
+    pub theme: Theme,
+    pub accent: [u8; 3],
+}
+
+impl Default for UiSettings {
+    fn default() -> Self {
+        Self {
+            theme: Theme::Dark,
+            accent: [0, 229, 255],
+        }
+    }
+}
+
+/// Nome do backup de uma config inválida, com data: um segundo arquivo ruim não apaga o primeiro backup.
+fn backup_path(config: &std::path::Path) -> PathBuf {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    config.with_extension(format!("json.bak-{secs}"))
+}
+
+/// Versão 2: páginas e perfis têm identificador estável e as ações apontam para ele.
+pub const SCHEMA_VERSION: u32 = 2;
+fn legacy_version() -> u32 {
+    1
+}
+
+/// Zera ação (e ação longa) de um botão que aponte para um destino removido.
+fn reset_targets(b: &mut ButtonConfig, hit: impl Fn(&ButtonAction) -> bool) {
+    if hit(&b.action) {
+        b.action = ButtonAction::None;
+    }
+    if b.long_press_action.as_ref().is_some_and(&hit) {
+        b.long_press_action = None;
+    }
+}
+
+impl Profile {
+    /// Remove a página; recusa se for a última. Ações que apontavam para ela são desativadas.
+    pub fn remove_page(&mut self, index: usize) -> bool {
+        if self.pages.len() <= 1 || index >= self.pages.len() {
+            return false;
+        }
+        let id = self.pages.remove(index).id;
+        for b in self.pages.iter_mut().flat_map(|p| p.buttons.iter_mut()) {
+            reset_targets(
+                b,
+                |a| matches!(a, ButtonAction::SwitchPage { page } if *page == id),
+            );
+        }
+        self.active_page = self.active_page.min(self.pages.len() - 1);
+        true
+    }
+
+    /// Troca a página de lugar com a vizinha (`delta` = -1 ou 1); devolve a nova posição.
+    pub fn move_page(&mut self, index: usize, delta: isize) -> Option<usize> {
+        let to = index
+            .checked_add_signed(delta)
+            .filter(|&t| t < self.pages.len() && index < self.pages.len())?;
+        self.pages.swap(index, to);
+        if self.active_page == index {
+            self.active_page = to
+        } else if self.active_page == to {
+            self.active_page = index
+        }
+        Some(to)
+    }
+
+    pub fn page_index(&self, id: u64) -> Option<usize> {
+        self.pages.iter().position(|p| p.id == id)
+    }
+
+    pub fn add_page(&mut self, name: &str) {
+        let id = self.pages.iter().map(|p| p.id).max().unwrap_or(0) + 1;
+        let mut page = Page::new(name, 3, 5);
+        page.id = id;
+        self.pages.push(page);
+    }
+}
+
+/// Dá um id novo (maior que todos) a cada item que ainda não tem.
+fn assign_ids<'a>(ids: impl Iterator<Item = &'a mut u64>) {
+    let mut all: Vec<&mut u64> = ids.collect();
+    let first_free = all.iter().map(|i| **i).max().unwrap_or(0) + 1;
+    for (id, new_id) in all.iter_mut().filter(|i| ***i == 0).zip(first_free..) {
+        **id = new_id;
+    }
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        let mut page = Page::new("Page 1", 3, 5);
+        page.id = 1;
+        Self {
+            schema_version: SCHEMA_VERSION,
+            profiles: vec![Profile {
+                id: 1,
+                name: "Default".into(),
+                pages: vec![page],
+                active_page: 0,
+            }],
+            active_profile: 0,
+            ui: UiSettings::default(),
+        }
+    }
+}
+
+impl AppConfig {
+    pub fn path() -> Option<PathBuf> {
+        // Os testes criam `App`s que gravam ao serem descartados: nunca no arquivo real do usuário.
+        if cfg!(test) {
+            let dir = std::env::temp_dir().join(format!("akp153e-test-{}", std::process::id()));
+            return Some(dir.join("config.json"));
+        }
+        directories::BaseDirs::new().map(|d| {
+            d.config_dir()
+                .join("AJazz")
+                .join("AKP153E")
+                .join("config.json")
+        })
+    }
+    /// A config do disco, ou `None` se faltar, não puder ser lida agora ou for inválida.
+    /// Quem vai regravar o arquivo usa esta: `load()` cai na config padrão e a gravaria por cima.
+    pub fn load_existing() -> Option<Self> {
+        let text = std::fs::read_to_string(Self::path()?).ok()?;
+        serde_json::from_str::<Self>(&text)
+            .ok()
+            .map(Self::sanitized)
+    }
+
+    pub fn load() -> Self {
+        let Some(path) = Self::path() else {
+            return Self::default();
+        };
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            return Self::default();
+        };
+        match serde_json::from_str::<Self>(&text) {
+            Ok(c) => c.sanitized(),
+            Err(e) => {
+                let backup = backup_path(&path);
+                log::warn!("config inválida ({e}); backup em {}", backup.display());
+                if let Err(copy_error) = std::fs::copy(&path, &backup) {
+                    log::error!("backup da config inválida falhou: {copy_error}");
+                }
+                Self::default()
+            }
+        }
+    }
+
+    /// Garante invariantes (>=1 perfil/página, grade completa, ids e índices válidos) e migra versões antigas.
+    pub fn sanitized(mut self) -> Self {
+        if self.profiles.is_empty() {
+            return Self::default();
+        }
+        for p in &mut self.profiles {
+            if p.pages.is_empty() {
+                p.pages.push(Page::new("Page 1", 3, 5));
+            }
+            for pg in &mut p.pages {
+                pg.rows = pg.rows.clamp(1, 3);
+                pg.cols = pg.cols.clamp(1, 5);
+                pg.buttons
+                    .resize_with(pg.rows * pg.cols, ButtonConfig::blank);
+                for b in pg
+                    .buttons
+                    .iter_mut()
+                    .filter(|b| b.appearance.background == LEGACY_BLANK_BACKGROUND)
+                {
+                    b.appearance.background = BLANK_BACKGROUND;
+                }
+            }
+            assign_ids(p.pages.iter_mut().map(|pg| &mut pg.id));
+            p.active_page = p.active_page.min(p.pages.len() - 1);
+        }
+        assign_ids(self.profiles.iter_mut().map(|p| &mut p.id));
+        self.active_profile = self.active_profile.min(self.profiles.len() - 1);
+        if self.schema_version < SCHEMA_VERSION {
+            self.migrate_index_targets();
+            self.schema_version = SCHEMA_VERSION;
+        }
+        self
+    }
+
+    /// v1 -> v2: ações que apontavam para a posição passam a apontar para o id.
+    fn migrate_index_targets(&mut self) {
+        let profile_ids: Vec<u64> = self.profiles.iter().map(|p| p.id).collect();
+        for p in &mut self.profiles {
+            let page_ids: Vec<u64> = p.pages.iter().map(|pg| pg.id).collect();
+            for b in p.pages.iter_mut().flat_map(|pg| pg.buttons.iter_mut()) {
+                for a in std::iter::once(&mut b.action).chain(b.long_press_action.as_mut()) {
+                    match a {
+                        ButtonAction::SwitchPage { page } => {
+                            *page = page_ids.get(*page as usize).copied().unwrap_or(0)
+                        }
+                        ButtonAction::SwitchProfile { profile } => {
+                            *profile = profile_ids.get(*profile as usize).copied().unwrap_or(0)
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+    pub fn save(&self) -> std::io::Result<()> {
+        let p = Self::path().ok_or_else(|| std::io::Error::other("sem diretório de config"))?;
+        self.save_to(&p)
+    }
+
+    /// Grava em arquivo temporário e renomeia, para uma queda no meio nunca corromper o original.
+    pub fn save_to(&self, path: &std::path::Path) -> std::io::Result<()> {
+        if let Some(d) = path.parent() {
+            std::fs::create_dir_all(d)?;
+        }
+        let tmp = path.with_extension(format!("json.{}.tmp", std::process::id()));
+        let json = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
+        let written = std::fs::File::create(&tmp).and_then(|mut f| {
+            use std::io::Write;
+            f.write_all(json.as_bytes())?;
+            f.sync_all() // sem isto, uma queda de energia após o rename pode deixar o arquivo vazio
+        });
+        if let Err(e) = written {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e);
+        }
+        std::fs::rename(&tmp, path).inspect_err(|_| {
+            let _ = std::fs::remove_file(&tmp);
+        })
+    }
+
+    /// Adota o perfil e a página ativos de `disk` (achados por id), se ainda existirem aqui.
+    /// Serve para o editor não desfazer uma troca de página feita pelo aparelho.
+    pub fn adopt_active_from(&mut self, disk: &AppConfig) {
+        let Some(source) = disk.profiles.get(disk.active_profile) else {
+            return;
+        };
+        let Some(index) = self.profile_index(source.id) else {
+            return;
+        };
+        self.active_profile = index;
+        let page_id = source.pages.get(source.active_page).map(|p| p.id);
+        if let Some(page) = page_id.and_then(|id| self.profiles[index].page_index(id)) {
+            self.profiles[index].active_page = page;
+        }
+    }
+
+    pub fn profile_index(&self, id: u64) -> Option<usize> {
+        self.profiles.iter().position(|p| p.id == id)
+    }
+
+    /// Remove o perfil; recusa se for o último. Ações que apontavam para ele são desativadas.
+    pub fn remove_profile(&mut self, index: usize) -> bool {
+        if self.profiles.len() <= 1 || index >= self.profiles.len() {
+            return false;
+        }
+        let id = self.profiles.remove(index).id;
+        for b in self
+            .profiles
+            .iter_mut()
+            .flat_map(|p| p.pages.iter_mut())
+            .flat_map(|pg| pg.buttons.iter_mut())
+        {
+            reset_targets(
+                b,
+                |a| matches!(a, ButtonAction::SwitchProfile { profile } if *profile == id),
+            );
+        }
+        if index < self.active_profile {
+            self.active_profile -= 1;
+        }
+        self.active_profile = self.active_profile.min(self.profiles.len() - 1);
+        true
+    }
+
+    pub fn add_profile(&mut self, name: &str) {
+        let id = self.profiles.iter().map(|p| p.id).max().unwrap_or(0) + 1;
+        let mut page = Page::new("Page 1", 3, 5);
+        page.id = 1;
+        self.profiles.push(Profile {
+            id,
+            name: name.into(),
+            pages: vec![page],
+            active_page: 0,
+        });
+    }
+
+    pub fn page(&self) -> &Page {
+        let p = &self.profiles[self.active_profile.min(self.profiles.len() - 1)];
+        &p.pages[p.active_page.min(p.pages.len() - 1)]
+    }
+    pub fn page_mut(&mut self) -> &mut Page {
+        let i = self.active_profile.min(self.profiles.len() - 1);
+        let p = &mut self.profiles[i];
+        let j = p.active_page.min(p.pages.len() - 1);
+        &mut p.pages[j]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn roundtrips_default_config() {
+        let c = AppConfig::default();
+        let back: AppConfig = serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
+        assert_eq!(back.page().buttons.len(), 15);
+    }
+
+    #[test]
+    fn sanitize_repairs_broken_config() {
+        let broken = AppConfig {
+            schema_version: SCHEMA_VERSION,
+            profiles: vec![Profile {
+                id: 0,
+                name: "x".into(),
+                pages: vec![],
+                active_page: 9,
+            }],
+            active_profile: 7,
+            ui: UiSettings::default(),
+        };
+        assert_eq!(broken.sanitized().page().buttons.len(), 15);
+        assert_eq!(
+            AppConfig {
+                schema_version: SCHEMA_VERSION,
+                profiles: vec![],
+                active_profile: 0,
+                ui: UiSettings::default()
+            }
+            .sanitized()
+            .page()
+            .rows,
+            3
+        );
+    }
+
+    #[test]
+    fn migrates_legacy_index_targets_to_ids() {
+        let mut cfg = AppConfig {
+            schema_version: 1,
+            ..Default::default()
+        };
+        cfg.profiles[0].pages[0].id = 0;
+        cfg.profiles[0].id = 0;
+        cfg.profiles[0].pages.push(Page::new("Page 2", 3, 5));
+        cfg.profiles[0].pages[0].buttons[0].action = ButtonAction::SwitchPage { page: 1 };
+        let cfg = cfg.sanitized();
+        let p = &cfg.profiles[0];
+        assert_eq!(cfg.schema_version, SCHEMA_VERSION);
+        assert_eq!((p.pages[0].id, p.pages[1].id), (1, 2));
+        assert_eq!(
+            p.pages[0].buttons[0].action,
+            ButtonAction::SwitchPage { page: 2 }
+        );
+    }
+
+    #[test]
+    fn ids_survive_page_removal() {
+        let mut cfg = AppConfig::default();
+        cfg.profiles[0].add_page("B");
+        cfg.profiles[0].add_page("C");
+        cfg.profiles[0].pages.remove(1);
+        cfg.profiles[0].add_page("D");
+        let ids: Vec<u64> = cfg.profiles[0].pages.iter().map(|p| p.id).collect();
+        assert_eq!(ids, vec![1, 3, 4]);
+        assert_eq!(cfg.profiles[0].page_index(3), Some(1));
+    }
+
+    #[test]
+    fn save_is_atomic_and_leaves_no_temp_file() {
+        let dir = std::env::temp_dir().join(format!("akp_cfg_{}", std::process::id()));
+        let path = dir.join("config.json");
+        AppConfig::default().save_to(&path).unwrap();
+        let mut second = AppConfig::default();
+        second.profiles[0].name = "novo".into();
+        second.save_to(&path).unwrap();
+        let back: AppConfig =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(back.profiles[0].name, "novo");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn removing_a_page_disables_actions_that_pointed_to_it() {
+        let mut cfg = AppConfig::default();
+        cfg.profiles[0].add_page("B");
+        cfg.profiles[0].pages[0].buttons[0].action = ButtonAction::SwitchPage { page: 2 };
+        cfg.profiles[0].pages[0].buttons[1].long_press_action =
+            Some(ButtonAction::SwitchPage { page: 2 });
+        cfg.profiles[0].pages[0].buttons[2].action = ButtonAction::SwitchPage { page: 1 };
+        cfg.profiles[0].active_page = 1;
+        assert!(cfg.profiles[0].remove_page(1));
+        let p = &cfg.profiles[0];
+        assert_eq!(p.pages[0].buttons[0].action, ButtonAction::None);
+        assert_eq!(p.pages[0].buttons[1].long_press_action, None);
+        assert_eq!(
+            p.pages[0].buttons[2].action,
+            ButtonAction::SwitchPage { page: 1 }
+        );
+        assert_eq!(p.active_page, 0);
+    }
+
+    #[test]
+    fn adopting_the_disk_navigation_follows_ids_not_positions() {
+        let mut editor = AppConfig::default();
+        editor.profiles[0].add_page("B");
+        editor.profiles[0].add_page("C");
+        let mut disk = editor.clone();
+        disk.profiles[0].active_page = 2;
+        editor.adopt_active_from(&disk);
+        assert_eq!(editor.profiles[0].active_page, 2);
+
+        // página que o editor já removeu: mantém a atual
+        disk.profiles[0].pages[2].id = 99;
+        editor.profiles[0].active_page = 1;
+        editor.adopt_active_from(&disk);
+        assert_eq!(editor.profiles[0].active_page, 1);
+    }
+
+    #[test]
+    fn backup_names_carry_a_timestamp_and_keep_the_config_directory() {
+        let path = std::path::Path::new(r"C:\x\config.json");
+        let name = backup_path(path);
+        assert_eq!(name.parent(), path.parent());
+        let file = name.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(file.starts_with("config.json.bak-"), "{file}");
+        assert_ne!(file, "config.json.bak-");
+    }
+
+    #[test]
+    fn last_page_and_last_profile_cannot_be_removed() {
+        let mut cfg = AppConfig::default();
+        assert!(!cfg.profiles[0].remove_page(0));
+        assert!(!cfg.remove_profile(0));
+    }
+
+    #[test]
+    fn move_page_keeps_the_active_page_selected() {
+        let mut cfg = AppConfig::default();
+        cfg.profiles[0].add_page("B");
+        cfg.profiles[0].add_page("C");
+        cfg.profiles[0].active_page = 0;
+        assert_eq!(cfg.profiles[0].move_page(0, 1), Some(1));
+        assert_eq!(cfg.profiles[0].active_page, 1);
+        assert_eq!(cfg.profiles[0].pages[1].id, 1);
+        assert_eq!(cfg.profiles[0].move_page(2, 1), None);
+        assert_eq!(cfg.profiles[0].move_page(0, -1), None);
+    }
+
+    #[test]
+    fn removing_a_profile_adjusts_the_active_one_and_dangling_actions() {
+        let mut cfg = AppConfig::default();
+        cfg.add_profile("B");
+        cfg.add_profile("C");
+        cfg.active_profile = 2;
+        cfg.profiles[2].pages[0].buttons[0].action = ButtonAction::SwitchProfile { profile: 2 };
+        cfg.profiles[2].pages[0].buttons[1].action = ButtonAction::SwitchProfile { profile: 1 };
+        assert!(cfg.remove_profile(1));
+        assert_eq!(cfg.active_profile, 1);
+        assert_eq!(cfg.page().buttons[0].action, ButtonAction::None); // apontava para o perfil removido (id 2)
+        assert_eq!(
+            cfg.page().buttons[1].action,
+            ButtonAction::SwitchProfile { profile: 1 }
+        ); // perfil que continua existindo
+    }
+
+    #[test]
+    fn old_config_without_ui_settings_gets_the_defaults() {
+        let json = serde_json::to_string(&AppConfig::default())
+            .unwrap()
+            .replace(",\"ui\":{\"theme\":\"dark\",\"accent\":[0,229,255]}", "");
+        assert!(!json.contains("\"ui\""));
+        let cfg: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(cfg.ui, UiSettings::default());
+    }
+
+    #[test]
+    fn parses_action_with_defaults() {
+        let a: ButtonAction =
+            serde_json::from_str(r#"{"type":"http-webhook","url":"http://x"}"#).unwrap();
+        assert_eq!(
+            a,
+            ButtonAction::HttpWebhook {
+                url: "http://x".into(),
+                method: "GET".into(),
+                body: None
+            }
+        );
+    }
+
+    #[test]
+    fn default_long_press_is_500ms() {
+        let b: ButtonConfig = serde_json::from_str(
+            &serde_json::to_string(&ButtonConfig::blank())
+                .unwrap()
+                .replace("\"longPressThresholdMs\":500,", ""),
+        )
+        .unwrap();
+        assert_eq!(b.long_press_threshold_ms, 500);
+    }
+
+    #[test]
+    fn new_buttons_are_black() {
+        assert_eq!(
+            ButtonConfig::blank().appearance.background,
+            RGBAColor {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 255
+            }
+        );
+    }
+
+    #[test]
+    fn legacy_gray_background_is_migrated_to_black_and_other_colors_are_kept() {
+        let mut cfg = AppConfig::default();
+        let red = RGBAColor {
+            r: 200,
+            g: 10,
+            b: 10,
+            a: 255,
+        };
+        let buttons = &mut cfg.page_mut().buttons;
+        buttons[0].appearance.background = RGBAColor {
+            r: 30,
+            g: 30,
+            b: 30,
+            a: 255,
+        };
+        buttons[1].appearance.background = red;
+        let cfg = cfg.sanitized();
+        assert_eq!(
+            cfg.page().buttons[0].appearance.background,
+            BLANK_BACKGROUND
+        );
+        assert_eq!(cfg.page().buttons[1].appearance.background, red);
+    }
+}

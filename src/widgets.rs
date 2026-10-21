@@ -1,0 +1,254 @@
+//! Peças de desenho da interface: ícones, teclas do aparelho, pílulas, abas e rótulos de seção.
+use crate::theme::{readable_on, Palette};
+use eframe::egui::{
+    self, pos2, vec2, Align2, Color32, FontId, Painter, Pos2, Rect, Response, RichText, Rounding,
+    Stroke, Ui,
+};
+
+const KEY_RADIUS: f32 = 10.0;
+const SHINE_ALPHA: u8 = 5; // pré-multiplicado: soma poucos níveis de cor (from_white_alpha clareia demais)
+const MIN_LABEL_WIDTH: f32 = 60.0;
+const HUD_CORNER: f32 = 8.0;
+const PLUS_DIM: f32 = 0.35;
+const EMPTY_HINT_MIN_WIDTH: f32 = 80.0;
+const LETTER_GAP: char = '\u{2009}';
+const PILL_RADIUS: f32 = 12.0;
+const GLOW_LAYERS: [(f32, f32, f32); 3] = [(7.0, 5.0, 0.10), (4.5, 3.5, 0.22), (2.0, 2.0, 0.40)];
+
+/// O que uma tecla do aparelho mostra (fundo, ícone vetorial e rótulo).
+pub struct KeyView<'a> {
+    pub number: usize,
+    pub bg: Color32,
+    pub icon: Option<&'a str>,
+    pub label: &'a str,
+    pub text: Color32,
+    pub off: bool,
+    pub tex: Option<egui::TextureId>,
+}
+
+pub fn paint_icon(p: &Painter, center: Pos2, size: f32, name: &str, color: Color32) {
+    let scale = size / 24.0;
+    let origin = center - vec2(size / 2.0, size / 2.0);
+    let stroke = Stroke::new((scale * 1.9).max(1.2), color);
+    for line in crate::icons::strokes(name) {
+        let points: Vec<Pos2> = line
+            .iter()
+            .map(|(x, y)| origin + vec2(x * scale, y * scale))
+            .collect();
+        p.add(egui::Shape::line(points, stroke));
+    }
+}
+
+/// Halo neon: contornos translúcidos sobrepostos (o egui não tem blur).
+pub fn glow(p: &Painter, rect: Rect, round: f32, color: Color32) {
+    for (grow, width, strength) in GLOW_LAYERS {
+        p.rect_stroke(
+            rect.expand(grow),
+            Rounding::same(round + grow),
+            Stroke::new(width, color.gamma_multiply(strength)),
+        );
+    }
+}
+
+/// Cantos em "L" no estilo HUD.
+fn hud_corners(p: &Painter, rect: Rect, color: Color32) {
+    let (r, l) = (rect.shrink(5.0), HUD_CORNER);
+    let stroke = Stroke::new(1.2_f32, color);
+    for (corner, dx, dy) in [
+        (r.left_top(), 1.0, 1.0),
+        (r.right_top(), -1.0, 1.0),
+        (r.left_bottom(), 1.0, -1.0),
+        (r.right_bottom(), -1.0, -1.0),
+    ] {
+        p.line_segment([corner, corner + vec2(dx * l, 0.0)], stroke);
+        p.line_segment([corner, corner + vec2(0.0, dy * l)], stroke);
+    }
+}
+
+/// Espaça as letras com um espaço fino (o egui não tem espaçamento entre letras).
+pub fn spaced(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() * 2);
+    for (i, c) in text.chars().enumerate() {
+        if i > 0 && c != ' ' {
+            out.push(LETTER_GAP);
+        }
+        out.push(c);
+    }
+    out
+}
+
+fn lighten(c: Color32, amount: u8) -> Color32 {
+    Color32::from_rgb(
+        c.r().saturating_add(amount),
+        c.g().saturating_add(amount),
+        c.b().saturating_add(amount),
+    )
+}
+
+/// Desenha uma tecla do aparelho (tela acesa com brilho no alto, ou vazia).
+pub fn paint_key(
+    p: &Painter,
+    rect: Rect,
+    k: &KeyView,
+    hovered: bool,
+    selected: bool,
+    pal: &Palette,
+    accent: Color32,
+) {
+    let round = Rounding::same(KEY_RADIUS);
+    if k.off {
+        p.rect_filled(rect, round, pal.keyoff);
+        p.rect_stroke(
+            rect,
+            round,
+            Stroke::new(1.0_f32, Color32::from_white_alpha(14)),
+        );
+        hud_corners(
+            p,
+            rect,
+            accent.gamma_multiply(if hovered { 0.9 } else { 0.28 }),
+        );
+        let plus = accent.gamma_multiply(if hovered || selected { 1.0 } else { PLUS_DIM });
+        p.text(
+            rect.center(),
+            Align2::CENTER_CENTER,
+            "+",
+            FontId::monospace(22.0),
+            plus,
+        );
+        if selected && rect.width() >= EMPTY_HINT_MIN_WIDTH {
+            p.text(
+                rect.center() + vec2(0.0, 20.0),
+                Align2::CENTER_CENTER,
+                "Arraste uma ação",
+                FontId::proportional(10.5),
+                pal.muted,
+            );
+        }
+    } else if let Some(tex) = k.tex {
+        let mut shape = egui::epaint::RectShape::filled(rect, round, Color32::WHITE);
+        shape.fill_texture_id = tex;
+        shape.uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+        p.add(shape);
+        if hovered {
+            p.rect_stroke(
+                rect,
+                round,
+                Stroke::new(1.5_f32, accent.gamma_multiply(0.7)),
+            );
+        }
+    } else {
+        p.rect_filled(rect, round, if hovered { lighten(k.bg, 16) } else { k.bg });
+        let top = Rect::from_min_max(rect.min, pos2(rect.max.x, rect.center().y));
+        p.rect_filled(
+            top,
+            Rounding {
+                nw: KEY_RADIUS,
+                ne: KEY_RADIUS,
+                sw: 0.0,
+                se: 0.0,
+            },
+            Color32::from_rgba_premultiplied(SHINE_ALPHA, SHINE_ALPHA, SHINE_ALPHA, SHINE_ALPHA),
+        );
+    }
+    if rect.width() >= 56.0 {
+        let alpha = if k.off { 70 } else { 120 };
+        p.text(
+            rect.min + vec2(7.0, 5.0),
+            Align2::LEFT_TOP,
+            k.number,
+            FontId::monospace(10.0),
+            Color32::from_white_alpha(alpha),
+        );
+    }
+    if !k.off && k.tex.is_none() {
+        paint_key_content(p, rect, k);
+    }
+    if selected {
+        glow(p, rect, KEY_RADIUS, accent);
+        p.rect_stroke(rect, round, Stroke::new(2.5_f32, accent));
+    }
+}
+
+fn paint_key_content(p: &Painter, rect: Rect, k: &KeyView) {
+    let (cx, has_label) = (rect.center().x, !k.label.is_empty());
+    let icon = k.icon.filter(|n| !crate::icons::strokes(n).is_empty());
+    if let Some(name) = icon {
+        let size = rect.width() * 0.34;
+        let cy = if has_label {
+            rect.center().y - size * 0.18
+        } else {
+            rect.center().y
+        };
+        paint_icon(p, pos2(cx, cy), size, name, k.text);
+    }
+    if has_label && rect.width() >= MIN_LABEL_WIDTH {
+        let font = FontId::proportional((rect.width() * 0.13).clamp(10.0, 13.0));
+        let (pos, anchor) = if icon.is_some() {
+            (pos2(cx, rect.max.y - 8.0), Align2::CENTER_BOTTOM)
+        } else {
+            (rect.center(), Align2::CENTER_CENTER)
+        };
+        p.with_clip_rect(rect)
+            .text(pos, anchor, k.label, font, k.text);
+    }
+}
+
+/// Botão arredondado; o ativo usa a cor de destaque.
+pub fn pill(ui: &mut Ui, text: &str, active: bool, accent: Color32, pal: &Palette) -> Response {
+    let fg = if active {
+        readable_on(accent)
+    } else {
+        pal.muted
+    };
+    let fill = if active { accent } else { Color32::TRANSPARENT };
+    let stroke = Stroke::new(1.0_f32, if active { accent } else { pal.line });
+    let r = ui.add(
+        egui::Button::new(RichText::new(text).size(13.0).color(fg))
+            .fill(fill)
+            .stroke(stroke)
+            .rounding(Rounding::same(99.0))
+            .min_size(vec2(0.0, 24.0)),
+    );
+    if active {
+        glow(ui.painter(), r.rect, PILL_RADIUS, accent);
+    }
+    r
+}
+
+/// Aba com sublinhado na cor de destaque.
+pub fn tab(ui: &mut Ui, text: &str, on: bool, accent: Color32, pal: &Palette) -> Response {
+    let color = if on { pal.fg } else { pal.muted };
+    let r = ui.add(egui::Button::new(RichText::new(text).color(color)).frame(false));
+    if on {
+        let y = r.rect.bottom() + 1.0;
+        let span = [pos2(r.rect.left() + 6.0, y), pos2(r.rect.right() - 6.0, y)];
+        ui.painter()
+            .line_segment(span, Stroke::new(6.0_f32, accent.gamma_multiply(0.18)));
+        ui.painter()
+            .line_segment(span, Stroke::new(2.0_f32, accent));
+    }
+    r
+}
+
+/// Rótulo de seção em caixa alta monoespaçada.
+pub fn section(ui: &mut Ui, text: &str, pal: &Palette) {
+    ui.add_space(6.0);
+    ui.label(
+        RichText::new(spaced(&text.to_uppercase()))
+            .font(crate::theme::display_font(12.0))
+            .color(pal.muted),
+    );
+}
+
+/// Texto de tecla ao estilo "kbd".
+pub fn kbd(ui: &mut Ui, text: &str, pal: &Palette) {
+    egui::Frame::none()
+        .fill(pal.raise)
+        .stroke(Stroke::new(1.0_f32, pal.line))
+        .rounding(Rounding::same(5.0))
+        .inner_margin(egui::Margin::symmetric(8.0, 2.0))
+        .show(ui, |ui| {
+            ui.label(RichText::new(text.to_uppercase()).monospace().size(12.0))
+        });
+}
