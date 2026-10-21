@@ -8,6 +8,21 @@ use eframe::egui::{self, Align, Color32, Frame, Layout, Margin, RichText};
 const ACCENT_SWATCH_SIZE: f32 = TARGET_MIN;
 const ACCENT_SWATCH_GAP: f32 = 10.0;
 
+/// Campo de texto dentro de menu. O egui tira a borda dos widgets em menus; sem ela o campo some
+/// no fundo, então a borda de controle (3:1) é restaurada só para ele.
+fn menu_field(
+    ui: &mut egui::Ui,
+    text: &mut String,
+    label: egui::Id,
+    pal: &Palette,
+) -> egui::Response {
+    ui.scope(|ui| {
+        ui.visuals_mut().widgets.inactive.bg_stroke = egui::Stroke::new(1.0_f32, pal.control);
+        ui.text_edit_singleline(text).labelled_by(label)
+    })
+    .inner
+}
+
 impl App {
     pub(crate) fn top_bar(
         &mut self,
@@ -24,7 +39,7 @@ impl App {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(
-                        RichText::new(widgets::spaced("AKP153E"))
+                        RichText::new("AKP153E")
                             .font(theme::display_font(TITLE))
                             .strong(),
                     );
@@ -52,13 +67,14 @@ impl App {
         accent: Color32,
     ) {
         let mut prof = g.cfg.active_profile;
-        egui::ComboBox::from_id_salt("prof")
+        let combo = egui::ComboBox::from_id_salt("prof")
             .selected_text(g.cfg.profiles[prof].name.clone())
             .show_ui(ui, |ui| {
                 for (i, p) in g.cfg.profiles.iter().enumerate() {
                     ui.selectable_value(&mut prof, i, &p.name);
                 }
             });
+        widgets::name(&combo.response, "Perfil");
         if prof != g.cfg.active_profile {
             g.cfg.active_profile = prof;
             self.selected = 0;
@@ -81,10 +97,9 @@ impl App {
                 self.touch_nav();
             }
         }
-        if widgets::pill(ui, "+", false, accent, pal)
-            .on_hover_text("Nova página")
-            .clicked()
-        {
+        let add = widgets::pill(ui, "+", false, accent, pal);
+        widgets::name(&add, "Nova página");
+        if add.on_hover_text("Nova página").clicked() {
             g.cfg.profiles[prof].add_page(&format!("Página {}", pages + 1));
             self.touch();
         }
@@ -132,10 +147,14 @@ impl App {
         ui.menu_button("Gerenciar", |ui| {
             let prof = g.cfg.active_profile;
             let index = g.cfg.profiles[prof].active_page;
-            ui.label("Nome da página");
-            if ui
-                .text_edit_singleline(&mut g.cfg.profiles[prof].pages[index].name)
-                .changed()
+            let page_label = ui.label("Nome da página").id;
+            if menu_field(
+                ui,
+                &mut g.cfg.profiles[prof].pages[index].name,
+                page_label,
+                pal,
+            )
+            .changed()
             {
                 self.touch();
             }
@@ -162,11 +181,8 @@ impl App {
                 ui.close_menu();
             }
             ui.separator();
-            ui.label("Nome do perfil");
-            if ui
-                .text_edit_singleline(&mut g.cfg.profiles[prof].name)
-                .changed()
-            {
+            let profile_label = ui.label("Nome do perfil").id;
+            if menu_field(ui, &mut g.cfg.profiles[prof].name, profile_label, pal).changed() {
                 self.touch();
             }
             if ui.button("Novo perfil").clicked() {

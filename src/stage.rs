@@ -26,7 +26,13 @@ const TRAY_HOVER_TINT: f32 = 0.10;
 /// Nome que o leitor de tela anuncia: posição, o que a tecla mostra e se está selecionada.
 fn key_widget_info(index: usize, b: &ButtonConfig, selected: bool) -> egui::WidgetInfo {
     let shown = &b.current_appearance().text;
-    let what = if shown.is_empty() { "vazia" } else { shown };
+    let what = if crate::is_blank(b) {
+        "vazia"
+    } else if shown.is_empty() {
+        "sem texto"
+    } else {
+        shown
+    };
     egui::WidgetInfo::selected(
         egui::WidgetType::Button,
         true,
@@ -67,11 +73,12 @@ impl App {
                         ui.add_space(TAB_GAP);
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.add(
+                        let search = ui.add(
                             egui::TextEdit::singleline(&mut self.query)
                                 .hint_text(widgets::hint("Buscar ação", pal))
                                 .desired_width(200.0),
                         );
+                        widgets::name(&search, "Buscar ação");
                     });
                 });
                 let q = self.query.to_lowercase();

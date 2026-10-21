@@ -37,9 +37,6 @@ const REPAINT_EVERY: Duration = Duration::from_millis(100);
 const INSPECTOR_WIDTH: f32 = 300.0;
 const TAB_GAP: f32 = 10.0;
 const QUICK_BUTTON_PAD_X: f32 = 9.0;
-const FOCUS_RING_GAP: f32 = 2.0;
-const FOCUS_RING_RADIUS: f32 = 10.0;
-const FOCUS_RING_WIDTH: f32 = 2.0;
 const TAB_NAMES: [&str; 3] = ["Aparência", "Ação", "Estados"];
 
 struct App {
@@ -230,11 +227,12 @@ impl App {
             .collapsible(false)
             .default_width(360.0)
             .show(ctx, |ui| {
-                ui.add(
+                let search = ui.add(
                     egui::TextEdit::singleline(&mut self.picker.query)
                         .hint_text(widgets::hint("Buscar app", &pal))
                         .desired_width(ui.available_width()),
                 );
+                widgets::name(&search, "Buscar app");
                 let Some(list) = &self.picker.apps else {
                     ui.label("Procurando programas instalados…");
                     return;
@@ -325,7 +323,11 @@ impl App {
                 }
             }
             let clear = egui::Button::new(RichText::new("Limpar").color(pal.bad));
-            if ui.add(clear).on_hover_text("Esvazia este botão").clicked() {
+            let clear = ui.add(clear).on_hover_text("Esvazia este botão");
+            clear.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Limpar botão")
+            });
+            if clear.clicked() {
                 if let Some(b) = g.cfg.page_mut().buttons.get_mut(sel) {
                     *b = ButtonConfig::blank();
                     self.touch();
@@ -443,27 +445,6 @@ impl Drop for App {
     }
 }
 
-/// Anel de foco do teclado: traço sólido na cor do texto (contraste máximo nos dois temas),
-/// afastado do controle. Fica distinto de hover (tinta) e de seleção (brilho de destaque).
-fn focus_ring(ctx: &egui::Context, color: Color32) {
-    let Some(rect) = ctx
-        .memory(|m| m.focused())
-        .and_then(|id| ctx.read_response(id))
-        .map(|r| r.rect)
-    else {
-        return;
-    };
-    let painter = ctx.layer_painter(egui::LayerId::new(
-        egui::Order::Foreground,
-        egui::Id::new("focus_ring"),
-    ));
-    painter.rect_stroke(
-        rect.expand(FOCUS_RING_GAP),
-        Rounding::same(FOCUS_RING_RADIUS),
-        Stroke::new(FOCUS_RING_WIDTH, color),
-    );
-}
-
 fn c32(c: RGBAColor) -> Color32 {
     Color32::from_rgba_unmultiplied(c.r, c.g, c.b, c.a)
 }
@@ -549,7 +530,7 @@ impl eframe::App for App {
         self.tray(ctx, g, &pal, accent);
         self.inspector(ctx, g, &pal, accent);
         self.stage(ctx, g, &pal, accent);
-        focus_ring(ctx, pal.fg);
+        widgets::focus_ring(ctx);
         self.app_picker(ctx, g);
 
         if want_undo || want_redo {

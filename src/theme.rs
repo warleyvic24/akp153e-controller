@@ -307,6 +307,20 @@ mod tests {
     }
 
     #[test]
+    fn text_on_any_accent_the_user_can_pick_meets_aa() {
+        const STEP: usize = 15;
+        for r in (0..=255).step_by(STEP) {
+            for g in (0..=255).step_by(STEP) {
+                for b in (0..=255).step_by(STEP) {
+                    let bg = Color32::from_rgb(r as u8, g as u8, b as u8);
+                    let ratio = contrast(readable_on(bg), bg);
+                    assert!(ratio >= TEXT_MIN_CONTRAST, "{bg:?}: {ratio:.2}:1");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn accent_ink_is_visible_on_every_surface_of_both_themes() {
         for t in [Theme::Dark, Theme::Light] {
             let p = palette(t);

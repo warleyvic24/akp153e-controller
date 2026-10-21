@@ -2,13 +2,15 @@
 
 Regras para a interface do editor (egui). O código das escalas está em `src/tokens.rs`, as cores em
 `src/theme.rs` (`Palette`) e as peças reutilizáveis em `src/widgets.rs`. O que não está num teste é
-convenção: confira com os olhos nos dois temas antes de concluir (`AKP153E_PREVIEW_THEME=light`
-com `cargo run -- --editor`, só em debug, não grava nada).
+convenção: confira com os olhos nos dois temas antes de concluir. Só em build debug:
+`AKP153E_PREVIEW_THEME=light|dark` força o tema sem gravar, e `AKP153E_CONFIG_DIR=<pasta>` aponta o
+editor para uma cópia da config (com `config.json` dentro), para testar clicando, editando e
+excluindo sem tocar no arquivo real. O release não tem nenhum dos dois desvios.
 
 ## Princípios
 
 1. **Uma coisa brilha por vez.** O brilho (glow) significa "selecionado" (tecla) e nada mais. Hover é
-   tinta, foco é anel branco, ação primária é o único preenchimento sólido.
+   tinta, foco é anel de dois tons, ação primária é o único preenchimento sólido.
 2. **Estado nunca só por cor.** Conectado/Salvo/Falha levam texto; aba e pílula ativas levam traço ou
    contorno além da cor; o estado vai aos leitores de tela (`widget_info`).
 3. **O destaque é do usuário, a legibilidade não.** Qualquer cor de destaque tem de funcionar nos dois
@@ -59,8 +61,16 @@ espaçamento artificial entre letras (só o logotipo "AKP153E" o tem).
 - Teclas do palco e cartões da bandeja recebem foco por Tab; Enter e Espaço ativam. As setas movem o
   foco pela grade (navegação nativa do egui) e a seleção acompanha a tecla com foco.
 - Clicar numa tecla também dá foco (o egui só dá foco por Tab), para as setas funcionarem em seguida.
-- Anel de foco: traço de 2 px na cor do texto, afastado 2 px (`main::focus_ring`).
-- Teclas anunciam "Tecla N, rótulo|vazia" e se estão selecionadas; cartões anunciam o nome da ação.
+- Anel de foco: dois tons, branco por dentro e escuro por fora, 2 px cada, afastado 2 px
+  (`widgets::focus_ring`). Um anel só na cor do texto some sobre as teclas no tema claro.
+- Teclas anunciam "Tecla N, rótulo", "sem texto" (tem imagem ou ícone) ou "vazia", e se estão
+  selecionadas; cartões anunciam o nome da ação.
+- Todo campo tem nome: os do inspetor via `labelled_by` no rótulo da seção (`widgets::section`
+  devolve o id), os sem rótulo visível via `widgets::name` (Perfil, Buscar ação, Buscar app, Nova
+  página). Botões com o mesmo texto visível ganham nome falado único ("Limpar imagem", "Limpar
+  atalho", "Limpar botão"), sempre contendo o texto visível (WCAG 2.5.3).
+- Não use espaçamento artificial entre letras: o leitor soletra ("A K P 1 5 3 E").
+- Excluir página ou perfil não pede confirmação porque o desfazer (Ctrl+Z) cobre a exclusão.
 
 ## O que os testes impõem (`cargo test`)
 
@@ -69,13 +79,24 @@ temas; `control` ≥ 3:1; símbolos da tecla ≥ 4,5:1; `ink` ≥ 3:1 para todo 
 temas e inalterado no escuro; texto sobre cada destaque sugerido ≥ 4,5:1. Mudou a paleta e quebrou o
 contraste? O teste diz qual par.
 
+Também varre 4.096 cores de destaque e exige texto ≥ 4,5:1 sobre qualquer uma (preto ou branco,
+o que der mais contraste), então o seletor de cor livre é seguro para texto sobre o preenchimento.
+O destaque usado como traço ou ícone sempre passa por `ink`.
+
+## Como verificar a acessibilidade
+
+Com o editor aberto (debug), despeje a árvore do Windows UI Automation
+(`System.Windows.Automation`, `FromHandle` da janela, `FindAll(Descendants)`) e confira que cada
+`Edit`, `Slider`, `ComboBox` e `Button` tem `Name`. Foi assim que se achou o logotipo lido
+letra a letra e os campos sem nome. É um proxy do que um leitor de tela recebe, não substitui ouvir
+o NVDA ou o Narrador.
+
 ## Lacunas conhecidas
 
 - Textos em português fixos no código, sem camada de tradução. Os nomes padrão `Default` e `Page 1`
-  vêm do esquema da config (`schema.rs`) e continuam em inglês para não alterar arquivos existentes.
-- Não há teste automatizado de leitor de tela; os nomes acessíveis foram implementados, não ouvidos
-  num NVDA/Narrador.
-- O título da janela e da bandeja é "AJAZZ AKP153E" (`shell::WINDOW_TITLE`), o nome do fabricante.
-  A situação de marca não foi verificada; um app não oficial deveria ter nome próprio.
-- Contraste do texto sobre a cor de destaque escolhida livremente (seletor de cor) não é garantido;
-  só os destaques sugeridos são testados.
+  vêm do esquema da config (`schema.rs`) e continuam em inglês para não mexer em configs existentes.
+- Ninguém ouviu a interface num leitor de tela de verdade; só a árvore de acessibilidade foi
+  verificada. A caixa numérica embutida dos sliders continua sem nome (é interna do egui).
+- O nome da janela e da bandeja é "Controle AKP153E" (`shell::WINDOW_TITLE`), descritivo, sem a marca
+  do fabricante. Um nome e uma marca próprios continuam sendo decisão de produto. A pasta de config
+  `AJazz\AKP153E` e o texto do `CLAUDE.md` ainda citam o fabricante.

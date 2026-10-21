@@ -61,6 +61,7 @@ pub fn join_keys(keys: &[String]) -> String {
 pub fn list_field(
     ui: &mut egui::Ui,
     id: egui::Id,
+    label: egui::Id,
     items: &mut Vec<String>,
     parse: fn(&str) -> Vec<String>,
     join: fn(&[String]) -> String,
@@ -71,6 +72,7 @@ pub fn list_field(
     }
     let changed = ui
         .add(egui::TextEdit::singleline(&mut raw).desired_width(ui.available_width()))
+        .labelled_by(label)
         .changed();
     if changed {
         *items = parse(&raw);

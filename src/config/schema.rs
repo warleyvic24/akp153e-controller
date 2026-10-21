@@ -288,6 +288,12 @@ impl AppConfig {
             let dir = std::env::temp_dir().join(format!("akp153e-test-{}", std::process::id()));
             return Some(dir.join("config.json"));
         }
+        // Só em debug: permite testar a interface (inclusive editando e excluindo) numa cópia da
+        // config, sem tocar no arquivo real. O release não tem este desvio.
+        #[cfg(debug_assertions)]
+        if let Some(dir) = std::env::var_os("AKP153E_CONFIG_DIR") {
+            return Some(PathBuf::from(dir).join("config.json"));
+        }
         directories::BaseDirs::new().map(|d| {
             d.config_dir()
                 .join("AJazz")

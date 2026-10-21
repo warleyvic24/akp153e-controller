@@ -56,13 +56,14 @@ pub fn appearance_pane(
     accent: Color32,
 ) -> bool {
     let mut changed = false;
-    widgets::section(ui, "Rótulo", pal);
+    let label = widgets::section(ui, "Rótulo", pal);
     changed |= ui
         .add(
             egui::TextEdit::singleline(&mut b.appearance.text)
                 .hint_text(widgets::hint("Texto na tecla (ex.: Mudo)", pal))
                 .desired_width(ui.available_width()),
         )
+        .labelled_by(label)
         .changed();
     widgets::section(ui, "Cor do botão", pal);
     ui.horizontal_wrapped(|ui| {
@@ -129,7 +130,7 @@ pub fn appearance_pane(
             }
         }
     });
-    widgets::section(ui, "Imagem (PNG ou JPG)", pal);
+    let image_label = widgets::section(ui, "Imagem (PNG ou JPG)", pal);
     let mut path = b.appearance.icon_path.clone().unwrap_or_default();
     ui.horizontal(|ui| {
         let mut edited = ui
@@ -137,6 +138,7 @@ pub fn appearance_pane(
                 egui::TextEdit::singleline(&mut path)
                     .desired_width((ui.available_width() - IMAGE_FIELD_RESERVED).max(60.0)),
             )
+            .labelled_by(image_label)
             .changed();
         if ui.button("Escolher").clicked() {
             if let Some(p) = pick_icon() {
@@ -144,7 +146,12 @@ pub fn appearance_pane(
                 edited = true;
             }
         }
-        if ui.button("Limpar").clicked() {
+        let clear = ui.button("Limpar");
+        // O nome falado contém o texto visível (WCAG 2.5.3) e diz o que será limpo.
+        clear.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Limpar imagem")
+        });
+        if clear.clicked() {
             path.clear();
             edited = true;
         }
@@ -156,13 +163,14 @@ pub fn appearance_pane(
             changed = true;
         }
     });
-    widgets::section(ui, "Tamanho da fonte", pal);
+    let label = widgets::section(ui, "Tamanho da fonte", pal);
     fill_slider_width(ui);
     changed |= ui
         .add(egui::Slider::new(
             &mut b.appearance.font_size,
             8.0_f32..=48.0,
         ))
+        .labelled_by(label)
         .changed();
     changed
 }
@@ -223,10 +231,11 @@ pub fn states_pane(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette) -> bo
             .checkbox(&mut b.toggle_state, "Ver o estado ligado na prévia")
             .changed();
     }
-    widgets::section(ui, "Segurar a partir de", pal);
+    let label = widgets::section(ui, "Segurar a partir de", pal);
     fill_slider_width(ui);
     changed |= ui
         .add(egui::Slider::new(&mut b.long_press_threshold_ms, 100..=2000).suffix(" ms"))
+        .labelled_by(label)
         .changed();
     changed
 }
@@ -389,7 +398,7 @@ fn action_editor(
     });
     match a {
         ButtonAction::Hotkey { keys } => {
-            widgets::section(ui, "Atalho", pal);
+            let keys_label = widgets::section(ui, "Atalho", pal);
             ui.horizontal_wrapped(|ui| {
                 if keys.is_empty() {
                     ui.label(RichText::new("(vazio)").color(pal.muted));
@@ -419,7 +428,11 @@ fn action_editor(
                     if ui.button("● Gravar atalho").clicked() {
                         *rec = Some(id);
                     }
-                    if ui.button("Limpar").clicked() {
+                    let clear = ui.button("Limpar");
+                    clear.widget_info(|| {
+                        egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Limpar atalho")
+                    });
+                    if clear.clicked() {
                         keys.clear();
                         ch = true;
                     }
@@ -434,6 +447,7 @@ fn action_editor(
             ch |= textlist::list_field(
                 ui,
                 field_id,
+                keys_label,
                 keys,
                 textlist::parse_keys,
                 textlist::join_keys,
@@ -452,24 +466,27 @@ fn action_editor(
             }
         }
         ButtonAction::LaunchApp { path, args } => {
-            widgets::section(ui, "Programa (caminho ou nome)", pal);
+            let path_label = widgets::section(ui, "Programa (caminho ou nome)", pal);
             ch |= ui
                 .add(egui::TextEdit::singleline(path).desired_width(ui.available_width()))
+                .labelled_by(path_label)
                 .changed();
-            widgets::section(ui, "Argumentos", pal);
+            let args_label = widgets::section(ui, "Argumentos", pal);
             let field_id = ui.id().with((id, "args"));
             ch |= textlist::list_field(
                 ui,
                 field_id,
+                args_label,
                 args,
                 textlist::parse_args,
                 textlist::join_args,
             );
         }
         ButtonAction::HttpWebhook { url, method, body } => {
-            widgets::section(ui, "URL", pal);
+            let url_label = widgets::section(ui, "URL", pal);
             ch |= ui
                 .add(egui::TextEdit::singleline(url).desired_width(ui.available_width()))
+                .labelled_by(url_label)
                 .changed();
             widgets::section(ui, "Método", pal);
             ui.horizontal_wrapped(|ui| {
@@ -480,7 +497,7 @@ fn action_editor(
                     }
                 }
             });
-            widgets::section(ui, "Corpo da requisição", pal);
+            let body_label = widgets::section(ui, "Corpo da requisição", pal);
             let mut s = body.clone().unwrap_or_default();
             if ui
                 .add(
@@ -488,6 +505,7 @@ fn action_editor(
                         .desired_width(ui.available_width())
                         .desired_rows(3),
                 )
+                .labelled_by(body_label)
                 .changed()
             {
                 *body = (!s.is_empty()).then_some(s);

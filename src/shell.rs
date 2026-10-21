@@ -8,7 +8,7 @@ use std::time::Duration;
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
-pub const WINDOW_TITLE: &str = "AJAZZ AKP153E";
+pub const WINDOW_TITLE: &str = "Controle AKP153E";
 const SERVICE_ADDR: &str = "127.0.0.1:47153";
 const EDITOR_ADDR: &str = "127.0.0.1:47154";
 const IPC_TIMEOUT: Duration = Duration::from_millis(400);

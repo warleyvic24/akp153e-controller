@@ -8,12 +8,15 @@ use eframe::egui::{
 
 const KEY_RADIUS: f32 = radius::KEY;
 const PILL_ACTIVE_TINT: f32 = 0.22;
+const FOCUS_RING_GAP: f32 = 2.0;
+const FOCUS_RING_RADIUS: f32 = 10.0;
+const FOCUS_RING_WIDTH: f32 = 2.0;
+const FOCUS_RING_OUTER: Color32 = Color32::from_rgb(20, 24, 36);
 const KEY_NUMBER_ALPHA: u8 = 130; // 4,5:1 sobre o preto da tecla
 const SHINE_ALPHA: u8 = 5; // pré-multiplicado: soma poucos níveis de cor (from_white_alpha clareia demais)
 const MIN_LABEL_WIDTH: f32 = 60.0;
 const HUD_CORNER: f32 = 8.0;
 const EMPTY_HINT_MIN_WIDTH: f32 = 96.0; // a dica em 12 px não cabe em teclas menores
-const LETTER_GAP: char = '\u{2009}';
 const CHIP_FILL: f32 = 0.14;
 const CHIP_STROKE: f32 = 0.45;
 const SWATCH_HOVER_GROW: f32 = 1.5;
@@ -68,18 +71,6 @@ fn hud_corners(p: &Painter, rect: Rect, color: Color32) {
         p.line_segment([corner, corner + vec2(dx * l, 0.0)], stroke);
         p.line_segment([corner, corner + vec2(0.0, dy * l)], stroke);
     }
-}
-
-/// Espaça as letras com um espaço fino (o egui não tem espaçamento entre letras).
-pub fn spaced(text: &str) -> String {
-    let mut out = String::with_capacity(text.len() * 2);
-    for (i, c) in text.chars().enumerate() {
-        if i > 0 && c != ' ' {
-            out.push(LETTER_GAP);
-        }
-        out.push(c);
-    }
-    out
 }
 
 fn lighten(c: Color32, amount: u8) -> Color32 {
@@ -166,7 +157,7 @@ pub fn paint_key(
             rect.min + vec2(7.0, 5.0),
             Align2::LEFT_TOP,
             k.number,
-            FontId::monospace(11.0),
+            FontId::monospace(text::CAPTION),
             Color32::from_white_alpha(KEY_NUMBER_ALPHA),
         );
     }
@@ -251,13 +242,15 @@ pub fn tab(ui: &mut Ui, text: &str, on: bool, accent: Color32, pal: &Palette) ->
 
 /// Rótulo de seção em caixa alta. Sem espaçamento artificial entre letras: o espaço fino que
 /// simulava isso era lido letra por letra por leitores de tela e quebrava busca e cópia.
-pub fn section(ui: &mut Ui, text: &str, pal: &Palette) {
+/// Devolve o id do rótulo, para o campo que ele nomeia usar `labelled_by` (leitores de tela).
+pub fn section(ui: &mut Ui, text: &str, pal: &Palette) -> egui::Id {
     ui.add_space(space::XS + 2.0);
     ui.label(
         RichText::new(text.to_uppercase())
             .font(crate::theme::display_font(text::CAPTION))
             .color(pal.muted),
-    );
+    )
+    .id
 }
 
 /// Etiqueta de estado com ponto e fundo na própria cor (conectado, salvo...). O texto nunca fica
@@ -311,6 +304,40 @@ pub fn swatch(
         );
     }
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// Anel de foco do teclado em dois tons (branco por dentro, escuro por fora): aparece sobre qualquer
+/// fundo, inclusive as teclas, que são escuras nos dois temas (um anel só na cor do texto sumia no
+/// tema claro). Fica distinto de hover (tinta) e de seleção (brilho de destaque).
+pub fn focus_ring(ctx: &egui::Context) {
+    let Some(rect) = ctx
+        .memory(|m| m.focused())
+        .and_then(|id| ctx.read_response(id))
+        .map(|r| r.rect)
+    else {
+        return;
+    };
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new("focus_ring"),
+    ));
+    let inner = rect.expand(FOCUS_RING_GAP);
+    painter.rect_stroke(
+        inner.expand(FOCUS_RING_WIDTH),
+        Rounding::same(FOCUS_RING_RADIUS + FOCUS_RING_WIDTH),
+        Stroke::new(FOCUS_RING_WIDTH, FOCUS_RING_OUTER),
+    );
+    painter.rect_stroke(
+        inner,
+        Rounding::same(FOCUS_RING_RADIUS),
+        Stroke::new(FOCUS_RING_WIDTH, Color32::WHITE),
+    );
+}
+
+/// Nome falado de um controle que não tem rótulo visível ao lado (campo de busca, seletor).
+pub fn name(resp: &Response, label: &str) {
+    resp.ctx
+        .accesskit_node_builder(resp.id, |node| node.set_name(label));
 }
 
 /// Placeholder de campo. O tema força a cor do texto (`override_text_color`), o que deixava a dica
