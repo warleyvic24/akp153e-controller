@@ -14,7 +14,9 @@ const NAME_TOP: f32 = 38.0;
 const NAME_SIZE: (f32, f32) = (13.0, 11.0);
 const VALUE_TOP: f32 = 54.0;
 const VALUE_SIZE: (f32, f32) = (22.0, 14.0);
-const LABEL_TOP: f32 = 44.0;
+const LABEL_TOP: f32 = 40.0;
+const HINT_TOP: f32 = 60.0;
+const HINT_SIZE: (f32, f32) = (11.0, 9.0);
 const SIGN_ARM: f32 = 0.30;
 const SIGN_THICKNESS: f32 = 0.10;
 
@@ -69,7 +71,7 @@ const VALUE_MUTED_COLOR: RGBAColor = RGBAColor {
 
 pub fn render_mixer_key(key: &MixerKey, px: u32) -> RgbaImage {
     let scale = px as f32 / REFERENCE_PX;
-    let tile = matches!(key.face, KeyFace::App { .. } | KeyFace::Master);
+    let tile = matches!(key.face, KeyFace::App { .. });
     let background = match (tile, key.muted) {
         (true, true) => TILE_MUTED,
         (true, false) => TILE,
@@ -99,21 +101,30 @@ pub fn render_mixer_key(key: &MixerKey, px: u32) -> RgbaImage {
             );
             draw_value(&mut img, key, scale);
         }
-        KeyFace::Master => {
-            let icon = if key.muted { "mute" } else { "volup" };
-            draw_builtin(&mut img, icon, scale, VALUE_COLOR);
+        KeyFace::Home { more } => {
+            draw_builtin(
+                &mut img,
+                if *more { "next" } else { "prev" },
+                scale,
+                key.accent,
+            );
             draw_text(
                 &mut img,
                 &key.label,
-                NAME_TOP * scale,
+                LABEL_TOP * scale,
                 scale,
                 NAME_SIZE,
+                VALUE_COLOR,
+            );
+            draw_text(
+                &mut img,
+                &key.hint,
+                HINT_TOP * scale,
+                scale,
+                HINT_SIZE,
                 NAME_COLOR,
             );
-            draw_value(&mut img, key, scale);
         }
-        KeyFace::More => draw_labeled_icon(&mut img, "next", key, scale),
-        KeyFace::Back => draw_labeled_icon(&mut img, "prev", key, scale),
     }
     img
 }
@@ -187,18 +198,6 @@ fn draw_builtin(img: &mut RgbaImage, name: &str, scale: f32, color: RGBAColor) {
         (ICON_TOP * scale) + size / 2.0,
         size * 0.8,
         color,
-    );
-}
-
-fn draw_labeled_icon(img: &mut RgbaImage, icon: &str, key: &MixerKey, scale: f32) {
-    draw_builtin(img, icon, scale, key.accent);
-    draw_text(
-        img,
-        &key.label,
-        LABEL_TOP * scale,
-        scale,
-        NAME_SIZE,
-        NAME_COLOR,
     );
 }
 

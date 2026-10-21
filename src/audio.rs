@@ -2,7 +2,6 @@
 //! Cada chamada consulta o sistema de novo: as sessões mudam quando um app abre, fecha ou para de tocar.
 use windows::core::{Interface, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, BOOL, MAX_PATH, S_OK};
-use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::Media::Audio::{
     eConsole, eRender, AudioSessionStateActive, IAudioSessionControl2, IAudioSessionEnumerator,
     IAudioSessionManager2, IMMDevice, IMMDeviceEnumerator, ISimpleAudioVolume, MMDeviceEnumerator,
@@ -20,13 +19,6 @@ pub struct AudioSession {
     pub pid: u32,
     pub name: String,
     pub exe_path: Option<String>,
-    pub volume: f32,
-    pub muted: bool,
-}
-
-/// Volume e mudo do dispositivo de saída padrão.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct MasterVolume {
     pub volume: f32,
     pub muted: bool,
 }
@@ -195,28 +187,6 @@ pub fn set_session_mute(pid: u32, muted: bool) -> AudioResult<()> {
     })
 }
 
-fn endpoint() -> AudioResult<IAudioEndpointVolume> {
-    let device = default_device()?;
-    // SAFETY: interface COM obtida do dispositivo padrão.
-    unsafe { device.Activate(CLSCTX_ALL, None) }
-}
-
-pub fn master() -> AudioResult<MasterVolume> {
-    let endpoint = endpoint()?;
-    // SAFETY: `endpoint` é uma interface válida.
-    unsafe {
-        Ok(MasterVolume {
-            volume: endpoint.GetMasterVolumeLevelScalar()?,
-            muted: endpoint.GetMute()?.as_bool(),
-        })
-    }
-}
-
-pub fn set_master_mute(muted: bool) -> AudioResult<()> {
-    // SAFETY: igual a `set_master_volume`.
-    unsafe { endpoint()?.SetMute(BOOL::from(muted), std::ptr::null()) }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,8 +205,7 @@ mod tests {
     /// Fala com o áudio real do PC: rode com `cargo test audio -- --ignored --nocapture`.
     #[test]
     #[ignore]
-    fn lists_real_sessions_and_master() {
-        println!("master: {:?}", master());
+    fn lists_real_sessions() {
         for s in list_sessions() {
             println!("{s:?}");
         }

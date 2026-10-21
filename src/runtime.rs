@@ -164,12 +164,13 @@ impl Nav {
 pub struct Followup {
     nav: Option<Nav>,
     snapshot: Option<Snapshot>,
-    open_mixer: bool,
+    /// A ação pediu o mixer; guarda a tecla que o abriu, que vira "sair/mais".
+    open_mixer: Option<usize>,
 }
 
 impl Followup {
     /// A ação pediu o mixer: o serviço o abre depois de soltar o lock (ler o áudio é lento).
-    pub fn wants_mixer(&self) -> bool {
+    pub fn mixer_home(&self) -> Option<usize> {
         self.open_mixer
     }
 
@@ -211,7 +212,7 @@ fn persist(nav: &Nav) {
 }
 
 /// Executa a ação sob o lock; troca de página/perfil volta como `Followup` (gravar e redesenhar).
-fn dispatch(sh: &mut Shared, exec: &Executor, action: ButtonAction) -> Followup {
+fn dispatch(sh: &mut Shared, exec: &Executor, index: usize, action: ButtonAction) -> Followup {
     match action {
         ButtonAction::SwitchPage { page } => {
             let i = sh.cfg.active_profile;
@@ -229,7 +230,7 @@ fn dispatch(sh: &mut Shared, exec: &Executor, action: ButtonAction) -> Followup 
         }
         ButtonAction::OpenMixer => {
             return Followup {
-                open_mixer: true,
+                open_mixer: Some(index),
                 ..Followup::default()
             };
         }
@@ -241,7 +242,7 @@ fn dispatch(sh: &mut Shared, exec: &Executor, action: ButtonAction) -> Followup 
     Followup {
         nav: Nav::capture(sh),
         snapshot: Some(Snapshot::take(sh)),
-        open_mixer: false,
+        open_mixer: None,
     }
 }
 
@@ -271,7 +272,7 @@ pub fn trigger_locked(sh: &mut Shared, exec: &Executor, index: usize, held: Dura
     if toggles {
         sh.cfg.page_mut().buttons[index].toggle_state = !b.toggle_state;
     }
-    let mut followup = dispatch(sh, exec, action);
+    let mut followup = dispatch(sh, exec, index, action);
     if toggles && followup.snapshot.is_none() {
         followup.snapshot = Some(Snapshot::take(sh));
     }
@@ -297,11 +298,11 @@ pub fn spawn_status_poll(state: SharedState) {
 }
 
 /// Abre o mixer: lê o áudio sem o lock, publica a página e a desenha no aparelho.
-fn open_mixer(state: &SharedState, tx: &Sender<UsbCmd>) {
+fn open_mixer(state: &SharedState, tx: &Sender<UsbCmd>, home: usize) {
     let data = MixerData::load();
     let snapshot = {
         let mut sh = lock(state);
-        sh.mixer = Some(MixerView::new(data));
+        sh.mixer = Some(MixerView::new(data, home));
         Snapshot::take(&sh)
     };
     snapshot.render(tx);
@@ -322,13 +323,13 @@ fn refresh_mixer(state: &SharedState, tx: &Sender<UsbCmd>) {
 
 /// Com o mixer aberto, a tecla é dele: atualiza a página, redesenha e só então muda o volume no sistema.
 /// Devolve `false` se o mixer não está aberto (a tecla segue o caminho normal).
-fn press_mixer(state: &SharedState, tx: &Sender<UsbCmd>, index: usize) -> bool {
+fn press_mixer(state: &SharedState, tx: &Sender<UsbCmd>, index: usize, held: Duration) -> bool {
     let (effect, snapshot) = {
         let mut sh = lock(state);
         let Some(mixer) = sh.mixer.as_mut() else {
             return false;
         };
-        let effect = mixer.press(index);
+        let effect = mixer.press(index, held);
         if effect == MixerEffect::Close {
             sh.mixer = None;
         }
@@ -376,13 +377,13 @@ pub fn spawn(state: SharedState, tx: Sender<UsbCmd>, rx: Receiver<UsbEvent>, exe
                     if pressed {
                         down[index] = Some(Instant::now());
                     } else if let Some(since) = down[index].take() {
-                        if !press_mixer(&state, &tx, index) {
+                        if !press_mixer(&state, &tx, index, since.elapsed()) {
                             let followup =
                                 trigger_locked(&mut lock(&state), &exec, index, since.elapsed());
-                            let wants_mixer = followup.wants_mixer();
+                            let mixer_home = followup.mixer_home();
                             followup.run(&tx);
-                            if wants_mixer {
-                                open_mixer(&state, &tx);
+                            if let Some(home) = mixer_home {
+                                open_mixer(&state, &tx, home);
                             }
                         }
                     }
@@ -473,7 +474,7 @@ mod tests {
         let exec = Executor::new(tokio::runtime::Handle::current());
         let mut sh = two_page_state(ButtonAction::OpenMixer, None);
         let followup = trigger_locked(&mut sh, &exec, 0, Duration::ZERO);
-        assert!(followup.wants_mixer());
+        assert_eq!(followup.mixer_home(), Some(0));
         followup.run(&tx);
         assert_eq!(rx.try_iter().count(), 0);
         assert_eq!(sh.cfg.profiles[0].active_page, 0);
@@ -483,12 +484,12 @@ mod tests {
     fn open_mixer_replaces_the_page_on_the_keys_until_closed() {
         let (tx, rx) = channel();
         let state = Arc::new(Mutex::new(two_page_state(ButtonAction::None, None)));
-        lock(&state).mixer = Some(MixerView::new(MixerData::default()));
-        assert!(press_mixer(&state, &tx, 9));
+        lock(&state).mixer = Some(MixerView::new(MixerData::default(), 14));
+        assert!(press_mixer(&state, &tx, 9, Duration::ZERO));
         assert_eq!(rx.try_iter().count(), 15);
         assert!(lock(&state).mixer.is_some());
-        assert!(press_mixer(&state, &tx, 14));
+        assert!(press_mixer(&state, &tx, 14, Duration::ZERO));
         assert!(lock(&state).mixer.is_none());
-        assert!(!press_mixer(&state, &tx, 14));
+        assert!(!press_mixer(&state, &tx, 14, Duration::ZERO));
     }
 }
