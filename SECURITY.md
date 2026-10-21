@@ -6,4 +6,4 @@ Este programa roda só no seu PC e não envia dados a servidores próprios. Pont
 - **`config.json`** (`%APPDATA%\AJazz\AKP153E`): pode guardar URLs e corpos de webhook em texto puro, e caminhos de programas que serão executados. Quem escreve nesse arquivo já tem acesso à sua conta.
 - **Logs** (`akp153e.log`): URLs de webhook aparecem sem usuário, senha, query e fragmento.
 
-Para reportar uma vulnerabilidade, abra uma issue privada ou escreva ao mantenedor (veja o autor dos commits). Não publique detalhes antes de uma correção.
+Para reportar uma vulnerabilidade, use o relato privado do GitHub (aba Security, "Report a vulnerability") em vez de uma issue pública. Não publique detalhes antes de uma correção.

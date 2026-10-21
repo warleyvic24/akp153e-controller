@@ -1,6 +1,6 @@
 [package]
 name = "akp153e"
-description = "Open-source replacement for the AJAZZ AKP153E stream controller app"
+description = "Unofficial open-source controller software for the AJAZZ AKP153E stream controller"
 license = "MIT"
 repository = "https://github.com/warleyvic24/akp153e-controller"
 version = "0.1.0"

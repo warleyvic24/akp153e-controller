@@ -50,7 +50,10 @@ fn main() {
     fs::write(&path, ico()).expect("gravar akp153e.ico");
     let mut res = winresource::WindowsResource::new();
     res.set_icon(path.to_str().expect("caminho UTF-8"));
-    res.set("ProductName", "AJAZZ AKP153E");
-    res.set("FileDescription", "AJAZZ AKP153E controller");
+    res.set("ProductName", "AKP153E Open Controller");
+    res.set(
+        "FileDescription",
+        "Unofficial controller for the AKP153E stream controller",
+    );
     res.compile().expect("embutir recursos do Windows");
 }

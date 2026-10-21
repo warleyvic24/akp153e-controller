@@ -1,10 +1,12 @@
-# AJAZZ AKP153E Controller
+# AKP153E Open Controller
 
 [English](README.md) · [![CI](https://github.com/warleyvic24/akp153e-controller/actions/workflows/ci.yml/badge.svg)](https://github.com/warleyvic24/akp153e-controller/actions/workflows/ci.yml) · [Licença MIT](LICENSE)
 
-Substituto de código aberto, só para Windows, do aplicativo oficial do AJAZZ AKP153E (stream controller com 15 teclas LCD), escrito em Rust com egui/eframe.
+Software de controle não oficial, de código aberto e só para Windows, para o stream controller AJAZZ AKP153E (15 teclas LCD), escrito em Rust com egui/eframe. Substitui o aplicativo do fabricante e não contém código, firmware nem arquivos dele.
 
 > **Status: inicial (v0.1).** O desenho das teclas, o editor, as ações de app/webhook/atalho, o autostart e a bandeja estão verificados no aparelho real. Aperto e soltura físicos, pressão longa e as 3 teclas laterais **ainda não foram verificados** — veja [`evals/hardware-checklist.md`](evals/hardware-checklist.md). Este projeto não tem ligação com a AJAZZ.
+
+> **Sem afiliação.** Projeto independente, não feito, endossado nem suportado pela AJAZZ. "AJAZZ" e "AKP153E" são marcas ou nomes de produto dos respectivos donos e aparecem aqui só para dizer com qual aparelho o programa funciona.
 
 ## Como funciona
 
@@ -17,7 +19,7 @@ Um executável, dois modos:
 
 Outras opções: `--probe` (grava `akp153e_probe.txt`), `--run-action <json>`, `--autostart on|off`.
 
-O aparelho enumera como HID `0300:3010` e é tratado como protocolo v3. O protocolo vem de documentação pública, não de engenharia reversa própria.
+O aparelho enumera como HID `0300:3010` e é tratado como protocolo v3. O protocolo segue documentação publicamente disponível; este projeto não fez engenharia reversa do aplicativo oficial.
 
 ## Compilar
 
@@ -42,4 +44,4 @@ Issues e pull requests são bem-vindos. Leia o [`CLAUDE.md`](CLAUDE.md) (conven�
 
 ## Licença
 
-[MIT](LICENSE)
+[MIT](LICENSE). As licenças de terceiros estão em [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); gere de novo com `python tools/third_party_notices.py` ao mudar dependências.
