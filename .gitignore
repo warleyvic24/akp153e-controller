@@ -9,3 +9,7 @@ akp153e_probe.txt
 # Segredos
 .env
 .env.*
+
+# Release local
+/target-release
+/dist
