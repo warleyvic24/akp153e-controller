@@ -19,6 +19,7 @@ pub const ACCENTS: [(&str, [u8; 3]); 6] = [
 ];
 
 const HOVER_TINT: f32 = 0.16;
+const SHADOW_OFFSET_Y: f32 = 8.0;
 const CONTRAST_STEPS: u8 = 20;
 const DEVICE_FG: [u8; 3] = [176, 184, 210];
 const RAIL_TINT: f32 = 0.2;
@@ -227,7 +228,7 @@ pub fn apply(ctx: &Context, ui: &UiSettings) {
     v.window_rounding = egui::Rounding::same(radius::CARD);
     v.window_stroke = Stroke::new(1.0_f32, p.control);
     let shadow = egui::epaint::Shadow {
-        offset: vec2(0.0, 8.0),
+        offset: vec2(0.0, SHADOW_OFFSET_Y),
         blur: 24.0,
         spread: 0.0,
         color: Color32::from_black_alpha(if ui.theme == Theme::Dark { 150 } else { 45 }),

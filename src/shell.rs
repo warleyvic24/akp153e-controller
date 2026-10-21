@@ -164,15 +164,15 @@ fn tray_pixels() -> Vec<u8> {
 
 /// Cria o ícone da bandeja; deve rodar na thread que executará `message_loop`.
 pub fn create_tray() -> Option<TrayIcon> {
-    let open = MenuItem::with_id("open", "Abrir editor", true, None);
+    let open = MenuItem::with_id("open", crate::strings::t("Abrir editor"), true, None);
     let auto = CheckMenuItem::with_id(
         "autostart",
-        "Iniciar com o Windows",
+        crate::strings::t("Iniciar com o Windows"),
         true,
         autostart_enabled(),
         None,
     );
-    let quit = MenuItem::with_id("quit", "Sair", true, None);
+    let quit = MenuItem::with_id("quit", crate::strings::t("Sair"), true, None);
     let menu = Menu::new();
     menu.append_items(&[&open, &auto, &PredefinedMenuItem::separator(), &quit])
         .ok()?;

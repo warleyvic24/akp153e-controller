@@ -108,9 +108,11 @@ pub fn run(open_editor: bool) {
     let exec = Executor::new(rt.handle().clone());
     let (event_tx, event_rx) = channel();
     let (cmd_tx, cmd_rx) = channel();
-    usb::spawn(event_tx, cmd_rx);
+    // O brilho precisa estar definido antes da thread USB inicializar o aparelho.
     let cfg = AppConfig::load();
     usb::set_brightness(cfg.ui.brightness);
+    crate::strings::set_language(cfg.ui.language);
+    usb::spawn(event_tx, cmd_rx);
     let state = runtime::new_state(cfg, usb::ICON_SIZE as u32);
     runtime::spawn(state.clone(), cmd_tx.clone(), event_rx, exec);
     spawn_control_server(listener, state, cmd_tx);
@@ -189,6 +191,7 @@ fn handle(mut conn: TcpStream, state: &SharedState, tx: &Sender<UsbCmd>) {
         "reload" => {
             let cfg = AppConfig::load();
             let brightness = cfg.ui.brightness;
+            let language = cfg.ui.language;
             let (snapshot, brightness_changed) = {
                 let mut sh = runtime::lock(state);
                 let changed = sh.cfg.ui.brightness != brightness;
@@ -196,6 +199,8 @@ fn handle(mut conn: TcpStream, state: &SharedState, tx: &Sender<UsbCmd>) {
                 (runtime::Snapshot::take(&sh), changed)
             };
             usb::set_brightness(brightness);
+            // O menu da bandeja só muda de idioma quando o serviço reinicia; o resto vale já.
+            crate::strings::set_language(language);
             if brightness_changed {
                 let _ = tx.send(UsbCmd::Brightness(brightness));
             }

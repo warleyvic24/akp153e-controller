@@ -24,6 +24,7 @@ impl Toasts {
     /// Repetir o mesmo texto renova o aviso em vez de empilhar.
     pub fn push(&mut self, text: impl Into<String>, action: Option<&'static str>) {
         let text = text.into();
+        let text = crate::strings::t(&text).to_string();
         self.0.retain(|t| t.text != text);
         self.0.push(Toast {
             text,
@@ -32,6 +33,11 @@ impl Toasts {
         });
         let extra = self.0.len().saturating_sub(MAX_VISIBLE);
         self.0.drain(..extra);
+    }
+
+    /// Tira os avisos que oferecem "Desfazer": a edição a que se referiam já não é a última.
+    pub fn forget_undo(&mut self) {
+        self.0.retain(|t| t.action.is_none());
     }
 
     fn prune(&mut self, now: Instant) {
@@ -57,7 +63,7 @@ impl Toasts {
                             ui.horizontal(|ui| {
                                 ui.label(&t.text);
                                 if let Some(a) = t.action {
-                                    if ui.button(a).clicked() {
+                                    if ui.button(crate::strings::t(a)).clicked() {
                                         clicked = Some(i);
                                     }
                                 }
@@ -95,6 +101,16 @@ mod tests {
         }
         assert_eq!(t.0.len(), MAX_VISIBLE);
         assert_eq!(t.0.last().map(|x| x.text.as_str()), Some("aviso 4"));
+    }
+
+    #[test]
+    fn a_new_edit_withdraws_older_undo_offers_but_keeps_plain_messages() {
+        let mut t = Toasts::default();
+        t.push("Tecla 1 copiada", None);
+        t.push("Teclas trocadas", Some("Desfazer"));
+        t.forget_undo();
+        assert_eq!(t.0.len(), 1);
+        assert!(t.0[0].action.is_none());
     }
 
     #[test]

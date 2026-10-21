@@ -1,6 +1,7 @@
 //! Lista de programas instalados e extração de ícones em segundo plano.
 use crate::apps;
 use crate::config::schema::{ButtonAction, ButtonConfig, BLANK_BACKGROUND};
+use crate::strings::t;
 use eframe::egui;
 use std::sync::mpsc::{channel, Receiver, Sender};
 
@@ -79,10 +80,10 @@ pub fn apply_app(b: &mut ButtonConfig, app: &apps::InstalledApp, at: ButtonSlot,
 pub fn app_buttons(ui: &mut egui::Ui, b: &mut ButtonConfig, picker: &mut AppPicker) -> bool {
     let mut changed = false;
     ui.horizontal_wrapped(|ui| {
-        if ui.button("Escolher app instalado").clicked() {
+        if ui.button(t("Escolher app instalado")).clicked() {
             picker.show();
         }
-        if ui.button("Procurar .exe").clicked() {
+        if ui.button(t("Procurar .exe")).clicked() {
             let file = rfd::FileDialog::new()
                 .add_filter("Programa", &["exe"])
                 .pick_file();

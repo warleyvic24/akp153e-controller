@@ -1,5 +1,6 @@
 //! Editor da ação de um botão: escolha do tipo (atalho, app, web...) e os campos de cada tipo.
 use crate::config::schema::*;
+use crate::strings::{t, tf};
 use crate::theme::{self, Palette};
 use crate::tokens::text;
 use crate::{engine, textlist, widgets};
@@ -100,7 +101,7 @@ fn pick_target(
     let shown = options
         .iter()
         .find(|o| o.0 == *value)
-        .map_or("(escolha)".to_string(), |o| o.1.clone());
+        .map_or(t("(escolha)").to_string(), |o| o.1.clone());
     let combo = egui::ComboBox::from_id_salt((id, "dest"))
         .selected_text(shown)
         .show_ui(ui, |ui| {
@@ -221,7 +222,7 @@ fn hotkey_editor(
     let keys_label = widgets::section(ui, "Atalho", pal);
     ui.horizontal_wrapped(|ui| {
         if keys.is_empty() {
-            ui.label(RichText::new("(vazio)").color(pal.muted));
+            ui.label(RichText::new(t("(vazio)")).color(pal.muted));
         }
         for k in keys.iter() {
             widgets::kbd(ui, k, pal);
@@ -229,7 +230,7 @@ fn hotkey_editor(
     });
     let mut changed = hotkey_recorder(ui, cx, id, keys, rec);
     ui.label(
-        RichText::new("Digitar (ex: meta+d)")
+        RichText::new(t("Digitar (ex: meta+d)"))
             .size(text::CAPTION)
             .color(pal.muted),
     );
@@ -248,7 +249,7 @@ fn hotkey_editor(
         .filter(|k| !engine::actions::is_valid_key(k))
         .collect();
     if !invalid.is_empty() {
-        let msg = format!("Tecla desconhecida: {}", invalid.join(", "));
+        let msg = tf("Tecla desconhecida: {}", &[&invalid.join(", ")]);
         ui.label(RichText::new(msg).size(text::CAPTION).color(pal.bad));
     }
     changed
@@ -266,7 +267,7 @@ fn hotkey_recorder(
     if *rec == Some(id) {
         // Gravar não é erro: vermelho aqui diria "algo deu errado" a quem só digita um atalho.
         ui.label(
-            RichText::new("● Pressione as teclas… (Esc cancela)")
+            RichText::new(t("● Pressione as teclas… (Esc cancela)"))
                 .strong()
                 .color(theme::ink(cx.accent, cx.pal)),
         );
@@ -282,12 +283,12 @@ fn hotkey_recorder(
         return changed;
     }
     ui.horizontal(|ui| {
-        if ui.button("● Gravar atalho").clicked() {
+        if ui.button(t("● Gravar atalho")).clicked() {
             *rec = Some(id);
         }
-        let clear = ui.button("Limpar");
+        let clear = ui.button(t("Limpar"));
         clear.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Limpar atalho")
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, t("Limpar atalho"))
         });
         if clear.clicked() {
             keys.clear();

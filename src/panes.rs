@@ -2,11 +2,15 @@
 use crate::action_ui::{action_editor, PaneCtx};
 use crate::config::schema::*;
 use crate::picker::{app_buttons, AppPicker};
+use crate::strings::t;
 use crate::theme::Palette;
 use crate::{c32, icons, library, widgets};
 use eframe::egui::{self, vec2, Color32, Rounding, Sense, Stroke};
 const IMAGE_FIELD_RESERVED: f32 = 172.0;
 const SWATCH_SIZE: f32 = 26.0;
+const ICON_GAP: f32 = 6.0;
+const ICON_CELL: f32 = 40.0;
+const NO_ICON_FONT: f32 = 16.0;
 const SWATCH_RADIUS: f32 = 8.0;
 const SWATCH_GAP: f32 = 8.0;
 const SLIDER_VALUE_RESERVED: f32 = 72.0; // caixa numérica à direita do slider
@@ -20,7 +24,7 @@ fn fill_slider_width(ui: &mut egui::Ui) {
 
 fn pick_icon() -> Option<String> {
     rfd::FileDialog::new()
-        .add_filter("Imagem (PNG, JPG)", &["png", "jpg", "jpeg"])
+        .add_filter(t("Imagem (PNG, JPG)"), &["png", "jpg", "jpeg"])
         .pick_file()
         .map(|p| p.display().to_string())
 }
@@ -40,7 +44,7 @@ fn lit_variant(a: &ButtonAppearance) -> ButtonAppearance {
 
 fn color_picker(ui: &mut egui::Ui, label: &str, c: &mut RGBAColor) -> bool {
     let mut changed = false;
-    ui.label(label);
+    ui.label(t(label));
     let mut rgb = [c.r, c.g, c.b];
     if ui.color_edit_button_srgb(&mut rgb).changed() {
         (c.r, c.g, c.b) = (rgb[0], rgb[1], rgb[2]);
@@ -95,21 +99,25 @@ fn icon_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette, accent: 
     widgets::section(ui, "Ícone", pal);
     let ink = crate::theme::ink(accent, pal);
     ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+        ui.spacing_mut().item_spacing = vec2(ICON_GAP, ICON_GAP);
         let none_on = b.appearance.icon.is_none();
         let options = std::iter::once(("", "Sem ícone")).chain(icons::ICONS);
         for (id, name) in options {
-            let (rect, resp) = ui.allocate_exact_size(vec2(40.0, 40.0), Sense::click());
+            let (rect, resp) = ui.allocate_exact_size(vec2(ICON_CELL, ICON_CELL), Sense::click());
             let on = if id.is_empty() {
                 none_on
             } else {
                 b.appearance.icon.as_deref() == Some(id)
             };
             let p = ui.painter();
-            p.rect_filled(rect, Rounding::same(8.0), pal.field);
+            p.rect_filled(
+                rect,
+                Rounding::same(crate::tokens::radius::CONTROL),
+                pal.field,
+            );
             p.rect_stroke(
                 rect,
-                Rounding::same(8.0),
+                Rounding::same(crate::tokens::radius::CONTROL),
                 Stroke::new(
                     if on { 2.0_f32 } else { 1.0_f32 },
                     if on { ink } else { pal.control },
@@ -120,13 +128,13 @@ fn icon_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette, accent: 
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
                     "–",
-                    egui::FontId::monospace(16.0),
+                    egui::FontId::monospace(NO_ICON_FONT),
                     pal.muted,
                 );
             } else {
                 widgets::paint_icon(p, rect.center(), 20.0, id, if on { ink } else { pal.fg });
             }
-            if resp.on_hover_text(name).clicked() {
+            if resp.on_hover_text(t(name)).clicked() {
                 b.appearance.icon = (!id.is_empty()).then(|| id.to_string());
                 if !id.is_empty() {
                     b.appearance.icon_path = None;
@@ -150,16 +158,16 @@ fn image_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette) -> bool
             )
             .labelled_by(image_label)
             .changed();
-        if ui.button("Escolher").clicked() {
+        if ui.button(t("Escolher")).clicked() {
             if let Some(p) = pick_icon() {
                 path = p;
                 edited = true;
             }
         }
-        let clear = ui.button("Limpar");
+        let clear = ui.button(t("Limpar"));
         // O nome falado contém o texto visível (WCAG 2.5.3) e diz o que será limpo.
         clear.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Limpar imagem")
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, t("Limpar imagem"))
         });
         if clear.clicked() {
             path.clear();
@@ -220,7 +228,7 @@ pub fn action_pane(
     widgets::section(ui, "Ao segurar (opcional)", pal);
     let mut has_long = b.long_press_action.is_some();
     if ui
-        .checkbox(&mut has_long, "Ativar ação ao segurar")
+        .checkbox(&mut has_long, t("Ativar ação ao segurar"))
         .changed()
     {
         b.long_press_action = has_long.then_some(ButtonAction::None);
@@ -237,23 +245,23 @@ pub fn states_pane(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette) -> bo
     widgets::section(ui, "Alternar entre dois estados", pal);
     let mut has_toggle = b.toggled_appearance.is_some();
     if ui
-        .checkbox(&mut has_toggle, "Cada toque troca a aparência")
+        .checkbox(&mut has_toggle, t("Cada toque troca a aparência"))
         .changed()
     {
         b.toggled_appearance = has_toggle.then(|| lit_variant(&b.appearance));
         b.toggle_state = false;
         changed = true;
     }
-    if let Some(t) = b.toggled_appearance.as_mut() {
+    if let Some(lit) = b.toggled_appearance.as_mut() {
         ui.horizontal(|ui| {
-            ui.label("Ligado:");
+            ui.label(t("Ligado:"));
             changed |= ui
-                .add(egui::TextEdit::singleline(&mut t.text).desired_width(120.0))
+                .add(egui::TextEdit::singleline(&mut lit.text).desired_width(120.0))
                 .changed();
-            changed |= color_picker(ui, "Fundo", &mut t.background);
+            changed |= color_picker(ui, "Fundo", &mut lit.background);
         });
         changed |= ui
-            .checkbox(&mut b.toggle_state, "Ver o estado ligado na prévia")
+            .checkbox(&mut b.toggle_state, t("Ver o estado ligado na prévia"))
             .changed();
     }
     let label = widgets::section(ui, "Segurar a partir de", pal);

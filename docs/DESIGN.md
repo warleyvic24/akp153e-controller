@@ -69,6 +69,17 @@ espaçamento artificial entre letras (só o logotipo "AKP153E" o tem).
   (5 a 100 %, vai ao aparelho pelo `reload` que o salvamento já envia), reconectar, pasta de logs.
 - O chip de conexão abre um menu com Reconectar e a pasta de logs.
 
+## Idiomas (`src/strings.rs`)
+
+O texto em português é a chave: `t("Salvo")` e `tf("Tecla {} copiada", &[&n])` devolvem o original ou
+a tradução em inglês (tabela `EN`); o que falta cai em português. Os componentes (`section`, `pill`,
+`tab`, `hint`, `name`, `status_chip`) traduzem o próprio texto, então rótulos passados a eles não
+precisam de `t(...)`. Texto novo na interface: use `t`/`tf`, acrescente a entrada em `EN`. Um teste
+varre os arquivos-fonte e falha se algum texto usado não tiver tradução, ou se os `{}` não baterem.
+O idioma é escolhido em Preferências (`ui.language`, padrão português). O menu da bandeja pertence ao
+serviço e só muda de idioma quando ele reinicia. Nomes de dados do usuário (páginas, perfis) não
+são traduzidos.
+
 ## Teclado e leitores de tela
 
 - Teclas do palco e cartões da bandeja recebem foco por Tab; Enter e Espaço ativam. As setas movem o
@@ -113,8 +124,7 @@ o NVDA ou o Narrador.
 
 ## Lacunas conhecidas
 
-- Textos em português fixos no código, sem camada de tradução (decisão: constantes soltas não
-  traduzem nada; uma camada real exige chaves e escolha de idioma, trabalho à parte). Os nomes padrão `Default` e `Page 1`
+- Só português e inglês. O logotipo "AKP153E" e o título da janela não são traduzidos. Os nomes padrão `Default` e `Page 1`
   vêm do esquema da config (`schema.rs`) e continuam em inglês para não mexer em configs existentes.
 - Ninguém ouviu a interface num leitor de tela de verdade; só a árvore de acessibilidade foi
   verificada. A caixa numérica embutida dos sliders continua sem nome (é interna do egui).

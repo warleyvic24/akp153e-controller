@@ -8,11 +8,18 @@ use eframe::egui::{
 
 const KEY_RADIUS: f32 = radius::KEY;
 const PILL_ACTIVE_TINT: f32 = 0.22;
+const KBD_RADIUS: f32 = 5.0;
 const FOCUS_RING_GAP: f32 = 2.0;
 const FOCUS_RING_RADIUS: f32 = 10.0;
 const FOCUS_RING_WIDTH: f32 = 2.0;
 const FOCUS_RING_OUTER: Color32 = Color32::from_rgb(20, 24, 36);
 const KEY_NUMBER_ALPHA: u8 = 130; // 4,5:1 sobre o preto da tecla
+const KEY_NUMBER_MIN_WIDTH: f32 = 56.0;
+const KEY_NUMBER_OFFSET: egui::Vec2 = egui::Vec2::new(7.0, 5.0);
+const KEY_SELECTED_STROKE: f32 = 2.5;
+const KEY_HOVER_STROKE: f32 = 1.5;
+const EMPTY_RIM_ALPHA: u8 = 14;
+const EMPTY_HINT_OFFSET: f32 = 20.0;
 const SHINE_ALPHA: u8 = 5; // pré-multiplicado: soma poucos níveis de cor (from_white_alpha clareia demais)
 const MIN_LABEL_WIDTH: f32 = 60.0;
 const HUD_CORNER: f32 = 8.0;
@@ -91,70 +98,16 @@ pub fn paint_key(
     pal: &Palette,
     accent: Color32,
 ) {
-    let round = Rounding::same(KEY_RADIUS);
     if k.off {
-        p.rect_filled(rect, round, pal.keyoff);
-        p.rect_stroke(
-            rect,
-            round,
-            Stroke::new(1.0_f32, Color32::from_white_alpha(14)),
-        );
-        hud_corners(
-            p,
-            rect,
-            accent.gamma_multiply(if hovered { 0.9 } else { 0.28 }),
-        );
-        // O "+" é a única pista de que a tecla aceita uma ação: precisa de contraste, não de brilho.
-        let plus = if hovered || selected {
-            accent
-        } else {
-            pal.device_fg
-        };
-        p.text(
-            rect.center(),
-            Align2::CENTER_CENTER,
-            "+",
-            FontId::monospace(22.0),
-            plus,
-        );
-        if selected && rect.width() >= EMPTY_HINT_MIN_WIDTH {
-            p.text(
-                rect.center() + vec2(0.0, 20.0),
-                Align2::CENTER_CENTER,
-                "Arraste uma ação",
-                FontId::proportional(text::CAPTION),
-                pal.device_fg,
-            );
-        }
+        paint_empty_key(p, rect, hovered, selected, pal, accent);
     } else if let Some(tex) = k.tex {
-        let mut shape = egui::epaint::RectShape::filled(rect, round, Color32::WHITE);
-        shape.fill_texture_id = tex;
-        shape.uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
-        p.add(shape);
-        if hovered {
-            p.rect_stroke(
-                rect,
-                round,
-                Stroke::new(1.5_f32, accent.gamma_multiply(0.7)),
-            );
-        }
+        paint_image_key(p, rect, tex, hovered, accent);
     } else {
-        p.rect_filled(rect, round, if hovered { lighten(k.bg, 16) } else { k.bg });
-        let top = Rect::from_min_max(rect.min, pos2(rect.max.x, rect.center().y));
-        p.rect_filled(
-            top,
-            Rounding {
-                nw: KEY_RADIUS,
-                ne: KEY_RADIUS,
-                sw: 0.0,
-                se: 0.0,
-            },
-            Color32::from_rgba_premultiplied(SHINE_ALPHA, SHINE_ALPHA, SHINE_ALPHA, SHINE_ALPHA),
-        );
+        paint_plain_key(p, rect, k, hovered);
     }
-    if rect.width() >= 56.0 {
+    if rect.width() >= KEY_NUMBER_MIN_WIDTH {
         p.text(
-            rect.min + vec2(7.0, 5.0),
+            rect.min + KEY_NUMBER_OFFSET,
             Align2::LEFT_TOP,
             k.number,
             FontId::monospace(text::CAPTION),
@@ -166,8 +119,74 @@ pub fn paint_key(
     }
     if selected {
         glow(p, rect, KEY_RADIUS, accent);
-        p.rect_stroke(rect, round, Stroke::new(2.5_f32, accent));
+        p.rect_stroke(
+            rect,
+            Rounding::same(KEY_RADIUS),
+            Stroke::new(KEY_SELECTED_STROKE, accent),
+        );
     }
+}
+
+/// Tecla sem ação: fundo preto, cantos HUD e o "+" que convida a configurá-la.
+fn paint_empty_key(
+    p: &Painter,
+    rect: Rect,
+    hovered: bool,
+    selected: bool,
+    pal: &Palette,
+    accent: Color32,
+) {
+    let round = Rounding::same(KEY_RADIUS);
+    p.rect_filled(rect, round, pal.keyoff);
+    let rim = Stroke::new(1.0_f32, Color32::from_white_alpha(EMPTY_RIM_ALPHA));
+    p.rect_stroke(rect, round, rim);
+    let corners = if hovered { 0.9 } else { 0.28 };
+    hud_corners(p, rect, accent.gamma_multiply(corners));
+    // O "+" é a única pista de que a tecla aceita uma ação: precisa de contraste, não de brilho.
+    let plus = if hovered || selected {
+        accent
+    } else {
+        pal.device_fg
+    };
+    let plus_font = FontId::monospace(text::DISPLAY);
+    p.text(rect.center(), Align2::CENTER_CENTER, "+", plus_font, plus);
+    if selected && rect.width() >= EMPTY_HINT_MIN_WIDTH {
+        p.text(
+            rect.center() + vec2(0.0, EMPTY_HINT_OFFSET),
+            Align2::CENTER_CENTER,
+            crate::strings::t("Arraste uma ação"),
+            FontId::proportional(text::CAPTION),
+            pal.device_fg,
+        );
+    }
+}
+
+/// Tecla com a imagem exata que vai ao aparelho (renderizada em textura).
+fn paint_image_key(p: &Painter, rect: Rect, tex: egui::TextureId, hovered: bool, accent: Color32) {
+    let round = Rounding::same(KEY_RADIUS);
+    let mut shape = egui::epaint::RectShape::filled(rect, round, Color32::WHITE);
+    shape.fill_texture_id = tex;
+    shape.uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+    p.add(shape);
+    if hovered {
+        let stroke = Stroke::new(KEY_HOVER_STROKE, accent.gamma_multiply(0.7));
+        p.rect_stroke(rect, round, stroke);
+    }
+}
+
+/// Tecla só com cor de fundo (sem textura): clareia ao passar o mouse e leva um brilho no alto.
+fn paint_plain_key(p: &Painter, rect: Rect, k: &KeyView, hovered: bool) {
+    let fill = if hovered { lighten(k.bg, 16) } else { k.bg };
+    p.rect_filled(rect, Rounding::same(KEY_RADIUS), fill);
+    let top = Rect::from_min_max(rect.min, pos2(rect.max.x, rect.center().y));
+    let shine = Rounding {
+        nw: KEY_RADIUS,
+        ne: KEY_RADIUS,
+        sw: 0.0,
+        se: 0.0,
+    };
+    let a = SHINE_ALPHA;
+    p.rect_filled(top, shine, Color32::from_rgba_premultiplied(a, a, a, a));
 }
 
 fn paint_key_content(p: &Painter, rect: Rect, k: &KeyView) {
@@ -198,6 +217,7 @@ fn paint_key_content(p: &Painter, rect: Rect, k: &KeyView) {
 /// continua na cor normal: o preenchimento sólido é reservado à ação primária da tela ("Testar").
 /// Expõe o estado ativo aos leitores de tela (`selected`), que cor sozinha não transmite.
 pub fn pill(ui: &mut Ui, text: &str, active: bool, accent: Color32, pal: &Palette) -> Response {
+    let text = crate::strings::t(text);
     let ink = crate::theme::ink(accent, pal);
     let (fg, fill, stroke) = if active {
         (
@@ -228,6 +248,7 @@ pub fn pill(ui: &mut Ui, text: &str, active: bool, accent: Color32, pal: &Palett
 
 /// Aba com sublinhado na cor de destaque (2 px, 3:1 no mínimo sobre o fundo).
 pub fn tab(ui: &mut Ui, text: &str, on: bool, accent: Color32, pal: &Palette) -> Response {
+    let text = crate::strings::t(text);
     let color = if on { pal.fg } else { pal.muted };
     let r = ui.add(egui::Button::new(RichText::new(text).color(color)).frame(false));
     r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, on, text));
@@ -244,6 +265,7 @@ pub fn tab(ui: &mut Ui, text: &str, on: bool, accent: Color32, pal: &Palette) ->
 /// simulava isso era lido letra por letra por leitores de tela e quebrava busca e cópia.
 /// Devolve o id do rótulo, para o campo que ele nomeia usar `labelled_by` (leitores de tela).
 pub fn section(ui: &mut Ui, text: &str, pal: &Palette) -> egui::Id {
+    let text = crate::strings::t(text);
     ui.add_space(space::XS + 2.0);
     ui.label(
         RichText::new(text.to_uppercase())
@@ -256,6 +278,7 @@ pub fn section(ui: &mut Ui, text: &str, pal: &Palette) -> egui::Id {
 /// Etiqueta de estado com ponto e fundo na própria cor (conectado, salvo...). O texto nunca fica
 /// abaixo de 4,5:1 sobre o fundo tingido; o estado vai por escrito, não só pela cor.
 pub fn status_chip(ui: &mut Ui, label: &str, color: Color32) -> Response {
+    let label = crate::strings::t(label);
     let fill = crate::theme::mix(ui.visuals().panel_fill, color, CHIP_FILL);
     let ink = crate::theme::ensure_contrast(color, fill, TEXT_MIN_CONTRAST);
     egui::Frame::none()
@@ -337,13 +360,13 @@ pub fn focus_ring(ctx: &egui::Context) {
 /// Nome falado de um controle que não tem rótulo visível ao lado (campo de busca, seletor).
 pub fn name(resp: &Response, label: &str) {
     resp.ctx
-        .accesskit_node_builder(resp.id, |node| node.set_name(label));
+        .accesskit_node_builder(resp.id, |node| node.set_name(crate::strings::t(label)));
 }
 
 /// Placeholder de campo. O tema força a cor do texto (`override_text_color`), o que deixava a dica
 /// idêntica a um valor digitado; com cor própria (`muted`, 4,5:1) ela se distingue sem sumir.
 pub fn hint(text: &str, pal: &Palette) -> RichText {
-    RichText::new(text).color(pal.muted)
+    RichText::new(crate::strings::t(text)).color(pal.muted)
 }
 
 /// Texto de tecla ao estilo "kbd".
@@ -351,7 +374,7 @@ pub fn kbd(ui: &mut Ui, label: &str, pal: &Palette) {
     egui::Frame::none()
         .fill(pal.raise)
         .stroke(Stroke::new(1.0_f32, pal.line))
-        .rounding(Rounding::same(5.0))
+        .rounding(Rounding::same(KBD_RADIUS))
         .inner_margin(egui::Margin::symmetric(8.0, 2.0))
         .show(ui, |ui| {
             ui.label(

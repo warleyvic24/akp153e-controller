@@ -18,6 +18,7 @@ mod service;
 mod settings;
 mod shell;
 mod stage;
+mod strings;
 mod textlist;
 mod theme;
 mod toast;
@@ -102,6 +103,8 @@ impl App {
     fn touch(&mut self) {
         self.dirty = true;
         self.edited = true;
+        // O "Desfazer" de um aviso desfaz a última edição; depois de outra, ele enganaria.
+        self.toasts.forget_undo();
     }
 
     /// Aplica um preset da biblioteca (ação, ícone, rótulo e cor) ao botão indicado.
@@ -301,6 +304,7 @@ impl eframe::App for App {
         ctx.request_repaint_after(REPAINT_EVERY);
         if self.applied_ui.as_ref() != Some(&g.cfg.ui) {
             theme::apply(ctx, &g.cfg.ui);
+            strings::set_language(g.cfg.ui.language);
             self.applied_ui = Some(g.cfg.ui.clone());
         }
         let (pal, accent) = (

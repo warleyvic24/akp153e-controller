@@ -1,6 +1,7 @@
 //! Bandeja de ações e palco central (o aparelho desenhado com as teclas).
 use crate::config::schema::{ButtonAction, ButtonConfig};
 use crate::library::Preset;
+use crate::strings::{t, tf};
 use crate::theme::{self, Palette};
 use crate::tokens::{radius, space, text};
 use crate::{is_blank, key_view, runtime, widgets, App, TAB_GAP};
@@ -28,6 +29,8 @@ const SCREEN_RADIUS: f32 = 16.0;
 const LED_SIZE: egui::Vec2 = egui::Vec2::new(34.0, 3.0);
 const LED_TOP: f32 = 9.0;
 const LED_HALO: f32 = 3.0;
+const LED_HALO_RADIUS: f32 = 4.0;
+const LED_RADIUS: f32 = 2.0;
 
 /// O que está sendo arrastado: uma ação da bandeja ou o conteúdo de uma tecla.
 #[derive(Clone, Copy)]
@@ -63,9 +66,9 @@ fn device_size(key: f32, rows: usize, cols: usize) -> egui::Vec2 {
 fn key_widget_info(index: usize, b: &ButtonConfig, selected: bool) -> egui::WidgetInfo {
     let shown = &b.current_appearance().text;
     let what = if is_blank(b) {
-        "vazia"
+        t("vazia")
     } else if shown.is_empty() {
-        "sem texto"
+        t("sem texto")
     } else {
         shown
     };
@@ -73,7 +76,7 @@ fn key_widget_info(index: usize, b: &ButtonConfig, selected: bool) -> egui::Widg
         egui::WidgetType::Button,
         true,
         selected,
-        format!("Tecla {}, {what}", index + 1),
+        tf("Tecla {}, {}", &[&(index + 1), &what]),
     )
 }
 
@@ -98,16 +101,17 @@ fn paint_device_body(p: &egui::Painter, rect: Rect, pal: &Palette, accent: Color
     let led_rect = Rect::from_center_size(pos2(rect.center().x, rect.top() + LED_TOP), LED_SIZE);
     p.rect_filled(
         led_rect.expand(LED_HALO),
-        Rounding::same(4.0),
+        Rounding::same(LED_HALO_RADIUS),
         led.gamma_multiply(0.25),
     );
-    p.rect_filled(led_rect, Rounding::same(2.0), led);
+    p.rect_filled(led_rect, Rounding::same(LED_RADIUS), led);
 }
 
 /// Cartão da bandeja: ícone e nome da ação, com tinta ao passar o mouse.
 fn tray_card(ui: &mut Ui, p: &Preset, pal: &Palette, accent: Color32) -> egui::Response {
+    let label = t(p.label);
     let (rect, resp) = ui.allocate_exact_size(TRAY_CARD, Sense::click_and_drag());
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, p.label));
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
     let ink = theme::ink(accent, pal);
     let hovered = resp.hovered();
     let fill = if hovered {
@@ -125,7 +129,7 @@ fn tray_card(ui: &mut Ui, p: &Preset, pal: &Palette, accent: Color32) -> egui::R
     painter.text(
         pos2(rect.center().x, rect.bottom() - 11.0),
         egui::Align2::CENTER_CENTER,
-        p.label,
+        label,
         egui::FontId::proportional(text::BODY - 1.0),
         pal.fg,
     );
@@ -136,7 +140,7 @@ fn tray_card(ui: &mut Ui, p: &Preset, pal: &Palette, accent: Color32) -> egui::R
 fn custom_card(ui: &mut Ui, pal: &Palette, accent: Color32) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(TRAY_CARD, Sense::click());
     resp.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Ação personalizada")
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, true, t("Ação personalizada"))
     });
     let ink = theme::ink(accent, pal);
     let border = if resp.hovered() { ink } else { pal.control };
@@ -153,7 +157,7 @@ fn custom_card(ui: &mut Ui, pal: &Palette, accent: Color32) -> egui::Response {
     painter.text(
         pos2(rect.center().x, rect.bottom() - 11.0),
         egui::Align2::CENTER_CENTER,
-        "Personalizada",
+        t("Personalizada"),
         egui::FontId::proportional(text::CAPTION),
         pal.fg,
     );
@@ -171,7 +175,7 @@ fn empty_guide(ui: &mut Ui, pal: &Palette, accent: Color32, width: f32) {
         .inner_margin(Margin::same(space::MD))
         .show(ui, |ui| {
             ui.label(
-                RichText::new("COMECE POR AQUI")
+                RichText::new(t("COMECE POR AQUI"))
                     .font(theme::display_font(text::CAPTION))
                     .color(pal.muted),
             );
@@ -183,7 +187,7 @@ fn empty_guide(ui: &mut Ui, pal: &Palette, accent: Color32, width: f32) {
             for (n, step) in steps.iter().enumerate() {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(format!("{}", n + 1)).monospace().color(ink));
-                    ui.label(*step);
+                    ui.label(t(step));
                 });
             }
         });
@@ -258,7 +262,7 @@ impl App {
         ui.horizontal(|ui| {
             for (i, c) in cats.iter().enumerate() {
                 let on = i == self.tray_cat && self.query.is_empty();
-                if widgets::tab(ui, &c.to_uppercase(), on, accent, pal).clicked() {
+                if widgets::tab(ui, &t(c).to_uppercase(), on, accent, pal).clicked() {
                     self.tray_cat = i;
                     self.query.clear();
                 }
@@ -357,7 +361,7 @@ impl App {
         } else {
             let hint = "Clique para editar · arraste uma ação da bandeja · arraste entre teclas para trocar";
             ui.label(
-                RichText::new(hint)
+                RichText::new(t(hint))
                     .monospace()
                     .size(text::CAPTION)
                     .color(pal.muted),

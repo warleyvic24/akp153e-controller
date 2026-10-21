@@ -171,6 +171,15 @@ pub enum Theme {
     Light,
 }
 
+/// Idioma da interface.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Language {
+    #[default]
+    Pt,
+    En,
+}
+
 /// Preferências do editor. Tema e destaque só afetam a janela; `brightness` (0 a 100) vai ao aparelho.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UiSettings {
@@ -179,6 +188,9 @@ pub struct UiSettings {
     /// Ausente em configs antigas: assume o brilho máximo, o que o aparelho já usava.
     #[serde(default = "default_brightness")]
     pub brightness: u8,
+    /// Ausente em configs antigas: português, o idioma que a interface sempre teve.
+    #[serde(default)]
+    pub language: Language,
 }
 
 fn default_brightness() -> u8 {
@@ -191,6 +203,7 @@ impl Default for UiSettings {
             theme: Theme::Dark,
             accent: [0, 229, 255],
             brightness: default_brightness(),
+            language: Language::default(),
         }
     }
 }
@@ -677,7 +690,7 @@ mod tests {
         let json = serde_json::to_string(&AppConfig::default())
             .unwrap()
             .replace(
-                ",\"ui\":{\"theme\":\"dark\",\"accent\":[0,229,255],\"brightness\":100}",
+                ",\"ui\":{\"theme\":\"dark\",\"accent\":[0,229,255],\"brightness\":100,\"language\":\"pt\"}",
                 "",
             );
         assert!(!json.contains("\"ui\""));

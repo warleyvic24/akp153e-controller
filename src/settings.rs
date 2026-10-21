@@ -1,5 +1,6 @@
 //! Janela de Preferências: tema, destaque, início com o Windows, brilho do aparelho e diagnóstico.
-use crate::config::schema::{AppConfig, Theme};
+use crate::config::schema::{AppConfig, Language, Theme};
+use crate::strings::{t, tf};
 use crate::theme::{self, Palette};
 use crate::tokens::{text, TARGET_MIN};
 use crate::{runtime, shell, widgets, App};
@@ -41,7 +42,7 @@ impl App {
             return;
         }
         let mut open = true;
-        let title = RichText::new("Preferências").size(text::BODY).strong();
+        let title = RichText::new(t("Preferências")).size(text::BODY).strong();
         egui::Window::new(title)
             .open(&mut open)
             .collapsible(false)
@@ -49,6 +50,7 @@ impl App {
             .default_width(WINDOW_WIDTH)
             .show(ctx, |ui| {
                 self.theme_section(ui, g, pal);
+                self.language_section(ui, g, pal);
                 self.startup_section(ui, pal);
                 self.device_section(ui, g, pal);
                 self.about_section(ui, pal);
@@ -89,10 +91,25 @@ impl App {
         });
     }
 
+    fn language_section(&mut self, ui: &mut egui::Ui, g: &mut runtime::Shared, pal: &Palette) {
+        let accent = theme::accent_color(&g.cfg.ui);
+        widgets::section(ui, "Idioma", pal);
+        ui.horizontal(|ui| {
+            // Nomes dos idiomas ficam no próprio idioma, para quem não lê o atual achá-los.
+            for (value, name) in [(Language::Pt, "Português"), (Language::En, "English")] {
+                let on = g.cfg.ui.language == value;
+                if widgets::pill(ui, name, on, accent, pal).clicked() && !on {
+                    g.cfg.ui.language = value;
+                    self.dirty = true;
+                }
+            }
+        });
+    }
+
     fn startup_section(&mut self, ui: &mut egui::Ui, pal: &Palette) {
         widgets::section(ui, "Inicialização", pal);
         let before = self.autostart;
-        ui.checkbox(&mut self.autostart, "Iniciar com o Windows");
+        ui.checkbox(&mut self.autostart, t("Iniciar com o Windows"));
         if self.autostart != before {
             let on = self.autostart;
             // O registro pode demorar: fora da thread da interface, como faz a bandeja.
@@ -110,21 +127,21 @@ impl App {
             self.dirty = true;
         }
         let note = if g.connected {
-            "Aplica no aparelho ao salvar."
+            t("Aplica no aparelho ao salvar.")
         } else {
-            "Sem aparelho conectado: vale a partir da próxima conexão."
+            t("Sem aparelho conectado: vale a partir da próxima conexão.")
         };
         ui.label(RichText::new(note).size(text::CAPTION).color(pal.muted));
     }
 
     fn about_section(&self, ui: &mut egui::Ui, pal: &Palette) {
         widgets::section(ui, "Diagnóstico", pal);
-        ui.label(format!("Versão {}", env!("CARGO_PKG_VERSION")));
+        ui.label(tf("Versão {}", &[&env!("CARGO_PKG_VERSION")]));
         ui.horizontal(|ui| {
-            if ui.button("Reconectar").clicked() {
+            if ui.button(t("Reconectar")).clicked() {
                 let _ = shell::send("reconnect");
             }
-            if ui.button("Abrir pasta de logs").clicked() {
+            if ui.button(t("Abrir pasta de logs")).clicked() {
                 open_log_folder();
             }
         });
