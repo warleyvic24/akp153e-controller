@@ -80,7 +80,7 @@ impl App {
                 let fill = Color32::from_rgb(rgb[0], rgb[1], rgb[2]);
                 let on = g.cfg.ui.accent == rgb;
                 let size = TARGET_MIN;
-                if widgets::swatch(ui, size, size / 2.0, fill, on, pal.fg)
+                if widgets::swatch(ui, size, size / 2.0, fill, on, pal.fg, t(name))
                     .on_hover_text(name)
                     .clicked()
                 {

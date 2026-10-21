@@ -223,22 +223,7 @@ impl App {
                 }
                 // Barra de rolagem sólida: a flutuante some e esconde que há mais cartões.
                 ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
-                egui::ScrollArea::horizontal().show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        for i in shown {
-                            let resp = tray_card(ui, &self.presets[i], pal, accent);
-                            if resp.clicked() {
-                                picked = Some(i);
-                            }
-                            if resp.drag_started() {
-                                egui::DragAndDrop::set_payload(ctx, Dragged::Preset(i));
-                            }
-                        }
-                        if self.query.is_empty() {
-                            custom = custom_card(ui, pal, accent).clicked();
-                        }
-                    });
-                });
+                (picked, custom) = self.tray_cards(ui, ctx, &shown, pal, accent);
             });
         if let Some(i) = picked {
             self.apply_preset(g, self.selected, i);
@@ -246,6 +231,35 @@ impl App {
         if custom {
             self.apply_custom_action(g);
         }
+    }
+
+    /// Cartões rolantes da bandeja. Devolve a ação clicada e se "Personalizada" foi clicada.
+    fn tray_cards(
+        &self,
+        ui: &mut Ui,
+        ctx: &egui::Context,
+        shown: &[usize],
+        pal: &Palette,
+        accent: Color32,
+    ) -> (Option<usize>, bool) {
+        let (mut picked, mut custom) = (None, false);
+        egui::ScrollArea::horizontal().show(ui, |ui| {
+            ui.horizontal(|ui| {
+                for &i in shown {
+                    let resp = tray_card(ui, &self.presets[i], pal, accent);
+                    if resp.clicked() {
+                        picked = Some(i);
+                    }
+                    if resp.drag_started() {
+                        egui::DragAndDrop::set_payload(ctx, Dragged::Preset(i));
+                    }
+                }
+                if self.query.is_empty() {
+                    custom = custom_card(ui, pal, accent).clicked();
+                }
+            });
+        });
+        (picked, custom)
     }
 
     fn tray_categories(&self) -> Vec<&'static str> {

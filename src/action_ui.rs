@@ -1,6 +1,6 @@
 //! Editor da ação de um botão: escolha do tipo (atalho, app, web...) e os campos de cada tipo.
 use crate::config::schema::*;
-use crate::strings::{t, tf};
+use crate::strings::{display_name, t, tf};
 use crate::theme::{self, Palette};
 use crate::tokens::text;
 use crate::{engine, textlist, widgets};
@@ -25,12 +25,12 @@ impl Targets {
         let pages = cfg.profiles[cfg.active_profile]
             .pages
             .iter()
-            .map(|p| (p.id, p.name.clone()))
+            .map(|p| (p.id, display_name(&p.name)))
             .collect();
         let profiles = cfg
             .profiles
             .iter()
-            .map(|p| (p.id, p.name.clone()))
+            .map(|p| (p.id, display_name(&p.name)))
             .collect();
         Self { pages, profiles }
     }

@@ -188,6 +188,40 @@ impl App {
         }
     }
 
+    /// Desfaz/refaz a pedido, ou registra no histórico a edição feita neste quadro.
+    fn track_history(
+        &mut self,
+        g: &mut runtime::Shared,
+        before: AppConfig,
+        want_undo: bool,
+        want_redo: bool,
+    ) {
+        if want_undo || want_redo {
+            let current = g.cfg.clone();
+            let restored = if want_undo {
+                self.history.undo(current)
+            } else {
+                self.history.redo(current)
+            };
+            if let Some(cfg) = restored {
+                let ui_settings = g.cfg.ui.clone(); // tema não entra no desfazer
+                g.cfg = cfg.sanitized();
+                g.cfg.ui = ui_settings;
+                self.selected = self.selected.min(g.cfg.page().buttons.len() - 1);
+                self.nav_dirty = true;
+                self.dirty = true;
+            }
+            self.baseline = Some(g.cfg.clone());
+        } else if g.cfg != before {
+            if self.edited {
+                self.history.record(before, Instant::now());
+            }
+            self.baseline = Some(g.cfg.clone());
+        } else {
+            self.baseline = Some(before);
+        }
+    }
+
     fn read_undo_keys(&self, ctx: &egui::Context) -> (bool, bool) {
         let (mut undo, mut redo) = (false, false);
         if self.recording.is_none() && !ctx.wants_keyboard_input() {
@@ -325,30 +359,7 @@ impl eframe::App for App {
         self.settings_window(ctx, g, &pal);
         want_undo |= self.toasts.show(ctx, &pal);
 
-        if want_undo || want_redo {
-            let current = g.cfg.clone();
-            let restored = if want_undo {
-                self.history.undo(current)
-            } else {
-                self.history.redo(current)
-            };
-            if let Some(cfg) = restored {
-                let ui_settings = g.cfg.ui.clone(); // tema não entra no desfazer
-                g.cfg = cfg.sanitized();
-                g.cfg.ui = ui_settings;
-                self.selected = self.selected.min(g.cfg.page().buttons.len() - 1);
-                self.nav_dirty = true;
-                self.dirty = true;
-            }
-            self.baseline = Some(g.cfg.clone());
-        } else if g.cfg != before {
-            if self.edited {
-                self.history.record(before, Instant::now());
-            }
-            self.baseline = Some(g.cfg.clone());
-        } else {
-            self.baseline = Some(before);
-        }
+        self.track_history(g, before, want_undo, want_redo);
         self.edited = false;
     }
 }
@@ -599,7 +610,8 @@ mod tests {
                 for (_, node) in update.nodes {
                     let named = node.name().is_some_and(|n| !n.trim().is_empty())
                         || !node.labelled_by().is_empty();
-                    if checked.contains(&node.role()) && !named {
+                    let clickable = node.supports_action(egui::accesskit::Action::Default);
+                    if (checked.contains(&node.role()) || clickable) && !named {
                         unnamed.push(format!("aba {tab}, {action:?}: {:?}", node.role()));
                     }
                 }
@@ -611,6 +623,45 @@ mod tests {
             unnamed.is_empty(),
             "controles sem nome:\n{}",
             unnamed.join("\n")
+        );
+    }
+
+    /// O egui só cria o nó de acessibilidade de um controle que declara nome; um controle clicável
+    /// desenhado à mão sem `widget_info` nem `widgets::name` some da árvore e o teste de nomes
+    /// acima não o enxerga. Por isso este teste olha o código: cada `Sense::click` precisa ser
+    /// seguido, nas linhas seguintes, de uma declaração de nome.
+    #[test]
+    fn every_hand_drawn_clickable_declares_an_accessible_name() {
+        const LOOKAHEAD: usize = 14;
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut missing = Vec::new();
+        for entry in std::fs::read_dir(dir).unwrap().flatten() {
+            let path = entry.path();
+            let file = path.file_name().unwrap().to_string_lossy().to_string();
+            if !file.ends_with(".rs") {
+                continue;
+            }
+            let src = std::fs::read_to_string(&path).unwrap();
+            let src = &src[..src.find("#[cfg(test)]").unwrap_or(src.len())];
+            let lines: Vec<&str> = src.lines().collect();
+            for (i, line) in lines.iter().enumerate() {
+                let draws = line.contains("Sense::click") && !line.trim_start().starts_with("//");
+                if !draws {
+                    continue;
+                }
+                let window = &lines[i..(i + LOOKAHEAD).min(lines.len())];
+                let named = window
+                    .iter()
+                    .any(|l| l.contains("widget_info") || l.contains("widgets::name("));
+                if !named {
+                    missing.push(format!("{file}:{}", i + 1));
+                }
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "clicável sem nome acessível:\n{}",
+            missing.join("\n")
         );
     }
 }

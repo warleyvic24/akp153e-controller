@@ -305,8 +305,10 @@ pub fn swatch(
     fill: Color32,
     selected: bool,
     ring: Color32,
+    name: &str,
 ) -> Response {
     let (rect, resp) = ui.allocate_exact_size(vec2(size, size), egui::Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, selected, name));
     let body = if resp.hovered() {
         rect.expand(SWATCH_HOVER_GROW)
     } else {

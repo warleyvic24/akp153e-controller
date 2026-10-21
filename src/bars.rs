@@ -1,5 +1,5 @@
 //! Barras do editor: topo (estado, perfis, páginas, menus) e rodapé (desfazer/refazer).
-use crate::strings::{t, tf};
+use crate::strings::{display_name, t, tf};
 use crate::theme::Palette;
 use crate::tokens::text::TITLE;
 use crate::{runtime, settings, shell, theme, widgets, App};
@@ -117,10 +117,10 @@ impl App {
     ) {
         let mut prof = g.cfg.active_profile;
         let combo = egui::ComboBox::from_id_salt("prof")
-            .selected_text(g.cfg.profiles[prof].name.clone())
+            .selected_text(display_name(&g.cfg.profiles[prof].name))
             .show_ui(ui, |ui| {
                 for (i, p) in g.cfg.profiles.iter().enumerate() {
-                    ui.selectable_value(&mut prof, i, &p.name);
+                    ui.selectable_value(&mut prof, i, display_name(&p.name));
                 }
             });
         widgets::name(&combo.response, "Perfil");
@@ -135,7 +135,7 @@ impl App {
                 self.rename_editor(ui, g, prof);
                 continue;
             }
-            let name = g.cfg.profiles[prof].pages[i].name.clone();
+            let name = display_name(&g.cfg.profiles[prof].pages[i].name);
             let active = g.cfg.profiles[prof].active_page == i;
             let resp = widgets::pill(ui, &name, active, accent, pal);
             if resp.clicked() {

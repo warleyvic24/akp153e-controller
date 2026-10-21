@@ -173,36 +173,21 @@ impl App {
         let sel = self.selected;
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().button_padding.x = QUICK_BUTTON_PAD_X;
-            let test = egui::Button::new(
-                RichText::new(t("Testar"))
-                    .strong()
-                    .color(theme::readable_on(accent)),
-            )
-            .fill(accent);
-            let test = ui.add(test.stroke(Stroke::new(1.0_f32, theme::ink(accent, pal))));
-            if test.clicked() {
-                runtime::trigger(g, &self.tx, &self.exec, sel, Duration::ZERO);
-                self.toasts
-                    .push(tf("Tecla {} testada", &[&(sel + 1)]), None);
+            let label = RichText::new(t("Testar"))
+                .strong()
+                .color(theme::readable_on(accent));
+            let test = egui::Button::new(label)
+                .fill(accent)
+                .stroke(Stroke::new(1.0_f32, theme::ink(accent, pal)));
+            if ui.add(test).clicked() {
+                self.test_key(g, sel);
             }
             if ui.button(t("Copiar")).clicked() {
-                self.clipboard = g.cfg.page().buttons.get(sel).cloned();
-                self.toasts
-                    .push(tf("Tecla {} copiada", &[&(sel + 1)]), None);
+                self.copy_key(g, sel);
             }
-            if ui
-                .add_enabled(self.clipboard.is_some(), egui::Button::new(t("Colar")))
-                .clicked()
-            {
-                if let (Some(c), Some(b)) = (
-                    self.clipboard.clone(),
-                    g.cfg.page_mut().buttons.get_mut(sel),
-                ) {
-                    *b = c;
-                    self.touch();
-                    self.toasts
-                        .push(tf("Colado na tecla {}", &[&(sel + 1)]), Some("Desfazer"));
-                }
+            let paste = egui::Button::new(t("Colar"));
+            if ui.add_enabled(self.clipboard.is_some(), paste).clicked() {
+                self.paste_key(g, sel);
             }
             let clear = egui::Button::new(RichText::new(t("Limpar")).color(pal.bad));
             let clear = ui.add(clear).on_hover_text(t("Esvazia este botão"));
@@ -210,14 +195,44 @@ impl App {
                 egui::WidgetInfo::labeled(egui::WidgetType::Button, true, t("Limpar botão"))
             });
             if clear.clicked() {
-                if let Some(b) = g.cfg.page_mut().buttons.get_mut(sel) {
-                    *b = ButtonConfig::blank();
-                    self.touch();
-                    self.toasts
-                        .push(tf("Tecla {} limpa", &[&(sel + 1)]), Some("Desfazer"));
-                }
+                self.clear_key(g, sel);
             }
         });
+    }
+
+    fn test_key(&mut self, g: &mut runtime::Shared, sel: usize) {
+        runtime::trigger(g, &self.tx, &self.exec, sel, Duration::ZERO);
+        let msg = tf("Tecla {} testada", &[&(sel + 1)]);
+        self.toasts.push(msg, None);
+    }
+
+    fn copy_key(&mut self, g: &runtime::Shared, sel: usize) {
+        self.clipboard = g.cfg.page().buttons.get(sel).cloned();
+        let msg = tf("Tecla {} copiada", &[&(sel + 1)]);
+        self.toasts.push(msg, None);
+    }
+
+    fn paste_key(&mut self, g: &mut runtime::Shared, sel: usize) {
+        let Some(copied) = self.clipboard.clone() else {
+            return;
+        };
+        let Some(b) = g.cfg.page_mut().buttons.get_mut(sel) else {
+            return;
+        };
+        *b = copied;
+        self.touch();
+        let msg = tf("Colado na tecla {}", &[&(sel + 1)]);
+        self.toasts.push(msg, Some("Desfazer"));
+    }
+
+    fn clear_key(&mut self, g: &mut runtime::Shared, sel: usize) {
+        let Some(b) = g.cfg.page_mut().buttons.get_mut(sel) else {
+            return;
+        };
+        *b = ButtonConfig::blank();
+        self.touch();
+        let msg = tf("Tecla {} limpa", &[&(sel + 1)]);
+        self.toasts.push(msg, Some("Desfazer"));
     }
 
     /// Painel do botão selecionado, com as abas Aparência, Ação e Alternar.

@@ -10,6 +10,7 @@ const IMAGE_FIELD_RESERVED: f32 = 172.0;
 const SWATCH_SIZE: f32 = 26.0;
 const ICON_GAP: f32 = 6.0;
 const ICON_CELL: f32 = 40.0;
+const ICON_GLYPH: f32 = 20.0;
 const NO_ICON_FONT: f32 = 16.0;
 const SWATCH_RADIUS: f32 = 8.0;
 const SWATCH_GAP: f32 = 8.0;
@@ -80,7 +81,17 @@ fn color_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette) -> bool
                 a: 255,
             };
             let on = b.appearance.background == color;
-            if widgets::swatch(ui, SWATCH_SIZE, SWATCH_RADIUS, c32(color), on, pal.fg).clicked() {
+            let name = format!("#{:02X}{:02X}{:02X}", sw[0], sw[1], sw[2]);
+            let swatch = widgets::swatch(
+                ui,
+                SWATCH_SIZE,
+                SWATCH_RADIUS,
+                c32(color),
+                on,
+                pal.fg,
+                &name,
+            );
+            if swatch.clicked() {
                 b.appearance.background = color;
                 changed = true;
             }
@@ -94,6 +105,38 @@ fn color_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette) -> bool
     changed
 }
 
+/// Uma célula da grade de ícones. `id` vazio é "sem ícone".
+fn icon_cell(
+    ui: &mut egui::Ui,
+    (id, name): (&str, &str),
+    on: bool,
+    pal: &Palette,
+    ink: Color32,
+) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(vec2(ICON_CELL, ICON_CELL), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, t(name)));
+    let p = ui.painter();
+    let round = Rounding::same(crate::tokens::radius::CONTROL);
+    p.rect_filled(rect, round, pal.field);
+    let width = if on { 2.0_f32 } else { 1.0_f32 };
+    let border = if on { ink } else { pal.control };
+    p.rect_stroke(rect, round, Stroke::new(width, border));
+    if id.is_empty() {
+        let font = egui::FontId::monospace(NO_ICON_FONT);
+        p.text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            "–",
+            font,
+            pal.muted,
+        );
+    } else {
+        let color = if on { ink } else { pal.fg };
+        widgets::paint_icon(p, rect.center(), ICON_GLYPH, id, color);
+    }
+    resp.on_hover_text(t(name))
+}
+
 fn icon_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette, accent: Color32) -> bool {
     let mut changed = false;
     widgets::section(ui, "Ícone", pal);
@@ -103,38 +146,12 @@ fn icon_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette, accent: 
         let none_on = b.appearance.icon.is_none();
         let options = std::iter::once(("", "Sem ícone")).chain(icons::ICONS);
         for (id, name) in options {
-            let (rect, resp) = ui.allocate_exact_size(vec2(ICON_CELL, ICON_CELL), Sense::click());
             let on = if id.is_empty() {
                 none_on
             } else {
                 b.appearance.icon.as_deref() == Some(id)
             };
-            let p = ui.painter();
-            p.rect_filled(
-                rect,
-                Rounding::same(crate::tokens::radius::CONTROL),
-                pal.field,
-            );
-            p.rect_stroke(
-                rect,
-                Rounding::same(crate::tokens::radius::CONTROL),
-                Stroke::new(
-                    if on { 2.0_f32 } else { 1.0_f32 },
-                    if on { ink } else { pal.control },
-                ),
-            );
-            if id.is_empty() {
-                p.text(
-                    rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    "–",
-                    egui::FontId::monospace(NO_ICON_FONT),
-                    pal.muted,
-                );
-            } else {
-                widgets::paint_icon(p, rect.center(), 20.0, id, if on { ink } else { pal.fg });
-            }
-            if resp.on_hover_text(t(name)).clicked() {
+            if icon_cell(ui, (id, name), on, pal, ink).clicked() {
                 b.appearance.icon = (!id.is_empty()).then(|| id.to_string());
                 if !id.is_empty() {
                     b.appearance.icon_path = None;

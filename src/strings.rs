@@ -31,6 +31,40 @@ pub fn t(pt: &str) -> &str {
     table().get(pt).copied().unwrap_or(pt)
 }
 
+/// Nome de página ou perfil para exibir. Os nomes que o próprio programa cria ("Default", "Page 1",
+/// "Página 2", "Perfil 3") aparecem no idioma atual; o que o usuário escreveu passa intacto.
+/// Só muda a exibição: o nome guardado na config não é alterado.
+pub fn display_name(name: &str) -> String {
+    localize_name(name, english())
+}
+
+fn localize_name(name: &str, english: bool) -> String {
+    if name == "Default" || name == "Padrão" {
+        return if english { "Default" } else { "Padrão" }.to_string();
+    }
+    let numbered = [
+        ("Page ", "Página "),
+        ("Página ", "Página "),
+        ("Profile ", "Perfil "),
+        ("Perfil ", "Perfil "),
+    ];
+    for (prefix, pt) in numbered {
+        let Some(n) = name.strip_prefix(prefix) else {
+            continue;
+        };
+        if n.is_empty() || !n.chars().all(|c| c.is_ascii_digit()) {
+            continue;
+        }
+        let word = match (pt.trim_end(), english) {
+            ("Página", true) => "Page ",
+            ("Perfil", true) => "Profile ",
+            _ => pt,
+        };
+        return format!("{word}{n}");
+    }
+    name.to_string()
+}
+
 /// Como `t`, mas preenche cada `{}` do modelo, em ordem, com os argumentos.
 pub fn tf(pt: &str, args: &[&dyn Display]) -> String {
     let mut out = String::new();
@@ -335,6 +369,20 @@ mod tests {
     fn placeholders_match_between_languages() {
         for (pt, en) in EN {
             assert_eq!(pt.matches("{}").count(), en.matches("{}").count(), "{pt}");
+        }
+    }
+
+    #[test]
+    fn default_names_follow_the_language_and_user_names_are_untouched() {
+        assert_eq!(localize_name("Default", false), "Padrão");
+        assert_eq!(localize_name("Padrão", true), "Default");
+        assert_eq!(localize_name("Page 1", false), "Página 1");
+        assert_eq!(localize_name("Página 12", true), "Page 12");
+        assert_eq!(localize_name("Perfil 2", true), "Profile 2");
+        assert_eq!(localize_name("Profile 3", false), "Perfil 3");
+        for mine in ["Jogos", "Page", "Page x", "Page 1 extra", "Default 2", ""] {
+            assert_eq!(localize_name(mine, true), mine);
+            assert_eq!(localize_name(mine, false), mine);
         }
     }
 
