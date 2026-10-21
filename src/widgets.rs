@@ -13,6 +13,10 @@ const PLUS_DIM: f32 = 0.35;
 const EMPTY_HINT_MIN_WIDTH: f32 = 80.0;
 const LETTER_GAP: char = '\u{2009}';
 const PILL_RADIUS: f32 = 12.0;
+const CHIP_FILL: f32 = 0.14;
+const CHIP_STROKE: f32 = 0.45;
+const SWATCH_HOVER_GROW: f32 = 1.5;
+const SWATCH_RING_GAP: f32 = 3.0;
 const GLOW_LAYERS: [(f32, f32, f32); 3] = [(7.0, 5.0, 0.10), (4.5, 3.5, 0.22), (2.0, 2.0, 0.40)];
 
 /// O que uma tecla do aparelho mostra (fundo, ícone vetorial e rótulo).
@@ -239,6 +243,55 @@ pub fn section(ui: &mut Ui, text: &str, pal: &Palette) {
             .font(crate::theme::display_font(12.0))
             .color(pal.muted),
     );
+}
+
+/// Etiqueta de estado com ponto e fundo na própria cor (conectado, salvo...).
+pub fn status_chip(ui: &mut Ui, text: &str, color: Color32) {
+    egui::Frame::none()
+        .fill(color.gamma_multiply(CHIP_FILL))
+        .stroke(Stroke::new(1.0_f32, color.gamma_multiply(CHIP_STROKE)))
+        .rounding(Rounding::same(99.0))
+        .inner_margin(egui::Margin::symmetric(10.0, 3.0))
+        .show(ui, |ui| {
+            ui.label(
+                RichText::new(format!("● {text}"))
+                    .monospace()
+                    .size(11.5)
+                    .color(color),
+            )
+        });
+}
+
+/// Amostra de cor clicável; a escolhida ganha um anel afastado, e o mouse em cima a destaca.
+pub fn swatch(
+    ui: &mut Ui,
+    size: f32,
+    radius: f32,
+    fill: Color32,
+    selected: bool,
+    ring: Color32,
+) -> Response {
+    let (rect, resp) = ui.allocate_exact_size(vec2(size, size), egui::Sense::click());
+    let body = if resp.hovered() {
+        rect.expand(SWATCH_HOVER_GROW)
+    } else {
+        rect
+    };
+    let p = ui.painter();
+    p.rect_filled(body, Rounding::same(radius), fill);
+    p.rect_stroke(
+        body,
+        Rounding::same(radius),
+        Stroke::new(1.0_f32, Color32::from_white_alpha(28)),
+    );
+    if selected {
+        p.rect_stroke(
+            rect.expand(SWATCH_RING_GAP),
+            Rounding::same(radius + SWATCH_RING_GAP),
+            Stroke::new(2.0_f32, ring),
+        );
+    }
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 /// Texto de tecla ao estilo "kbd".

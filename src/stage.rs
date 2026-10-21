@@ -1,5 +1,5 @@
 //! Bandeja de ações e palco central (o aparelho desenhado com as teclas).
-use crate::theme::Palette;
+use crate::theme::{self, Palette};
 use crate::{key_view, runtime, widgets, App, TAB_GAP};
 use eframe::egui::{
     self, pos2, vec2, Align, Color32, Frame, Layout, Margin, Rect, RichText, Rounding, Sense,
@@ -14,6 +14,12 @@ const KEY_MAX: f32 = 110.0;
 const DEVICE_MAX_WIDTH: f32 = 640.0;
 const DEVICE_PAD: f32 = 24.0;
 const DEVICE_GAP: f32 = 12.0;
+/// Luz ambiente atrás do aparelho: camadas finas e sobrepostas (sem degraus visíveis), que não
+/// passam da margem do painel (16 px) para não serem cortadas.
+const AMBIENT_STEPS: u8 = 8;
+const AMBIENT_STEP_GROW: f32 = 2.0;
+const AMBIENT_STEP_ALPHA: f32 = 0.014;
+const TRAY_HOVER_TINT: f32 = 0.10;
 
 impl App {
     /// Bandeja de ações: categorias, busca e cartões que se aplicam por clique ou arrasto.
@@ -88,7 +94,12 @@ impl App {
                                 ui.allocate_exact_size(TRAY_CARD, Sense::click_and_drag());
                             let border = if resp.hovered() { accent } else { pal.line };
                             let painter = ui.painter();
-                            painter.rect_filled(rect, Rounding::same(12.0), pal.raise);
+                            let fill = if resp.hovered() {
+                                theme::mix(pal.raise, accent, TRAY_HOVER_TINT)
+                            } else {
+                                pal.raise
+                            };
+                            painter.rect_filled(rect, Rounding::same(12.0), fill);
                             painter.rect_stroke(
                                 rect,
                                 Rounding::same(12.0),
@@ -167,8 +178,21 @@ impl App {
                         );
                         let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
                         let painter = ui.painter().clone();
+                        for step in 1..=AMBIENT_STEPS {
+                            let grow = f32::from(step) * AMBIENT_STEP_GROW;
+                            painter.rect_filled(
+                                rect.expand(grow),
+                                Rounding::same(22.0 + grow),
+                                accent.gamma_multiply(AMBIENT_STEP_ALPHA),
+                            );
+                        }
                         painter.rect_filled(rect, Rounding::same(22.0), pal.bezel);
                         painter.rect_filled(rect.shrink(8.0), Rounding::same(16.0), pal.device);
+                        painter.rect_stroke(
+                            rect.shrink(8.0),
+                            Rounding::same(16.0),
+                            Stroke::new(1.0_f32, Color32::from_black_alpha(160)),
+                        );
                         painter.rect_stroke(
                             rect,
                             Rounding::same(22.0),

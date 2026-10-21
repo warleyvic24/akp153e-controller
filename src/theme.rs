@@ -1,7 +1,7 @@
 //! Aparência da interface: paleta escura/clara, cor de destaque do usuário, fontes do Windows e estilo dos widgets.
 use crate::config::schema::{Theme, UiSettings};
 use eframe::egui::{
-    self, Color32, Context, FontData, FontDefinitions, FontFamily, FontId, Stroke, TextStyle,
+    self, vec2, Color32, Context, FontData, FontDefinitions, FontFamily, FontId, Stroke, TextStyle,
     Visuals,
 };
 
@@ -91,7 +91,7 @@ pub fn readable_on(bg: Color32) -> Color32 {
 }
 
 /// Mistura `a` com `b`; `t` é a parte de `b` (0 a 1).
-fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
+pub fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
     let m = |x: u8, y: u8| (x as f32 * (1.0 - t) + y as f32 * t).round() as u8;
     Color32::from_rgb(m(a.r(), b.r()), m(a.g(), b.g()), m(a.b(), b.b()))
 }
@@ -157,6 +157,15 @@ pub fn apply(ctx: &Context, ui: &UiSettings) {
     v.override_text_color = Some(p.fg);
     v.window_rounding = egui::Rounding::same(12.0);
     v.window_stroke = Stroke::new(1.0_f32, p.line);
+    let shadow = egui::epaint::Shadow {
+        offset: vec2(0.0, 8.0),
+        blur: 24.0,
+        spread: 0.0,
+        color: Color32::from_black_alpha(if ui.theme == Theme::Dark { 150 } else { 45 }),
+    };
+    v.window_shadow = shadow;
+    v.popup_shadow = shadow;
+    v.menu_rounding = egui::Rounding::same(10.0);
     let round = egui::Rounding::same(8.0);
     let base = if ui.theme == Theme::Dark {
         Color32::from_rgb(32, 37, 58)

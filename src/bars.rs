@@ -2,7 +2,10 @@
 use crate::config::schema::*;
 use crate::theme::Palette;
 use crate::{runtime, theme, widgets, App};
-use eframe::egui::{self, vec2, Align, Color32, Frame, Layout, Margin, RichText};
+use eframe::egui::{self, Align, Color32, Frame, Layout, Margin, RichText};
+
+const ACCENT_SWATCH_SIZE: f32 = 20.0;
+const ACCENT_SWATCH_GAP: f32 = 9.0;
 
 impl App {
     pub(crate) fn top_bar(
@@ -29,12 +32,8 @@ impl App {
                     } else {
                         ("DESCONECTADO", pal.bad)
                     };
-                    ui.label(
-                        RichText::new(format!("● {text}"))
-                            .monospace()
-                            .size(11.5)
-                            .color(color),
-                    );
+                    ui.add_space(6.0);
+                    widgets::status_chip(ui, text, color);
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         self.manage_menu(ui, g, pal);
                         self.appearance_menu(ui, g);
@@ -101,17 +100,16 @@ impl App {
             ui.separator();
             ui.label("Cor de destaque");
             ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = ACCENT_SWATCH_GAP;
                 if ui.color_edit_button_srgb(&mut g.cfg.ui.accent).changed() {
                     self.dirty = true;
                 }
+                let ring = theme::palette(g.cfg.ui.theme).fg;
                 for (name, rgb) in theme::ACCENTS {
                     let fill = Color32::from_rgb(rgb[0], rgb[1], rgb[2]);
-                    if ui
-                        .add(
-                            egui::Button::new("  ")
-                                .fill(fill)
-                                .min_size(vec2(22.0, 22.0)),
-                        )
+                    let on = g.cfg.ui.accent == rgb;
+                    let size = ACCENT_SWATCH_SIZE;
+                    if widgets::swatch(ui, size, size / 2.0, fill, on, ring)
                         .on_hover_text(name)
                         .clicked()
                     {
@@ -212,8 +210,11 @@ impl App {
                         .on_hover_text("Ctrl+Shift+Z")
                         .clicked();
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let text = if self.dirty { "Salvando…" } else { "Salvo" };
-                        ui.label(RichText::new(text).monospace().size(11.0).color(pal.muted));
+                        if self.dirty {
+                            widgets::status_chip(ui, "Salvando…", pal.muted);
+                        } else {
+                            widgets::status_chip(ui, "Salvo", pal.ok);
+                        }
                     });
                 });
             });

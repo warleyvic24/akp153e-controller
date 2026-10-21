@@ -34,6 +34,7 @@ const AUTOSAVE_DELAY: Duration = Duration::from_millis(300);
 const REPAINT_EVERY: Duration = Duration::from_millis(100);
 const INSPECTOR_WIDTH: f32 = 300.0;
 const TAB_GAP: f32 = 10.0;
+const QUICK_BUTTON_PAD_X: f32 = 9.0;
 const FOCUS_GLOW_RADIUS: f32 = 8.0;
 const TAB_NAMES: [&str; 3] = ["Aparência", "Ação", "Estados"];
 
@@ -283,8 +284,13 @@ impl App {
     ) {
         let sel = self.selected;
         ui.horizontal_wrapped(|ui| {
-            let test = egui::Button::new(RichText::new("Testar").color(theme::readable_on(accent)))
-                .fill(accent);
+            ui.spacing_mut().button_padding.x = QUICK_BUTTON_PAD_X;
+            let test = egui::Button::new(
+                RichText::new("Testar")
+                    .strong()
+                    .color(theme::readable_on(accent)),
+            )
+            .fill(accent);
             let test = ui.add(test);
             widgets::glow(ui.painter(), test.rect, 8.0, accent);
             if test.clicked() {
@@ -305,8 +311,8 @@ impl App {
                     self.touch();
                 }
             }
-            let clear = egui::Button::new(RichText::new("Limpar").color(pal.muted)).frame(false);
-            if ui.add(clear).clicked() {
+            let clear = egui::Button::new(RichText::new("Limpar").color(pal.bad));
+            if ui.add(clear).on_hover_text("Esvazia este botão").clicked() {
                 if let Some(b) = g.cfg.page_mut().buttons.get_mut(sel) {
                     *b = ButtonConfig::blank();
                     self.touch();

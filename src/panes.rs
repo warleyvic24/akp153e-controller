@@ -4,8 +4,18 @@ use crate::picker::{app_buttons, AppPicker};
 use crate::theme::Palette;
 use crate::{c32, engine, icons, library, textlist, widgets};
 use eframe::egui::{self, vec2, Color32, RichText, Rounding, Sense, Stroke};
-
 const IMAGE_FIELD_RESERVED: f32 = 172.0;
+const SWATCH_SIZE: f32 = 26.0;
+const SWATCH_RADIUS: f32 = 8.0;
+const SWATCH_GAP: f32 = 8.0;
+const SLIDER_VALUE_RESERVED: f32 = 72.0; // caixa numérica à direita do slider
+const SLIDER_MIN_WIDTH: f32 = 100.0;
+
+/// Estica a trilha do próximo slider até a borda do painel (a padrão tem só 100 px).
+fn fill_slider_width(ui: &mut egui::Ui) {
+    ui.spacing_mut().slider_width =
+        (ui.available_width() - SLIDER_VALUE_RESERVED).max(SLIDER_MIN_WIDTH);
+}
 
 fn pick_icon() -> Option<String> {
     rfd::FileDialog::new()
@@ -51,26 +61,24 @@ pub fn appearance_pane(
         .changed();
     widgets::section(ui, "Cor do botão", pal);
     ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = vec2(SWATCH_GAP, SWATCH_GAP);
         for sw in library::SWATCHES {
-            let (rect, resp) = ui.allocate_exact_size(vec2(26.0, 26.0), Sense::click());
             let color = RGBAColor {
                 r: sw[0],
                 g: sw[1],
                 b: sw[2],
                 a: 255,
             };
-            ui.painter()
-                .rect_filled(rect, Rounding::same(7.0), c32(color));
-            if b.appearance.background == color {
-                ui.painter()
-                    .rect_stroke(rect, Rounding::same(7.0), Stroke::new(2.0_f32, pal.fg));
-            }
-            if resp.clicked() {
+            let on = b.appearance.background == color;
+            if widgets::swatch(ui, SWATCH_SIZE, SWATCH_RADIUS, c32(color), on, pal.fg).clicked() {
                 b.appearance.background = color;
                 changed = true;
             }
         }
+    });
+    ui.horizontal(|ui| {
         changed |= color_picker(ui, "Outra", &mut b.appearance.background);
+        ui.add_space(SWATCH_GAP);
         changed |= color_picker(ui, "Texto", &mut b.appearance.text_color);
     });
     widgets::section(ui, "Ícone", pal);
@@ -143,6 +151,7 @@ pub fn appearance_pane(
         }
     });
     widgets::section(ui, "Tamanho da fonte", pal);
+    fill_slider_width(ui);
     changed |= ui
         .add(egui::Slider::new(
             &mut b.appearance.font_size,
@@ -209,6 +218,7 @@ pub fn states_pane(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette) -> bo
             .changed();
     }
     widgets::section(ui, "Segurar a partir de", pal);
+    fill_slider_width(ui);
     changed |= ui
         .add(egui::Slider::new(&mut b.long_press_threshold_ms, 100..=2000).suffix(" ms"))
         .changed();
