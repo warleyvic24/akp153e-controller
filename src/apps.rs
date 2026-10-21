@@ -5,7 +5,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
+use std::time::{Duration, Instant};
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const ICON_SIZE: u32 = 256;
@@ -102,6 +103,29 @@ fn powershell(script: &str) -> Command {
     cmd
 }
 
+/// Tempo máximo para extrair um ícone: um PowerShell travado não pode prender quem espera por ele
+/// (o mixer lê os ícones numa thread que só roda uma por vez).
+const ICON_TIMEOUT: Duration = Duration::from_secs(15);
+const WAIT_STEP: Duration = Duration::from_millis(50);
+
+/// Como `Command::output`, mas encerra o processo se ele passar de `limit`.
+fn output_with_timeout(cmd: &mut Command, limit: Duration) -> std::io::Result<Output> {
+    let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
+    let start = Instant::now();
+    while child.try_wait()?.is_none() {
+        if start.elapsed() >= limit {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "o PowerShell demorou demais",
+            ));
+        }
+        std::thread::sleep(WAIT_STEP);
+    }
+    child.wait_with_output()
+}
+
 /// Lista os programas do Menu Iniciar (nome e caminho do .exe), em ordem alfabética.
 pub fn scan() -> Vec<InstalledApp> {
     match powershell(SCAN_SCRIPT).output() {
@@ -173,10 +197,12 @@ pub fn extract_icon(app: &InstalledApp) -> Option<String> {
     } else {
         ICON_SCRIPT.replace("__SIZE__", &ICON_SIZE.to_string())
     };
-    let status = powershell(&script)
-        .env(ENV_SOURCE, target)
-        .env(ENV_OUT, &out)
-        .output();
+    let status = output_with_timeout(
+        powershell(&script)
+            .env(ENV_SOURCE, target)
+            .env(ENV_OUT, &out),
+        ICON_TIMEOUT,
+    );
     match status {
         Ok(o) if o.status.success() && out.is_file() => Some(out.display().to_string()),
         Ok(o) => {
@@ -240,5 +266,24 @@ mod tests {
     fn icon_file_name_ignores_case_and_differs_per_program() {
         assert_eq!(icon_file_name(r"C:\A\x.exe"), icon_file_name(r"c:\a\X.EXE"));
         assert_ne!(icon_file_name(r"C:\A\x.exe"), icon_file_name(r"C:\A\y.exe"));
+    }
+
+    /// Usa o PowerShell de verdade (a pasta de ícones dos testes é temporária):
+    /// `cargo test extracts_a_real_icon -- --ignored`.
+    #[test]
+    #[ignore]
+    fn extracts_a_real_icon() {
+        let app = InstalledApp::exe("Notepad", r"C:\Windows\System32\notepad.exe");
+        let icon = extract_icon(&app).expect("ícone extraído");
+        assert!(Path::new(&icon).is_file());
+    }
+
+    #[test]
+    fn a_stuck_process_is_killed_after_the_timeout() {
+        let mut cmd = powershell("Start-Sleep -Seconds 30");
+        let started = Instant::now();
+        let result = output_with_timeout(&mut cmd, Duration::from_millis(300));
+        assert!(result.is_err());
+        assert!(started.elapsed() < Duration::from_secs(10));
     }
 }

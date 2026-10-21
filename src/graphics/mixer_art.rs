@@ -62,6 +62,15 @@ const VALUE_COLOR: RGBAColor = RGBAColor {
     b: 255,
     a: 255,
 };
+/// App aberto mas sem tocar: texto esmaecido.
+const DIM_COLOR: RGBAColor = RGBAColor {
+    r: 120,
+    g: 130,
+    b: 150,
+    a: 255,
+};
+const BADGE_SIZE: f32 = 13.0;
+const BADGE_INSET: f32 = 10.0;
 const VALUE_MUTED_COLOR: RGBAColor = RGBAColor {
     r: 255,
     g: 170,
@@ -91,15 +100,19 @@ pub fn render_mixer_key(key: &MixerKey, px: u32) -> RgbaImage {
         KeyFace::Minus => draw_sign(&mut img, false, key.accent),
         KeyFace::App { name, icon_path } => {
             draw_app_icon(&mut img, icon_path.as_deref(), scale, key);
+            let name_color = if key.inactive { DIM_COLOR } else { NAME_COLOR };
             draw_text(
                 &mut img,
                 name,
                 NAME_TOP * scale,
                 scale,
                 NAME_SIZE,
-                NAME_COLOR,
+                name_color,
             );
             draw_value(&mut img, key, scale);
+            if key.muted {
+                draw_mute_badge(&mut img, scale);
+            }
         }
         KeyFace::Home { more } => {
             draw_builtin(
@@ -202,12 +215,25 @@ fn draw_builtin(img: &mut RgbaImage, name: &str, scale: f32, color: RGBAColor) {
 }
 
 fn draw_value(img: &mut RgbaImage, key: &MixerKey, scale: f32) {
-    let color = if key.muted {
-        VALUE_MUTED_COLOR
-    } else {
-        VALUE_COLOR
+    let color = match (key.muted, key.inactive) {
+        (true, _) => VALUE_MUTED_COLOR,
+        (false, true) => DIM_COLOR,
+        (false, false) => VALUE_COLOR,
     };
     draw_text(img, &key.value, VALUE_TOP * scale, scale, VALUE_SIZE, color);
+}
+
+/// Alto-falante cortado no canto da tecla: marca o app como mudo além da cor de fundo.
+fn draw_mute_badge(img: &mut RgbaImage, scale: f32) {
+    let cx = img.width() as f32 - BADGE_INSET * scale;
+    draw_icon(
+        img,
+        "mute",
+        cx,
+        BADGE_INSET * scale,
+        BADGE_SIZE * scale,
+        VALUE_MUTED_COLOR,
+    );
 }
 
 fn draw_text(

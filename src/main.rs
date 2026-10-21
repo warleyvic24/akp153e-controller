@@ -13,6 +13,7 @@ mod icons;
 mod inspector;
 mod library;
 mod mixer;
+mod mixer_runtime;
 mod panes;
 mod picker;
 mod runtime;

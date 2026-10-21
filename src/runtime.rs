@@ -4,7 +4,8 @@ use crate::config::schema::{AppConfig, ButtonAction, ButtonConfig, RGBAColor};
 use crate::engine::actions::Executor;
 use crate::graphics::mixer_art::render_mixer_key;
 use crate::graphics::renderer::{encode_frame, render_button_frame};
-use crate::mixer::{MixerData, MixerEffect, MixerKey, MixerView};
+use crate::mixer::{MixerKey, MixerView};
+use crate::mixer_runtime::{self, StepHold};
 use crate::usb::{UsbCmd, UsbEvent};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -12,8 +13,6 @@ use std::time::{Duration, Instant};
 
 const MAX_KEYS: usize = 64;
 const STATUS_POLL: Duration = Duration::from_secs(1);
-/// Com o mixer aberto, relê os apps com som neste intervalo (apps abrem, fecham ou mudam de volume).
-const MIXER_REFRESH: Duration = Duration::from_secs(2);
 
 pub struct Shared {
     pub cfg: AppConfig,
@@ -50,7 +49,8 @@ const SWEEP_STEP: u32 = 2;
 /// Cópia dos botões da página ativa. Desenhar e codificar JPEG é lento: com a cópia, isso roda
 /// depois de soltar o lock, e o servidor de controle continua respondendo a `status`.
 pub struct Snapshot {
-    frames: Vec<Frame>,
+    /// (índice da tecla, o que desenhar). Com o mixer aberto só vão as teclas que mudaram.
+    frames: Vec<(usize, Frame)>,
     px: u32,
 }
 
@@ -67,7 +67,11 @@ impl Snapshot {
                 Some(mixer) => {
                     let [r, g, b] = sh.cfg.ui.accent;
                     let accent = RGBAColor { r, g, b, a: 255 };
-                    mixer.keys(accent).into_iter().map(Frame::Mixer).collect()
+                    mixer
+                        .changed_keys(accent)
+                        .into_iter()
+                        .map(|(index, key)| (index, Frame::Mixer(key)))
+                        .collect()
                 }
                 None => sh
                     .cfg
@@ -75,7 +79,8 @@ impl Snapshot {
                     .buttons
                     .iter()
                     .cloned()
-                    .map(|b| Frame::Button(Box::new(b)))
+                    .enumerate()
+                    .map(|(index, b)| (index, Frame::Button(Box::new(b))))
                     .collect(),
             },
             px: sh.icon_px,
@@ -83,13 +88,46 @@ impl Snapshot {
     }
 
     pub fn render(&self, tx: &Sender<UsbCmd>) {
-        for (index, frame) in self.frames.iter().enumerate() {
+        for (index, frame) in &self.frames {
+            let index = *index;
             let data = match frame {
                 Frame::Button(b) => render_button_frame(b, self.px, self.px),
                 Frame::Mixer(key) => encode_frame(&render_mixer_key(key, self.px)),
             };
             let _ = tx.send(UsbCmd::Frame { index, data });
         }
+    }
+}
+
+/// Garante que desenhos feitos por threads diferentes cheguem ao aparelho na mesma ordem em que o
+/// estado mudou. Sem isso, com redesenho parcial, um quadro antigo poderia sobrepor um novo e ficar
+/// na tela, porque o que já foi "desenhado" não é reenviado.
+static DRAW_ORDER: Mutex<()> = Mutex::new(());
+
+/// Muda o estado com `change`, desenha o resultado (se `change` devolver `true` no segundo valor)
+/// e devolve o primeiro valor. Mudança e desenho são feitos em bloco, na ordem de chegada.
+pub fn change_and_draw<R>(
+    state: &SharedState,
+    tx: &Sender<UsbCmd>,
+    change: impl FnOnce(&mut Shared) -> (R, bool),
+) -> R {
+    let _order = DRAW_ORDER.lock().unwrap_or_else(|e| e.into_inner());
+    let (result, snapshot) = {
+        let mut sh = lock(state);
+        let (result, draw) = change(&mut sh);
+        (result, draw.then(|| Snapshot::take(&sh)))
+    };
+    if let Some(snapshot) = snapshot {
+        snapshot.render(tx);
+    }
+    result
+}
+
+/// Depois de um desenho que não passa pelo mixer (calibração, padrão de teste), a tela não é mais a
+/// dele: esquece o que ele tinha desenhado para que "reload" reenvie as 15 teclas.
+pub fn forget_mixer_drawing(state: &SharedState) {
+    if let Some(mixer) = &lock(state).mixer {
+        mixer.invalidate();
     }
 }
 
@@ -297,94 +335,93 @@ pub fn spawn_status_poll(state: SharedState) {
     });
 }
 
-/// Abre o mixer: lê o áudio sem o lock, publica a página e a desenha no aparelho.
-fn open_mixer(state: &SharedState, tx: &Sender<UsbCmd>, home: usize) {
-    let data = MixerData::load();
-    let snapshot = {
-        let mut sh = lock(state);
-        sh.mixer = Some(MixerView::new(data, home));
-        Snapshot::take(&sh)
-    };
-    snapshot.render(tx);
-}
-
-/// Relê o áudio e redesenha só se algo mudou.
-fn refresh_mixer(state: &SharedState, tx: &Sender<UsbCmd>) {
-    let data = MixerData::load();
-    let snapshot = {
-        let mut sh = lock(state);
-        let changed = sh.mixer.as_mut().is_some_and(|m| m.update(data));
-        changed.then(|| Snapshot::take(&sh))
-    };
-    if let Some(snapshot) = snapshot {
-        snapshot.render(tx);
-    }
-}
-
-/// Com o mixer aberto, a tecla é dele: atualiza a página, redesenha e só então muda o volume no sistema.
-/// Devolve `false` se o mixer não está aberto (a tecla segue o caminho normal).
-fn press_mixer(state: &SharedState, tx: &Sender<UsbCmd>, index: usize, held: Duration) -> bool {
-    let (effect, snapshot) = {
-        let mut sh = lock(state);
-        let Some(mixer) = sh.mixer.as_mut() else {
-            return false;
-        };
-        let effect = mixer.press(index, held);
-        if effect == MixerEffect::Close {
-            sh.mixer = None;
-        }
-        (effect, Snapshot::take(&sh))
-    };
-    snapshot.render(tx);
-    effect.apply();
-    true
-}
-
 /// Thread que consome os eventos do aparelho (vive mesmo com a janela escondida).
 pub fn spawn(state: SharedState, tx: Sender<UsbCmd>, rx: Receiver<UsbEvent>, exec: Executor) {
     std::thread::spawn(move || {
         let mut down: [Option<Instant>; MAX_KEYS] = [None; MAX_KEYS];
+        let mut hold: Option<StepHold> = None;
+        let mut next_refresh = Instant::now() + mixer_runtime::REFRESH;
+        let mut was_open = false;
         loop {
-            let mixer_open = lock(&state).mixer.is_some();
+            let mixer_open = mixer_runtime::is_open(&state);
+            if mixer_open != was_open {
+                // Uma tecla apertada num modo e solta no outro não vale: agiria na tela errada.
+                was_open = mixer_open;
+                down = [None; MAX_KEYS];
+                hold = None;
+            }
             let event = if mixer_open {
-                match rx.recv_timeout(MIXER_REFRESH) {
-                    Ok(event) => event,
-                    Err(RecvTimeoutError::Timeout) => {
-                        refresh_mixer(&state, &tx);
-                        continue;
-                    }
+                let wake = hold
+                    .as_ref()
+                    .map_or(next_refresh, |h| next_refresh.min(h.due()));
+                match rx.recv_timeout(wake.saturating_duration_since(Instant::now())) {
+                    Ok(event) => Some(event),
+                    Err(RecvTimeoutError::Timeout) => None,
                     Err(RecvTimeoutError::Disconnected) => break,
                 }
             } else {
+                hold = None;
                 match rx.recv() {
-                    Ok(event) => event,
+                    Ok(event) => Some(event),
                     Err(_) => break,
                 }
             };
+            if mixer_open {
+                let now = Instant::now();
+                if now >= next_refresh {
+                    mixer_runtime::reload(&state, &tx);
+                    next_refresh = now + mixer_runtime::REFRESH;
+                }
+                if let Some(h) = hold.as_mut() {
+                    mixer_runtime::repeat_if_due(&state, &tx, h, now);
+                }
+            }
+            let Some(event) = event else { continue };
             match event {
                 UsbEvent::Info { icon_px } => lock(&state).icon_px = icon_px,
                 UsbEvent::Status(connected) => {
-                    let snapshot = {
-                        let mut sh = lock(&state);
+                    // Sem aparelho não chega a soltura da tecla que encerraria uma repetição.
+                    hold = None;
+                    down = [None; MAX_KEYS];
+                    change_and_draw(&state, &tx, |sh| {
                         sh.connected = connected;
-                        connected.then(|| Snapshot::take(&sh))
-                    };
-                    if let Some(snapshot) = snapshot {
-                        snapshot.render(&tx);
-                    }
+                        // Aparelho (re)conectado: o que estava desenhado se perdeu, então tudo volta.
+                        if let Some(mixer) = &sh.mixer {
+                            mixer.invalidate();
+                        }
+                        ((), connected)
+                    });
                 }
                 UsbEvent::Key { index, pressed } if index < MAX_KEYS => {
-                    if pressed {
+                    if mixer_open {
+                        // Com o mixer aberto +/− e o ícone agem ao apertar; só a tecla de sair espera a soltura.
+                        if pressed {
+                            down[index] = Some(Instant::now());
+                            // Só uma tecla de + ou − nova substitui a repetição em andamento.
+                            if let Some(new_hold) = mixer_runtime::key_down(&state, &tx, index) {
+                                hold = Some(new_hold);
+                            }
+                        } else {
+                            if hold.as_ref().is_some_and(|h| h.index() == index) {
+                                hold = None;
+                            }
+                            // Soltura sem aperto registrado (aperto feito antes do mixer abrir) é ignorada.
+                            if let Some(since) = down[index].take() {
+                                if mixer_runtime::key_up(&state, &tx, index, since.elapsed()) {
+                                    // A página mudou ou fechou: a repetição apontaria para outro app.
+                                    hold = None;
+                                }
+                            }
+                        }
+                    } else if pressed {
                         down[index] = Some(Instant::now());
                     } else if let Some(since) = down[index].take() {
-                        if !press_mixer(&state, &tx, index, since.elapsed()) {
-                            let followup =
-                                trigger_locked(&mut lock(&state), &exec, index, since.elapsed());
-                            let mixer_home = followup.mixer_home();
-                            followup.run(&tx);
-                            if let Some(home) = mixer_home {
-                                open_mixer(&state, &tx, home);
-                            }
+                        let followup =
+                            trigger_locked(&mut lock(&state), &exec, index, since.elapsed());
+                        let mixer_home = followup.mixer_home();
+                        followup.run(&tx);
+                        if let Some(opener) = mixer_home {
+                            mixer_runtime::open(&state, &tx, opener);
                         }
                     }
                 }
@@ -480,16 +517,89 @@ mod tests {
         assert_eq!(sh.cfg.profiles[0].active_page, 0);
     }
 
-    #[test]
-    fn open_mixer_replaces_the_page_on_the_keys_until_closed() {
-        let (tx, rx) = channel();
+    fn mixer_state(opener: usize) -> SharedState {
         let state = Arc::new(Mutex::new(two_page_state(ButtonAction::None, None)));
-        lock(&state).mixer = Some(MixerView::new(MixerData::default(), 14));
-        assert!(press_mixer(&state, &tx, 9, Duration::ZERO));
+        lock(&state).mixer = Some(MixerView::new(opener));
+        state
+    }
+
+    fn drawn(state: &SharedState, tx: &Sender<UsbCmd>) {
+        let snapshot = Snapshot::take(&lock(state));
+        snapshot.render(tx);
+    }
+
+    #[test]
+    fn mixer_draws_everything_once_then_only_what_changes() {
+        let (tx, rx) = channel();
+        let state = mixer_state(14);
+        drawn(&state, &tx);
         assert_eq!(rx.try_iter().count(), 15);
-        assert!(lock(&state).mixer.is_some());
-        assert!(press_mixer(&state, &tx, 14, Duration::ZERO));
-        assert!(lock(&state).mixer.is_none());
-        assert!(!press_mixer(&state, &tx, 14, Duration::ZERO));
+        drawn(&state, &tx);
+        assert_eq!(rx.try_iter().count(), 0);
+    }
+
+    #[test]
+    fn a_reconnected_device_gets_the_whole_mixer_again() {
+        let (tx, rx) = channel();
+        let state = mixer_state(14);
+        drawn(&state, &tx);
+        rx.try_iter().count();
+        lock(&state).mixer.as_ref().unwrap().invalidate();
+        drawn(&state, &tx);
+        assert_eq!(rx.try_iter().count(), 15);
+    }
+
+    #[test]
+    fn tapping_the_exit_key_closes_the_mixer_and_restores_the_page() {
+        let (tx, rx) = channel();
+        let state = mixer_state(14);
+        drawn(&state, &tx);
+        rx.try_iter().count();
+        mixer_runtime::key_up(&state, &tx, 14, Duration::ZERO);
+        assert!(!mixer_runtime::is_open(&state));
+        assert_eq!(rx.try_iter().count(), 15);
+    }
+
+    #[test]
+    fn pressing_an_empty_column_does_not_start_a_repeat() {
+        let (tx, _rx) = channel();
+        let state = mixer_state(14);
+        assert!(mixer_runtime::key_down(&state, &tx, 5).is_none());
+    }
+
+    #[test]
+    fn holding_plus_repeats_only_after_the_delay() {
+        use crate::audio::AudioSession;
+        use crate::mixer::{MixerApp, MixerData, REPEAT_DELAY};
+        let (tx, rx) = channel();
+        let state = mixer_state(14);
+        let app = MixerApp {
+            session: AudioSession {
+                key: "teste".into(),
+                name: "Teste".into(),
+                exe_path: None,
+                // Nenhum processo real tem este número, então o Windows não é alterado.
+                pids: vec![u32::MAX],
+                volume: 0.5,
+                muted: false,
+                active: true,
+            },
+            icon_path: None,
+        };
+        {
+            let mut sh = lock(&state);
+            let mixer = sh.mixer.as_mut().unwrap();
+            let version = mixer.version();
+            mixer.update(MixerData { apps: vec![app] }, version);
+        }
+        drawn(&state, &tx);
+        rx.try_iter().count();
+        let mut hold = mixer_runtime::key_down(&state, &tx, 5).expect("tecla + segura");
+        let start = Instant::now();
+        mixer_runtime::repeat_if_due(&state, &tx, &mut hold, start);
+        let after_press = rx.try_iter().count();
+        mixer_runtime::repeat_if_due(&state, &tx, &mut hold, start + REPEAT_DELAY);
+        assert!(rx.try_iter().count() > 0 && after_press > 0);
+        assert!(hold.due() > start + REPEAT_DELAY);
     }
 }

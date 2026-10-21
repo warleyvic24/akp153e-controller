@@ -1,11 +1,14 @@
 //! Página de mixer de volume no aparelho. Cada coluna é um app: em cima o ícone com nome e porcentagem
-//! (apertar muta), no meio volume + e embaixo volume −. A tecla que abriu o mixer vira "sair/mais".
+//! (apertar muta), no meio volume + e embaixo volume − (segurar repete). A tecla de sair/mais fica
+//! onde o mixer foi aberto, ou numa coluna livre quando essa já tem app.
 //! Esta parte é pura (sem áudio nem USB), por isso é testada sem o aparelho.
 use crate::apps::{extract_icon, InstalledApp};
 use crate::audio::{self, AudioSession};
 use crate::config::schema::RGBAColor;
 use crate::strings::t;
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
@@ -18,6 +21,9 @@ const APPS_PER_PAGE: usize = COLS;
 pub const VOLUME_STEP: f32 = 0.05;
 /// Segurar a tecla "sair/mais" por este tempo fecha o mixer mesmo com mais apps para ver.
 const EXIT_HOLD: Duration = Duration::from_millis(500);
+/// Segurando + ou −, o volume passa a repetir depois deste tempo, a cada intervalo.
+pub const REPEAT_DELAY: Duration = Duration::from_millis(400);
+pub const REPEAT_INTERVAL: Duration = Duration::from_millis(150);
 
 /// Um app na grade, com o ícone do programa quando já foi extraído.
 #[derive(Clone, Debug, PartialEq)]
@@ -32,50 +38,74 @@ pub struct MixerData {
     pub apps: Vec<MixerApp>,
 }
 
+/// Cada mixer aberto recebe um número próprio, que vai nos bits altos da versão: uma leitura feita
+/// para um mixer que já fechou nunca é aceita por outro aberto depois.
+static NEXT_EPOCH: AtomicU64 = AtomicU64::new(1);
+const EPOCH_SHIFT: u32 = 32;
+
+type IconCache = Mutex<HashMap<String, Option<String>>>;
+
 /// Ícones já procurados por programa (inclusive os que falharam): extrair chama o PowerShell,
-/// então cada programa é tentado uma única vez em vez de a cada leitura do mixer.
-fn icon_for(session: &AudioSession) -> Option<String> {
-    static TRIED: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
-    let path = session.exe_path.as_deref()?;
-    let tried = TRIED.get_or_init(Default::default);
-    if let Some(known) = tried.lock().unwrap_or_else(|e| e.into_inner()).get(path) {
-        return known.clone();
-    }
-    let icon = extract_icon(&InstalledApp::exe(&session.name, path));
-    tried
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert(path.to_string(), icon.clone());
-    icon
+/// então cada programa é tentado uma única vez.
+fn icon_cache() -> &'static IconCache {
+    static CACHE: OnceLock<IconCache> = OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
+/// `None` = nunca tentado; `Some(None)` = tentado e sem ícone.
+fn cached_icon(path: &str) -> Option<Option<String>> {
+    let cache = icon_cache().lock().unwrap_or_else(|e| e.into_inner());
+    cache.get(path).cloned()
 }
 
 impl MixerData {
-    /// Lê o áudio e extrai os ícones (lento: faça fora do lock do estado).
-    pub fn load() -> Self {
+    /// Lê os apps do Windows usando só ícones já extraídos (rápido).
+    pub fn read() -> Self {
         let apps = audio::list_sessions()
             .into_iter()
             .map(|session| {
-                let icon_path = icon_for(&session);
+                let icon_path = session.exe_path.as_deref().and_then(cached_icon).flatten();
                 MixerApp { session, icon_path }
             })
             .collect();
         Self { apps }
     }
+
+    /// Extrai o ícone dos apps ainda não tentados (lento: PowerShell). Devolve se achou algum.
+    pub fn fill_missing_icons(&mut self) -> bool {
+        let mut found = false;
+        for app in &mut self.apps {
+            let Some(path) = app.session.exe_path.clone() else {
+                continue;
+            };
+            if cached_icon(&path).is_some() {
+                continue;
+            }
+            let icon = extract_icon(&InstalledApp::exe(&app.session.name, &path));
+            found |= icon.is_some();
+            icon_cache()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert(path, icon.clone());
+            app.icon_path = icon;
+        }
+        found
+    }
 }
 
 /// O que fazer no sistema depois de um aperto (o estado da página já foi atualizado).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum MixerEffect {
     None,
     Close,
     /// `unmute`: o app estava no mudo e mexer no volume também o tira dele.
     SetVolume {
-        pid: u32,
+        pids: Vec<u32>,
         volume: f32,
         unmute: bool,
     },
     SetMute {
-        pid: u32,
+        pids: Vec<u32>,
         muted: bool,
     },
 }
@@ -83,20 +113,20 @@ pub enum MixerEffect {
 impl MixerEffect {
     /// Aplica a mudança no Windows; erros só vão para o log (o app pode ter fechado).
     pub fn apply(self) {
-        let result = match self {
+        let result = match &self {
             Self::None | Self::Close => return,
             Self::SetVolume {
-                pid,
+                pids,
                 volume,
                 unmute,
-            } => audio::set_session_volume(pid, volume).and_then(|()| {
-                if unmute {
-                    audio::set_session_mute(pid, false)
+            } => audio::set_session_volume(pids, *volume).and_then(|()| {
+                if *unmute {
+                    audio::set_session_mute(pids, false)
                 } else {
                     Ok(())
                 }
             }),
-            Self::SetMute { pid, muted } => audio::set_session_mute(pid, muted),
+            Self::SetMute { pids, muted } => audio::set_session_mute(pids, *muted),
         };
         if let Err(e) = result {
             log::warn!("mixer: {self:?} falhou: {e}");
@@ -114,7 +144,7 @@ pub enum KeyFace {
         name: String,
         icon_path: Option<String>,
     },
-    /// A tecla que abriu o mixer: "mais apps" se houver outra página, senão "sair".
+    /// A tecla de sair: "mais apps" se houver outra página, senão "sair".
     Home {
         more: bool,
     },
@@ -131,6 +161,8 @@ pub struct MixerKey {
     /// Porcentagem de volume, ex.: "62%"; vazio nas teclas sem valor.
     pub value: String,
     pub muted: bool,
+    /// App aberto mas sem tocar agora: aparece esmaecido.
+    pub inactive: bool,
     /// Quanto deste trecho do medidor está cheio (0 a 1); `None` onde a coluna não tem app.
     pub meter: Option<f32>,
     pub accent: RGBAColor,
@@ -144,62 +176,135 @@ impl MixerKey {
             hint: String::new(),
             value: String::new(),
             muted: false,
+            inactive: false,
             meter: None,
             accent,
         }
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct MixerView {
-    data: MixerData,
+    /// Apps na ordem em que apareceram: só somem se o programa fecha, e os novos entram no fim.
+    apps: Vec<MixerApp>,
     /// Primeiro app visível (a página avança de `APPS_PER_PAGE` em `APPS_PER_PAGE`).
     first_app: usize,
-    /// Tecla que abriu o mixer; ela vira "sair/mais".
-    home: usize,
+    /// Tecla que abriu o mixer.
+    opener: usize,
+    /// Sobe a cada mudança feita pelo usuário; uma leitura do sistema feita antes dela é descartada
+    /// para não desfazer o que o usuário acabou de fazer.
+    version: u64,
+    /// O que já foi enviado ao aparelho, para redesenhar só as teclas que mudaram.
+    drawn: RefCell<Vec<Option<MixerKey>>>,
 }
 
 impl MixerView {
-    pub fn new(data: MixerData, home: usize) -> Self {
+    pub fn new(opener: usize) -> Self {
         Self {
-            data,
+            apps: Vec::new(),
             first_app: 0,
-            home: home.min(KEY_COUNT - 1),
+            opener: opener.min(KEY_COUNT - 1),
+            version: NEXT_EPOCH.fetch_add(1, Ordering::Relaxed) << EPOCH_SHIFT,
+            drawn: RefCell::new(Vec::new()),
         }
     }
 
-    /// Troca os dados lidos do sistema; devolve `true` se a página mudou e precisa ser redesenhada.
-    pub fn update(&mut self, data: MixerData) -> bool {
-        if data == self.data {
+    pub fn version(&self) -> u64 {
+        self.version
+    }
+
+    /// Marca a página como alterada, para descartar leituras do sistema que começaram antes.
+    pub fn touch(&mut self) {
+        self.version += 1;
+    }
+
+    /// Integra uma leitura do sistema feita na versão `version`. Mantém a ordem dos apps já na
+    /// tela, tira os que fecharam e acrescenta no fim os novos que estão tocando.
+    /// Devolve `true` se a página mudou.
+    pub fn update(&mut self, data: MixerData, version: u64) -> bool {
+        if version != self.version {
             return false;
         }
-        self.data = data;
-        if self.first_app >= self.data.apps.len() {
+        let mut merged: Vec<MixerApp> = self
+            .apps
+            .iter()
+            .filter_map(|old| {
+                data.apps
+                    .iter()
+                    .find(|new| new.session.key == old.session.key)
+                    .cloned()
+            })
+            .collect();
+        for new in data.apps {
+            let known = merged.iter().any(|m| m.session.key == new.session.key);
+            if new.session.active && !known {
+                merged.push(new);
+            }
+        }
+        if merged == self.apps {
+            return false;
+        }
+        self.apps = merged;
+        if self.first_app >= self.apps.len() {
             self.first_app = 0;
         }
         true
     }
 
     fn app_at(&self, column: usize) -> Option<&MixerApp> {
-        self.data.apps.get(self.first_app + column)
+        self.apps.get(self.first_app + column)
     }
 
     fn has_more_apps(&self) -> bool {
-        self.data.apps.len() > APPS_PER_PAGE
+        self.apps.len() > APPS_PER_PAGE
+    }
+
+    /// A tecla de sair: onde o mixer foi aberto; se essa coluna já tem app e todos cabem numa página,
+    /// a mesma linha na última coluna livre, para não tomar a tecla de um app.
+    fn home_index(&self) -> usize {
+        let (row, column) = (self.opener / COLS, self.opener % COLS);
+        if self.has_more_apps() || self.app_at(column).is_none() {
+            return self.opener;
+        }
+        (0..COLS)
+            .rev()
+            .find(|&c| self.app_at(c).is_none())
+            .map_or(self.opener, |free| row * COLS + free)
     }
 
     /// As 15 teclas na ordem da grade (linha por linha); `accent` é a cor de destaque da interface.
     pub fn keys(&self, accent: RGBAColor) -> Vec<MixerKey> {
+        let home = self.home_index();
         (0..KEY_COUNT)
             .map(|index| {
                 let key = self.key_at(index / COLS, index % COLS, accent);
-                if index == self.home {
+                if index == home {
                     self.home_key(key.meter, accent)
                 } else {
                     key
                 }
             })
             .collect()
+    }
+
+    /// As teclas que mudaram desde o último desenho (e marca como desenhadas).
+    pub fn changed_keys(&self, accent: RGBAColor) -> Vec<(usize, MixerKey)> {
+        let mut drawn = self.drawn.borrow_mut();
+        drawn.resize(KEY_COUNT, None);
+        let mut changed = Vec::new();
+        for (index, key) in self.keys(accent).into_iter().enumerate() {
+            if drawn[index].as_ref() != Some(&key) {
+                drawn[index] = Some(key.clone());
+                changed.push((index, key));
+            }
+        }
+        changed
+    }
+
+    /// Esquece o que foi desenhado: a próxima vez todas as teclas voltam a ser enviadas
+    /// (o aparelho foi reconectado ou perdeu a imagem).
+    pub fn invalidate(&self) {
+        self.drawn.borrow_mut().clear();
     }
 
     fn key_at(&self, row: usize, column: usize, accent: RGBAColor) -> MixerKey {
@@ -222,12 +327,13 @@ impl MixerView {
                 String::new()
             },
             muted: session.muted,
+            inactive: !session.active,
             meter: Some(meter_slice(session.volume, row)),
             ..MixerKey::plain(face, accent)
         }
     }
 
-    /// A tecla "sair/mais" mantém o trecho do medidor da coluna onde está.
+    /// A tecla de sair mantém o trecho do medidor da coluna onde está.
     fn home_key(&self, meter: Option<f32>, accent: RGBAColor) -> MixerKey {
         let more = self.has_more_apps();
         MixerKey {
@@ -242,55 +348,76 @@ impl MixerView {
         }
     }
 
-    /// Trata o aperto da tecla `index` (solta após `held`), atualiza a página e diz o que mudar no sistema.
-    pub fn press(&mut self, index: usize, held: Duration) -> MixerEffect {
-        if index >= KEY_COUNT {
-            return MixerEffect::None;
+    /// O app e a linha (0 = ícone, 1 = +, 2 = −) da tecla `index`; `None` para a tecla de sair,
+    /// colunas vazias e teclas fora da grade.
+    fn locate(&self, index: usize) -> Option<(usize, usize)> {
+        if index >= KEY_COUNT || index == self.home_index() {
+            return None;
         }
-        if index == self.home {
-            return self.press_home(held);
-        }
-        let (row, column) = (index / COLS, index % COLS);
-        let slot = self.first_app + column;
-        let Some(app) = self.data.apps.get_mut(slot) else {
+        let slot = self.first_app + index % COLS;
+        (slot < self.apps.len()).then_some((slot, index / COLS))
+    }
+
+    /// `true` se `index` é uma tecla de + ou − (as que repetem ao segurar).
+    pub fn is_step_key(&self, index: usize) -> bool {
+        self.locate(index).is_some_and(|(_, row)| row > 0)
+    }
+
+    /// Aperto da tecla: o ícone muta/desmuta e +/− mudam o volume na hora.
+    pub fn press_down(&mut self, index: usize) -> MixerEffect {
+        let Some((slot, row)) = self.locate(index) else {
             return MixerEffect::None;
         };
+        self.version += 1;
+        let session = &mut self.apps[slot].session;
         match row {
             0 => {
-                app.session.muted = !app.session.muted;
+                session.muted = !session.muted;
                 MixerEffect::SetMute {
-                    pid: app.session.pid,
-                    muted: app.session.muted,
+                    pids: session.pids.clone(),
+                    muted: session.muted,
                 }
             }
-            1 => step(&mut app.session, VOLUME_STEP),
-            _ => step(&mut app.session, -VOLUME_STEP),
+            1 => step(session, VOLUME_STEP),
+            _ => step(session, -VOLUME_STEP),
         }
     }
 
-    /// Toque: próxima página de apps (ou sair, se tudo cabe numa página). Toque longo: sempre sai.
-    fn press_home(&mut self, held: Duration) -> MixerEffect {
+    /// Repetição de + ou − com a tecla segurada; as demais teclas não repetem.
+    pub fn repeat(&mut self, index: usize) -> MixerEffect {
+        match self.locate(index) {
+            Some((_, row)) if row > 0 => self.press_down(index),
+            _ => MixerEffect::None,
+        }
+    }
+
+    /// Soltura da tecla: só a de sair age aqui (toque ou toque longo).
+    pub fn release(&mut self, index: usize, held: Duration) -> MixerEffect {
+        if index != self.home_index() {
+            return MixerEffect::None;
+        }
         if held >= EXIT_HOLD || !self.has_more_apps() {
             return MixerEffect::Close;
         }
+        self.version += 1;
         let next = self.first_app + APPS_PER_PAGE;
-        self.first_app = if next >= self.data.apps.len() {
-            0
-        } else {
-            next
-        };
+        self.first_app = if next >= self.apps.len() { 0 } else { next };
         MixerEffect::None
     }
 }
 
 /// Soma `delta` ao volume (sem passar de 0% nem de 100%); mexer no volume tira o app do mudo.
+/// Sem efeito se nada muda (já no limite e sem mudo), para não chamar o Windows à toa.
 fn step(session: &mut AudioSession, delta: f32) -> MixerEffect {
     let volume = (session.volume + delta).clamp(0.0, 1.0);
     let unmute = session.muted;
+    if volume == session.volume && !unmute {
+        return MixerEffect::None;
+    }
     session.volume = volume;
     session.muted = false;
     MixerEffect::SetVolume {
-        pid: session.pid,
+        pids: session.pids.clone(),
         volume,
         unmute,
     }
@@ -320,26 +447,41 @@ mod tests {
     const TAP: Duration = Duration::from_millis(50);
     const HOME: usize = 14;
 
-    fn app(pid: u32, volume: f32) -> MixerApp {
+    fn app(n: u32, volume: f32, active: bool) -> MixerApp {
         MixerApp {
             session: AudioSession {
-                pid,
-                name: format!("App{pid}"),
+                key: format!("app{n}"),
+                name: format!("App{n}"),
                 exe_path: None,
+                pids: vec![n],
                 volume,
                 muted: false,
+                active,
             },
             icon_path: None,
         }
     }
 
+    /// Entrega uma leitura do sistema ao mixer como se tivesse sido feita agora.
+    fn load(v: &mut MixerView, d: MixerData) -> bool {
+        let version = v.version();
+        v.update(d, version)
+    }
+
+    fn data(apps: usize) -> MixerData {
+        MixerData {
+            apps: (1..=apps as u32).map(|n| app(n, 0.5, true)).collect(),
+        }
+    }
+
+    fn view_at(apps: usize, opener: usize) -> MixerView {
+        let mut v = MixerView::new(opener);
+        load(&mut v, data(apps));
+        v
+    }
+
     fn view(apps: usize) -> MixerView {
-        MixerView::new(
-            MixerData {
-                apps: (1..=apps as u32).map(|p| app(p, 0.5)).collect(),
-            },
-            HOME,
-        )
+        view_at(apps, HOME)
     }
 
     fn volume_of(effect: MixerEffect) -> f32 {
@@ -349,78 +491,99 @@ mod tests {
         }
     }
 
+    fn keys(v: &MixerView) -> Vec<MixerKey> {
+        v.keys(ACCENT)
+    }
+
     #[test]
     fn page_has_one_key_per_button() {
-        assert_eq!(view(2).keys(ACCENT).len(), KEY_COUNT);
+        assert_eq!(keys(&view(2)).len(), KEY_COUNT);
     }
 
     #[test]
     fn top_row_shows_each_app_with_name_and_percentage() {
-        let mut v = view(5);
-        v.data.apps[0].session.name = "Spotify".into();
-        v.data.apps[0].session.volume = 0.62;
-        let keys = v.keys(ACCENT);
-        assert_eq!(keys[0].value, "62%");
-        assert!(matches!(&keys[0].face, KeyFace::App { name, .. } if name == "Spotify"));
+        let mut v = MixerView::new(HOME);
+        let mut d = data(5);
+        d.apps[0].session.name = "Spotify".into();
+        d.apps[0].session.volume = 0.62;
+        load(&mut v, d);
+        let k = keys(&v);
+        assert_eq!(k[0].value, "62%");
+        assert!(matches!(&k[0].face, KeyFace::App { name, .. } if name == "Spotify"));
         for column in 0..COLS {
-            assert!(matches!(keys[column].face, KeyFace::App { .. }));
-            assert_eq!(keys[COLS + column].face, KeyFace::Plus);
+            assert!(matches!(k[column].face, KeyFace::App { .. }));
+            assert_eq!(k[COLS + column].face, KeyFace::Plus);
         }
     }
 
     #[test]
-    fn middle_row_raises_and_bottom_row_lowers() {
+    fn middle_row_raises_and_bottom_row_lowers_on_press() {
         let mut v = view(1);
-        assert!((volume_of(v.press(5, TAP)) - 0.55).abs() < 1e-6);
-        assert!((volume_of(v.press(10, TAP)) - 0.50).abs() < 1e-6);
+        assert!((volume_of(v.press_down(5)) - 0.55).abs() < 1e-6);
+        assert!((volume_of(v.press_down(10)) - 0.50).abs() < 1e-6);
     }
 
     #[test]
-    fn volume_never_leaves_zero_to_one() {
-        let mut loud = view(1);
-        loud.data.apps[0].session.volume = 1.0;
-        assert_eq!(volume_of(loud.press(5, TAP)), 1.0);
-        let mut quiet = view(1);
-        quiet.data.apps[0].session.volume = 0.0;
-        assert_eq!(volume_of(quiet.press(10, TAP)), 0.0);
+    fn volume_stops_at_the_limits_without_calling_windows() {
+        let mut v = MixerView::new(HOME);
+        load(
+            &mut v,
+            MixerData {
+                apps: vec![app(1, 1.0, true), app(2, 0.0, true)],
+            },
+        );
+        assert_eq!(v.press_down(5), MixerEffect::None);
+        assert_eq!(v.press_down(11), MixerEffect::None);
+        assert!(volume_of(v.press_down(6)) > 0.0);
+    }
+
+    #[test]
+    fn effects_carry_every_process_of_the_program() {
+        let mut v = MixerView::new(HOME);
+        let mut d = data(1);
+        d.apps[0].session.pids = vec![7, 8, 9];
+        load(&mut v, d);
+        assert!(
+            matches!(v.press_down(5), MixerEffect::SetVolume { pids, .. } if pids == [7, 8, 9])
+        );
+        assert!(matches!(v.press_down(0), MixerEffect::SetMute { pids, .. } if pids == [7, 8, 9]));
     }
 
     #[test]
     fn app_key_toggles_mute_and_keeps_the_percentage() {
         let mut v = view(1);
-        assert_eq!(
-            v.press(0, TAP),
-            MixerEffect::SetMute {
-                pid: 1,
-                muted: true
-            }
-        );
-        let tile = &v.keys(ACCENT)[0];
+        assert!(matches!(
+            v.press_down(0),
+            MixerEffect::SetMute { muted: true, .. }
+        ));
+        let tile = &keys(&v)[0];
         assert!(tile.muted);
         assert_eq!(tile.value, "50%");
-        assert_eq!(
-            v.press(0, TAP),
-            MixerEffect::SetMute {
-                pid: 1,
-                muted: false
-            }
-        );
+        assert!(matches!(
+            v.press_down(0),
+            MixerEffect::SetMute { muted: false, .. }
+        ));
     }
 
     #[test]
     fn changing_volume_unmutes_the_app_in_the_page_and_in_the_system() {
         let mut v = view(1);
-        v.press(0, TAP);
-        let effect = v.press(5, TAP);
-        assert!(!v.data.apps[0].session.muted);
+        v.press_down(0);
+        let effect = v.press_down(5);
+        assert!(!keys(&v)[0].muted);
         assert!(matches!(
             effect,
             MixerEffect::SetVolume { unmute: true, .. }
         ));
-        assert!(matches!(
-            v.press(5, TAP),
-            MixerEffect::SetVolume { unmute: false, .. }
-        ));
+    }
+
+    #[test]
+    fn only_plus_and_minus_repeat_while_held() {
+        let mut v = view(2);
+        assert!(v.is_step_key(5) && v.is_step_key(10));
+        assert!(!v.is_step_key(0) && !v.is_step_key(HOME) && !v.is_step_key(7));
+        assert_eq!(v.repeat(0), MixerEffect::None);
+        assert!(matches!(v.repeat(5), MixerEffect::SetVolume { .. }));
     }
 
     #[test]
@@ -433,86 +596,197 @@ mod tests {
     }
 
     #[test]
-    fn only_columns_with_an_app_have_a_meter() {
-        let keys = view(1).keys(ACCENT);
-        assert!(keys[0].meter.is_some() && keys[5].meter.is_some() && keys[10].meter.is_some());
-        assert!(keys[1].meter.is_none() && keys[11].meter.is_none());
-    }
-
-    #[test]
     fn empty_slots_do_nothing() {
         let mut v = view(1);
         for index in [1, 6, 11, 2, 7, 12, 3, 8, 13, 4, 9] {
-            assert_eq!(v.press(index, TAP), MixerEffect::None);
+            assert_eq!(v.press_down(index), MixerEffect::None);
         }
     }
 
     #[test]
-    fn the_key_that_opened_the_mixer_becomes_the_home_key() {
-        let v = MixerView::new(MixerData::default(), 7);
-        let keys = v.keys(ACCENT);
-        assert!(matches!(keys[7].face, KeyFace::Home { more: false }));
-        let homes = keys
-            .iter()
-            .filter(|k| matches!(k.face, KeyFace::Home { .. }))
-            .count();
-        assert_eq!(homes, 1);
+    fn home_stays_on_the_opening_key_when_its_column_is_free() {
+        let v = view_at(2, 7);
+        assert!(matches!(keys(&v)[7].face, KeyFace::Home { more: false }));
+    }
+
+    #[test]
+    fn home_moves_to_a_free_column_instead_of_taking_an_apps_key() {
+        let v = view_at(3, 6);
+        let k = keys(&v);
+        assert!(matches!(k[9].face, KeyFace::Home { .. }));
+        assert_eq!(k[6].face, KeyFace::Plus);
+    }
+
+    #[test]
+    fn home_takes_the_opening_key_only_when_every_column_is_full() {
+        let v = view_at(5, 6);
+        assert!(matches!(keys(&v)[6].face, KeyFace::Home { .. }));
+    }
+
+    #[test]
+    fn home_does_not_jump_between_pages_when_there_are_more_apps() {
+        let mut v = view_at(7, 6);
+        assert!(matches!(keys(&v)[6].face, KeyFace::Home { more: true }));
+        v.release(6, TAP);
+        assert!(matches!(keys(&v)[6].face, KeyFace::Home { more: true }));
     }
 
     #[test]
     fn home_key_outside_the_grid_falls_back_to_the_last_key() {
-        let v = MixerView::new(MixerData::default(), 40);
-        assert!(matches!(
-            v.keys(ACCENT)[KEY_COUNT - 1].face,
-            KeyFace::Home { .. }
-        ));
+        let v = view_at(0, 40);
+        assert!(matches!(keys(&v)[KEY_COUNT - 1].face, KeyFace::Home { .. }));
     }
 
     #[test]
-    fn home_key_keeps_the_meter_of_its_column() {
-        assert!(view(5).keys(ACCENT)[HOME].meter.is_some());
-        assert!(view(1).keys(ACCENT)[HOME].meter.is_none());
+    fn there_is_always_exactly_one_home_key() {
+        for apps in 0..9 {
+            for opener in 0..KEY_COUNT {
+                let homes = keys(&view_at(apps, opener))
+                    .iter()
+                    .filter(|k| matches!(k.face, KeyFace::Home { .. }))
+                    .count();
+                assert_eq!(homes, 1, "apps={apps} opener={opener}");
+            }
+        }
     }
 
     #[test]
     fn tapping_home_exits_when_everything_fits_on_one_page() {
-        assert_eq!(view(5).press(HOME, TAP), MixerEffect::Close);
-        assert_eq!(view(0).press(HOME, TAP), MixerEffect::Close);
+        assert_eq!(view(5).release(HOME, TAP), MixerEffect::Close);
+        assert_eq!(view(0).release(HOME, TAP), MixerEffect::Close);
     }
 
     #[test]
     fn tapping_home_pages_through_apps_and_wraps() {
         let mut v = view(7);
-        assert_eq!(v.app_at(0).map(|a| a.session.pid), Some(1));
-        assert_eq!(v.press(HOME, TAP), MixerEffect::None);
-        assert_eq!(v.app_at(0).map(|a| a.session.pid), Some(6));
+        assert_eq!(v.app_at(0).map(|a| a.session.key.as_str()), Some("app1"));
+        assert_eq!(v.release(HOME, TAP), MixerEffect::None);
+        assert_eq!(v.app_at(0).map(|a| a.session.key.as_str()), Some("app6"));
         assert!(v.app_at(2).is_none());
-        v.press(HOME, TAP);
-        assert_eq!(v.app_at(0).map(|a| a.session.pid), Some(1));
+        v.release(HOME, TAP);
+        assert_eq!(v.app_at(0).map(|a| a.session.key.as_str()), Some("app1"));
     }
 
     #[test]
     fn holding_home_always_exits() {
-        assert_eq!(view(7).press(HOME, EXIT_HOLD), MixerEffect::Close);
+        assert_eq!(view(7).release(HOME, EXIT_HOLD), MixerEffect::Close);
+    }
+
+    #[test]
+    fn releasing_other_keys_does_nothing() {
+        let mut v = view(2);
+        assert_eq!(v.release(0, TAP), MixerEffect::None);
+        assert_eq!(v.release(5, EXIT_HOLD), MixerEffect::None);
     }
 
     #[test]
     fn home_label_says_what_a_tap_does() {
-        let more = &view(7).keys(ACCENT)[HOME];
+        let more = &keys(&view(7))[HOME];
         assert_eq!(more.label, "MAIS");
         assert!(!more.hint.is_empty());
-        let exit = &view(2).keys(ACCENT)[HOME];
+        let exit = &keys(&view(2))[HOME];
         assert_eq!(exit.label, "SAIR");
         assert!(exit.hint.is_empty());
     }
 
     #[test]
-    fn update_reports_changes_and_fixes_the_page() {
+    fn apps_keep_their_order_when_windows_reorders_them() {
+        let mut v = MixerView::new(HOME);
+        load(&mut v, data(3));
+        let mut reordered = data(3);
+        reordered.apps.reverse();
+        assert!(!load(&mut v, reordered));
+        assert_eq!(v.app_at(0).map(|a| a.session.key.as_str()), Some("app1"));
+    }
+
+    #[test]
+    fn a_paused_app_stays_on_screen_dimmed() {
+        let mut v = MixerView::new(HOME);
+        load(&mut v, data(2));
+        let mut later = data(2);
+        later.apps[0].session.active = false;
+        assert!(load(&mut v, later));
+        assert!(keys(&v)[0].inactive);
+        assert!(!keys(&v)[1].inactive);
+    }
+
+    #[test]
+    fn a_closed_program_leaves_and_a_new_one_joins_at_the_end() {
+        let mut v = MixerView::new(HOME);
+        load(&mut v, data(3));
+        let mut later = data(3);
+        later.apps.remove(1);
+        later.apps.push(app(9, 0.5, true));
+        assert!(load(&mut v, later));
+        let order: Vec<_> = (0..3)
+            .filter_map(|c| v.app_at(c))
+            .map(|a| a.session.key.clone())
+            .collect();
+        assert_eq!(order, ["app1", "app3", "app9"]);
+    }
+
+    #[test]
+    fn a_new_app_that_is_not_playing_does_not_join() {
+        let mut v = MixerView::new(HOME);
+        load(&mut v, data(1));
+        let mut later = data(1);
+        later.apps.push(app(2, 0.5, false));
+        assert!(!load(&mut v, later));
+    }
+
+    #[test]
+    fn a_reading_made_before_a_key_press_is_discarded() {
+        let mut v = view(1);
+        let stale_version = v.version();
+        v.press_down(5);
+        let mut stale = data(1);
+        stale.apps[0].session.volume = 0.1;
+        assert!(!v.update(stale, stale_version));
+        assert_eq!(keys(&v)[0].value, "55%");
+    }
+
+    #[test]
+    fn a_reading_for_a_closed_mixer_is_not_accepted_by_a_new_one() {
+        let old = MixerView::new(HOME);
+        let mut reopened = MixerView::new(HOME);
+        assert_ne!(old.version(), reopened.version());
+        assert!(!reopened.update(data(1), old.version()));
+    }
+
+    #[test]
+    fn touching_the_page_discards_readings_started_before() {
+        let mut v = view(1);
+        let started = v.version();
+        v.touch();
+        assert!(!v.update(data(2), started));
+        assert!(load(&mut v, data(2)));
+    }
+
+    #[test]
+    fn update_fixes_the_page_when_apps_disappear() {
         let mut v = view(7);
-        v.press(HOME, TAP);
-        assert!(!v.update(v.data.clone()));
-        assert!(v.update(view(2).data));
-        assert_eq!(v.first_app, 0);
+        v.release(HOME, TAP);
+        assert!(v.update(data(2), v.version()));
+        assert!(v.app_at(0).is_some());
+    }
+
+    #[test]
+    fn only_changed_keys_are_redrawn() {
+        let mut v = view(2);
+        assert_eq!(v.changed_keys(ACCENT).len(), KEY_COUNT);
+        assert!(v.changed_keys(ACCENT).is_empty());
+        v.press_down(5);
+        let changed: Vec<usize> = v.changed_keys(ACCENT).iter().map(|(i, _)| *i).collect();
+        // A tecla de baixo continua cheia no medidor, então não é reenviada.
+        assert_eq!(changed, [0, 5]);
+    }
+
+    #[test]
+    fn invalidate_makes_the_next_draw_full() {
+        let v = view(1);
+        v.changed_keys(ACCENT);
+        v.invalidate();
+        assert_eq!(v.changed_keys(ACCENT).len(), KEY_COUNT);
     }
 
     /// Gera uma imagem das 15 teclas para conferir o visual:
@@ -520,14 +794,17 @@ mod tests {
     #[test]
     #[ignore]
     fn mixer_preview() {
-        let mut v = view(3);
-        v.data.apps[0].session.name = "Spotify".into();
-        v.data.apps[0].session.volume = 0.62;
-        v.data.apps[1].session.name = "Google Chrome".into();
-        v.data.apps[1].session.volume = 0.3;
-        v.data.apps[2].session.name = "Discord".into();
-        v.data.apps[2].session.volume = 1.0;
-        v.press(1, TAP);
+        let mut v = MixerView::new(HOME);
+        let mut d = data(3);
+        d.apps[0].session.name = "Spotify".into();
+        d.apps[0].session.volume = 0.62;
+        d.apps[1].session.name = "Google Chrome".into();
+        d.apps[1].session.volume = 0.3;
+        d.apps[2].session.name = "Discord".into();
+        d.apps[2].session.volume = 1.0;
+        d.apps[2].session.active = false;
+        load(&mut v, d);
+        v.press_down(0);
         let px = 85u32;
         let mut sheet = image::RgbaImage::new((px + 6) * 5, (px + 6) * 3);
         for (i, key) in v.keys(ACCENT).iter().enumerate() {

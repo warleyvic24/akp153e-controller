@@ -192,19 +192,21 @@ fn handle(mut conn: TcpStream, state: &SharedState, tx: &Sender<UsbCmd>) {
             let cfg = AppConfig::load();
             let brightness = cfg.ui.brightness;
             let language = cfg.ui.language;
-            let (snapshot, brightness_changed) = {
-                let mut sh = runtime::lock(state);
+            let brightness_changed = runtime::change_and_draw(state, tx, |sh| {
                 let changed = sh.cfg.ui.brightness != brightness;
                 sh.cfg = cfg;
-                (runtime::Snapshot::take(&sh), changed)
-            };
+                // Com o mixer aberto, "reload" é o que restaura a tela: reenvia as 15 teclas dele.
+                if let Some(mixer) = &sh.mixer {
+                    mixer.invalidate();
+                }
+                (changed, true)
+            });
             usb::set_brightness(brightness);
             // O menu da bandeja só muda de idioma quando o serviço reinicia; o resto vale já.
             crate::strings::set_language(language);
             if brightness_changed {
                 let _ = tx.send(UsbCmd::Brightness(brightness));
             }
-            snapshot.render(tx);
         }
         "status" => {
             let sh = runtime::lock(state);
@@ -216,6 +218,7 @@ fn handle(mut conn: TcpStream, state: &SharedState, tx: &Sender<UsbCmd>) {
             };
             let key_count = runtime::lock(state).cfg.page().buttons.len();
             runtime::render_calibration(key_count, tx, px);
+            runtime::forget_mixer_drawing(state);
         }
         other if other.starts_with("pattern") => {
             let Ok(px) = parse_px(other.trim_start_matches("pattern")) else {
@@ -223,6 +226,7 @@ fn handle(mut conn: TcpStream, state: &SharedState, tx: &Sender<UsbCmd>) {
             };
             let key_count = runtime::lock(state).cfg.page().buttons.len();
             runtime::render_pattern(key_count, tx, px);
+            runtime::forget_mixer_drawing(state);
         }
         other => log::warn!("comando desconhecido: {other}"),
     }

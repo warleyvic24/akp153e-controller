@@ -58,6 +58,9 @@ const MEDIA_KEYS: [(&str, &str); 6] = [
 
 const BODY_ROWS: usize = 3;
 
+/// Explica a ação "Mixer": o que aparece no aparelho e como sair.
+const MIXER_HINT: &str = "Mostra no aparelho os apps com som: ícone com a porcentagem em cima, + no meio e − embaixo. Esta tecla vira SAIR (segure para sair se houver mais de 5 apps).";
+
 fn action_name(a: &ButtonAction) -> &'static str {
     match a {
         ButtonAction::None => "none",
@@ -209,7 +212,11 @@ pub fn action_editor(
             let label = widgets::section(ui, "Perfil de destino", cx.pal);
             pick_target(ui, id, label, profile, &cx.targets.profiles)
         }
-        ButtonAction::None | ButtonAction::OpenMixer => false,
+        ButtonAction::OpenMixer => {
+            ui.label(widgets::hint(t(MIXER_HINT), cx.pal));
+            false
+        }
+        ButtonAction::None => false,
     };
     changed
 }
