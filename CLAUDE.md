@@ -30,8 +30,8 @@ cargo build --release           # -> target\release\akp153e.exe
 ## Convenções
 
 - Comentários e mensagens ao usuário em português; nomes de código em inglês. Constantes nomeadas em vez de números soltos.
-- Nenhum arquivo acima de 800 linhas (hoje: `main.rs` ~610, `schema.rs` ~730, `stage.rs` ~460). Painéis em `panes.rs`, editor de ações em `action_ui.rs`, inspetor em `inspector.rs`, barras em `bars.rs`, palco em `stage.rs`, preferências em `settings.rs`, avisos em `toast.rs`, textos/idiomas em `strings.rs` (texto novo = `t`/`tf` + entrada em `EN`), CLI em `cli.rs`.
-- Unsafe só em `shell.rs`, sempre com `// SAFETY:`.
+- Nenhum arquivo acima de 800 linhas (hoje: `main.rs` ~610, `schema.rs` ~730, `stage.rs` ~460). Painéis em `panes.rs`, editor de ações em `action_ui.rs`, inspetor em `inspector.rs`, barras em `bars.rs`, palco em `stage.rs`, preferências em `settings.rs`, avisos em `toast.rs`, textos/idiomas em `strings.rs` (texto novo = `t`/`tf` + entrada em `EN`), CLI em `cli.rs`, áudio do Windows em `audio.rs`, página de mixer de volume em `mixer.rs` (ação `open-mixer`).
+- Unsafe só em `shell.rs` e `audio.rs` (Core Audio do mixer), sempre com `// SAFETY:`.
 - Interface: siga `docs/DESIGN.md` (tokens em `tokens.rs`, cores em `theme::Palette`, texto mínimo 12 px, alvo mínimo 24 px, contraste imposto por testes em `theme.rs`). Confira nos dois temas e, para testar clicando sem risco, use em debug `AKP153E_PREVIEW_THEME=light|dark` e `AKP153E_CONFIG_DIR=<pasta com cópia do config.json>`.
 
 ## Hardware

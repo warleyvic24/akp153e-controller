@@ -155,6 +155,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tray-icon",
+ "windows 0.58.0",
  "winresource",
 ]
 

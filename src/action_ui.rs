@@ -36,7 +36,7 @@ impl Targets {
     }
 }
 
-const ACTION_KINDS: [(&str, &str); 7] = [
+const ACTION_KINDS: [(&str, &str); 8] = [
     ("none", "Nenhuma"),
     ("hotkey", "Atalho"),
     ("launch-app", "App"),
@@ -44,6 +44,7 @@ const ACTION_KINDS: [(&str, &str); 7] = [
     ("media-key", "Mídia"),
     ("switch-page", "Página"),
     ("switch-profile", "Perfil"),
+    ("open-mixer", "Mixer"),
 ];
 
 const MEDIA_KEYS: [(&str, &str); 6] = [
@@ -66,6 +67,7 @@ fn action_name(a: &ButtonAction) -> &'static str {
         ButtonAction::MediaKey { .. } => "media-key",
         ButtonAction::SwitchPage { .. } => "switch-page",
         ButtonAction::SwitchProfile { .. } => "switch-profile",
+        ButtonAction::OpenMixer => "open-mixer",
     }
 }
 
@@ -86,6 +88,7 @@ fn default_action(kind: &str) -> ButtonAction {
         },
         "switch-page" => ButtonAction::SwitchPage { page: 0 },
         "switch-profile" => ButtonAction::SwitchProfile { profile: 0 },
+        "open-mixer" => ButtonAction::OpenMixer,
         _ => ButtonAction::None,
     }
 }
@@ -206,7 +209,7 @@ pub fn action_editor(
             let label = widgets::section(ui, "Perfil de destino", cx.pal);
             pick_target(ui, id, label, profile, &cx.targets.profiles)
         }
-        ButtonAction::None => false,
+        ButtonAction::None | ButtonAction::OpenMixer => false,
     };
     changed
 }

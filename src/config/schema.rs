@@ -51,6 +51,8 @@ pub enum ButtonAction {
     SwitchProfile {
         profile: u64,
     },
+    /// Mostra no aparelho o mixer de volume dos apps com som.
+    OpenMixer,
 }
 fn get() -> String {
     "GET".into()

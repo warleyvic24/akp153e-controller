@@ -202,6 +202,7 @@ const EN: &[(&str, &str)] = &[
         "Nenhuma ação encontrada para “{}”. Limpe a busca para ver todas.",
         "No action found for “{}”. Clear the search to see them all.",
     ),
+    ("Mixer", "Mixer"),
     ("Nome da página", "Page name"),
     ("Nome do perfil", "Profile name"),
     ("Nova página", "New page"),

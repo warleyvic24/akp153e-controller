@@ -70,7 +70,8 @@ impl Executor {
             }
             ButtonAction::None
             | ButtonAction::SwitchPage { .. }
-            | ButtonAction::SwitchProfile { .. } => {}
+            | ButtonAction::SwitchProfile { .. }
+            | ButtonAction::OpenMixer => {}
         }
     }
 }

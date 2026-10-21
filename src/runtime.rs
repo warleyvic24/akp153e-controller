@@ -3,18 +3,23 @@
 use crate::config::schema::{AppConfig, ButtonAction, ButtonConfig, RGBAColor};
 use crate::engine::actions::Executor;
 use crate::graphics::renderer::render_button_frame;
+use crate::mixer::{MixerData, MixerEffect, MixerView};
 use crate::usb::{UsbCmd, UsbEvent};
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 const MAX_KEYS: usize = 64;
 const STATUS_POLL: Duration = Duration::from_secs(1);
+/// Com o mixer aberto, relê os apps com som neste intervalo (apps abrem, fecham ou mudam de volume).
+const MIXER_REFRESH: Duration = Duration::from_secs(2);
 
 pub struct Shared {
     pub cfg: AppConfig,
     pub connected: bool,
     pub icon_px: u32,
+    /// Mixer de volume aberto no aparelho; enquanto existir, ele substitui a página nas teclas.
+    pub mixer: Option<MixerView>,
 }
 
 pub type SharedState = Arc<Mutex<Shared>>;
@@ -24,6 +29,7 @@ pub fn new_state(cfg: AppConfig, icon_px: u32) -> SharedState {
         cfg,
         connected: false,
         icon_px,
+        mixer: None,
     }))
 }
 
@@ -50,7 +56,10 @@ pub struct Snapshot {
 impl Snapshot {
     pub fn take(sh: &Shared) -> Self {
         Self {
-            buttons: sh.cfg.page().buttons.clone(),
+            buttons: sh
+                .mixer
+                .as_ref()
+                .map_or_else(|| sh.cfg.page().buttons.clone(), MixerView::buttons),
             px: sh.icon_px,
         }
     }
@@ -134,9 +143,15 @@ impl Nav {
 pub struct Followup {
     nav: Option<Nav>,
     snapshot: Option<Snapshot>,
+    open_mixer: bool,
 }
 
 impl Followup {
+    /// A ação pediu o mixer: o serviço o abre depois de soltar o lock (ler o áudio é lento).
+    pub fn wants_mixer(&self) -> bool {
+        self.open_mixer
+    }
+
     pub fn run(self, tx: &Sender<UsbCmd>) {
         if let Some(nav) = &self.nav {
             persist(nav);
@@ -191,6 +206,12 @@ fn dispatch(sh: &mut Shared, exec: &Executor, action: ButtonAction) -> Followup 
             };
             sh.cfg.active_profile = index;
         }
+        ButtonAction::OpenMixer => {
+            return Followup {
+                open_mixer: true,
+                ..Followup::default()
+            };
+        }
         other => {
             exec.run(other);
             return Followup::default();
@@ -199,6 +220,7 @@ fn dispatch(sh: &mut Shared, exec: &Executor, action: ButtonAction) -> Followup 
     Followup {
         nav: Nav::capture(sh),
         snapshot: Some(Snapshot::take(sh)),
+        open_mixer: false,
     }
 }
 
@@ -253,11 +275,70 @@ pub fn spawn_status_poll(state: SharedState) {
     });
 }
 
+/// Abre o mixer: lê o áudio sem o lock, publica a página e a desenha no aparelho.
+fn open_mixer(state: &SharedState, tx: &Sender<UsbCmd>) {
+    let data = MixerData::load();
+    let snapshot = {
+        let mut sh = lock(state);
+        sh.mixer = Some(MixerView::new(data));
+        Snapshot::take(&sh)
+    };
+    snapshot.render(tx);
+}
+
+/// Relê o áudio e redesenha só se algo mudou.
+fn refresh_mixer(state: &SharedState, tx: &Sender<UsbCmd>) {
+    let data = MixerData::load();
+    let snapshot = {
+        let mut sh = lock(state);
+        let changed = sh.mixer.as_mut().is_some_and(|m| m.update(data));
+        changed.then(|| Snapshot::take(&sh))
+    };
+    if let Some(snapshot) = snapshot {
+        snapshot.render(tx);
+    }
+}
+
+/// Com o mixer aberto, a tecla é dele: atualiza a página, redesenha e só então muda o volume no sistema.
+/// Devolve `false` se o mixer não está aberto (a tecla segue o caminho normal).
+fn press_mixer(state: &SharedState, tx: &Sender<UsbCmd>, index: usize) -> bool {
+    let (effect, snapshot) = {
+        let mut sh = lock(state);
+        let Some(mixer) = sh.mixer.as_mut() else {
+            return false;
+        };
+        let effect = mixer.press(index);
+        if effect == MixerEffect::Close {
+            sh.mixer = None;
+        }
+        (effect, Snapshot::take(&sh))
+    };
+    snapshot.render(tx);
+    effect.apply();
+    true
+}
+
 /// Thread que consome os eventos do aparelho (vive mesmo com a janela escondida).
 pub fn spawn(state: SharedState, tx: Sender<UsbCmd>, rx: Receiver<UsbEvent>, exec: Executor) {
     std::thread::spawn(move || {
         let mut down: [Option<Instant>; MAX_KEYS] = [None; MAX_KEYS];
-        while let Ok(event) = rx.recv() {
+        loop {
+            let mixer_open = lock(&state).mixer.is_some();
+            let event = if mixer_open {
+                match rx.recv_timeout(MIXER_REFRESH) {
+                    Ok(event) => event,
+                    Err(RecvTimeoutError::Timeout) => {
+                        refresh_mixer(&state, &tx);
+                        continue;
+                    }
+                    Err(RecvTimeoutError::Disconnected) => break,
+                }
+            } else {
+                match rx.recv() {
+                    Ok(event) => event,
+                    Err(_) => break,
+                }
+            };
             match event {
                 UsbEvent::Info { icon_px } => lock(&state).icon_px = icon_px,
                 UsbEvent::Status(connected) => {
@@ -274,9 +355,15 @@ pub fn spawn(state: SharedState, tx: Sender<UsbCmd>, rx: Receiver<UsbEvent>, exe
                     if pressed {
                         down[index] = Some(Instant::now());
                     } else if let Some(since) = down[index].take() {
-                        let followup =
-                            trigger_locked(&mut lock(&state), &exec, index, since.elapsed());
-                        followup.run(&tx);
+                        if !press_mixer(&state, &tx, index) {
+                            let followup =
+                                trigger_locked(&mut lock(&state), &exec, index, since.elapsed());
+                            let wants_mixer = followup.wants_mixer();
+                            followup.run(&tx);
+                            if wants_mixer {
+                                open_mixer(&state, &tx);
+                            }
+                        }
                     }
                 }
                 UsbEvent::Key { .. } => {}
@@ -300,6 +387,7 @@ mod tests {
             cfg,
             connected: true,
             icon_px: 85,
+            mixer: None,
         }
     }
 
@@ -356,5 +444,30 @@ mod tests {
         trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);
         assert_eq!(sh.cfg.profiles[0].active_page, 0);
         assert_eq!(rx.try_iter().count(), 0);
+    }
+
+    #[tokio::test]
+    async fn open_mixer_action_asks_the_service_to_open_it() {
+        let (tx, rx) = channel();
+        let exec = Executor::new(tokio::runtime::Handle::current());
+        let mut sh = two_page_state(ButtonAction::OpenMixer, None);
+        let followup = trigger_locked(&mut sh, &exec, 0, Duration::ZERO);
+        assert!(followup.wants_mixer());
+        followup.run(&tx);
+        assert_eq!(rx.try_iter().count(), 0);
+        assert_eq!(sh.cfg.profiles[0].active_page, 0);
+    }
+
+    #[test]
+    fn open_mixer_replaces_the_page_on_the_keys_until_closed() {
+        let (tx, rx) = channel();
+        let state = Arc::new(Mutex::new(two_page_state(ButtonAction::None, None)));
+        lock(&state).mixer = Some(MixerView::new(MixerData::default()));
+        assert!(press_mixer(&state, &tx, 9));
+        assert_eq!(rx.try_iter().count(), 15);
+        assert!(lock(&state).mixer.is_some());
+        assert!(press_mixer(&state, &tx, 14));
+        assert!(lock(&state).mixer.is_none());
+        assert!(!press_mixer(&state, &tx, 14));
     }
 }

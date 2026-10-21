@@ -81,6 +81,7 @@ pub fn presets() -> Vec<Preset> {
         p("Mídia", "Vol +", "volup", MEDIA, media("volup")),
         p("Mídia", "Vol -", "voldown", MEDIA, media("voldown")),
         p("Mídia", "Mudo", "mute", MEDIA, media("mute")),
+        p("Mídia", "Mixer", "volup", MEDIA, ButtonAction::OpenMixer),
         p("Atalhos", "Copiar", "copy", KEYS, hotkey(&["ctrl", "c"])),
         p("Atalhos", "Colar", "paste", KEYS, hotkey(&["ctrl", "v"])),
         p("Atalhos", "Recortar", "bolt", KEYS, hotkey(&["ctrl", "x"])),

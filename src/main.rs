@@ -2,6 +2,7 @@
 mod action_ui;
 mod appicon;
 mod apps;
+mod audio;
 mod bars;
 mod cli;
 mod config;
@@ -11,6 +12,7 @@ mod history;
 mod icons;
 mod inspector;
 mod library;
+mod mixer;
 mod panes;
 mod picker;
 mod runtime;
