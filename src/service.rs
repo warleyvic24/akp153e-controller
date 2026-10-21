@@ -109,7 +109,9 @@ pub fn run(open_editor: bool) {
     let (event_tx, event_rx) = channel();
     let (cmd_tx, cmd_rx) = channel();
     usb::spawn(event_tx, cmd_rx);
-    let state = runtime::new_state(AppConfig::load(), usb::ICON_SIZE as u32);
+    let cfg = AppConfig::load();
+    usb::set_brightness(cfg.ui.brightness);
+    let state = runtime::new_state(cfg, usb::ICON_SIZE as u32);
     runtime::spawn(state.clone(), cmd_tx.clone(), event_rx, exec);
     spawn_control_server(listener, state, cmd_tx);
 
@@ -186,11 +188,17 @@ fn handle(mut conn: TcpStream, state: &SharedState, tx: &Sender<UsbCmd>) {
         }
         "reload" => {
             let cfg = AppConfig::load();
-            let snapshot = {
+            let brightness = cfg.ui.brightness;
+            let (snapshot, brightness_changed) = {
                 let mut sh = runtime::lock(state);
+                let changed = sh.cfg.ui.brightness != brightness;
                 sh.cfg = cfg;
-                runtime::Snapshot::take(&sh)
+                (runtime::Snapshot::take(&sh), changed)
             };
+            usb::set_brightness(brightness);
+            if brightness_changed {
+                let _ = tx.send(UsbCmd::Brightness(brightness));
+            }
             snapshot.render(tx);
         }
         "status" => {

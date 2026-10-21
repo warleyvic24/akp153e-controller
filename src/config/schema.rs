@@ -171,11 +171,18 @@ pub enum Theme {
     Light,
 }
 
-/// Preferências da interface (não afetam o aparelho).
+/// Preferências do editor. Tema e destaque só afetam a janela; `brightness` (0 a 100) vai ao aparelho.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UiSettings {
     pub theme: Theme,
     pub accent: [u8; 3],
+    /// Ausente em configs antigas: assume o brilho máximo, o que o aparelho já usava.
+    #[serde(default = "default_brightness")]
+    pub brightness: u8,
+}
+
+fn default_brightness() -> u8 {
+    crate::usb::DEFAULT_BRIGHTNESS
 }
 
 impl Default for UiSettings {
@@ -183,6 +190,7 @@ impl Default for UiSettings {
         Self {
             theme: Theme::Dark,
             accent: [0, 229, 255],
+            brightness: default_brightness(),
         }
     }
 }
@@ -332,6 +340,7 @@ impl AppConfig {
 
     /// Garante invariantes (>=1 perfil/página, grade completa, ids e índices válidos) e migra versões antigas.
     pub fn sanitized(mut self) -> Self {
+        self.ui.brightness = self.ui.brightness.min(crate::usb::MAX_BRIGHTNESS);
         if self.profiles.is_empty() {
             return Self::default();
         }
@@ -649,10 +658,28 @@ mod tests {
     }
 
     #[test]
+    fn config_saved_before_brightness_existed_keeps_full_brightness() {
+        let json = r#"{"theme":"light","accent":[1,2,3]}"#;
+        let ui: UiSettings = serde_json::from_str(json).unwrap();
+        assert_eq!(ui.brightness, crate::usb::DEFAULT_BRIGHTNESS);
+        assert_eq!(ui.theme, Theme::Light);
+    }
+
+    #[test]
+    fn brightness_above_the_maximum_is_clamped_on_load() {
+        let mut cfg = AppConfig::default();
+        cfg.ui.brightness = 250;
+        assert_eq!(cfg.sanitized().ui.brightness, crate::usb::MAX_BRIGHTNESS);
+    }
+
+    #[test]
     fn old_config_without_ui_settings_gets_the_defaults() {
         let json = serde_json::to_string(&AppConfig::default())
             .unwrap()
-            .replace(",\"ui\":{\"theme\":\"dark\",\"accent\":[0,229,255]}", "");
+            .replace(
+                ",\"ui\":{\"theme\":\"dark\",\"accent\":[0,229,255],\"brightness\":100}",
+                "",
+            );
         assert!(!json.contains("\"ui\""));
         let cfg: AppConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(cfg.ui, UiSettings::default());

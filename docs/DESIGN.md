@@ -56,6 +56,19 @@ espaçamento artificial entre letras (só o logotipo "AKP153E" o tem).
 | `paint_key` | tecla do aparelho; selecionada = brilho do destaque + traço de 2,5 px |
 | botão "Testar" | única ação sólida da tela (cor de destaque + texto preto ou branco por contraste) |
 
+## Retorno, orientação e preferências
+
+- **Toasts** (`toast.rs`): ações sem resultado visível (copiar, colar, limpar, trocar teclas, excluir
+  página ou perfil) avisam por 4 s; as que se desfazem trazem o botão "Desfazer".
+- **Estado vazio** (`stage.rs::empty_guide`): página sem nenhuma tecla configurada mostra o passo a
+  passo em vez de uma dica de uma linha.
+- **Arrastar**: uma ação da bandeja solta numa tecla a aplica; uma tecla solta noutra troca as duas.
+  O cartão "Personalizada" cria um atalho vazio e abre a aba Ação.
+- **Páginas**: duplo clique renomeia; clique direito abre Renomear, Mover e Excluir.
+- **Preferências** (`settings.rs`): tema, destaque, iniciar com o Windows, brilho do aparelho
+  (5 a 100 %, vai ao aparelho pelo `reload` que o salvamento já envia), reconectar, pasta de logs.
+- O chip de conexão abre um menu com Reconectar e a pasta de logs.
+
 ## Teclado e leitores de tela
 
 - Teclas do palco e cartões da bandeja recebem foco por Tab; Enter e Espaço ativam. As setas movem o
@@ -83,6 +96,13 @@ Também varre 4.096 cores de destaque e exige texto ≥ 4,5:1 sobre qualquer uma
 o que der mais contraste), então o seletor de cor livre é seguro para texto sobre o preenchimento.
 O destaque usado como traço ou ícone sempre passa por `ink`.
 
+## Teste automático de nomes acessíveis
+
+`main.rs::every_interactive_control_has_an_accessible_name` roda o editor sem janela (AccessKit
+ligado), com as três abas, cada tipo de ação e as Preferências, e falha listando todo botão, caixa,
+seletor, controle deslizante ou campo sem nome. Foi ele que achou os seletores de destino sem nome.
+A caixa numérica interna dos sliders (`SpinButton`) fica fora da checagem: é do egui.
+
 ## Como verificar a acessibilidade
 
 Com o editor aberto (debug), despeje a árvore do Windows UI Automation
@@ -93,7 +113,8 @@ o NVDA ou o Narrador.
 
 ## Lacunas conhecidas
 
-- Textos em português fixos no código, sem camada de tradução. Os nomes padrão `Default` e `Page 1`
+- Textos em português fixos no código, sem camada de tradução (decisão: constantes soltas não
+  traduzem nada; uma camada real exige chaves e escolha de idioma, trabalho à parte). Os nomes padrão `Default` e `Page 1`
   vêm do esquema da config (`schema.rs`) e continuam em inglês para não mexer em configs existentes.
 - Ninguém ouviu a interface num leitor de tela de verdade; só a árvore de acessibilidade foi
   verificada. A caixa numérica embutida dos sliders continua sem nome (é interna do egui).

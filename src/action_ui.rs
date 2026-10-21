@@ -1,0 +1,383 @@
+//! Editor da ação de um botão: escolha do tipo (atalho, app, web...) e os campos de cada tipo.
+use crate::config::schema::*;
+use crate::theme::{self, Palette};
+use crate::tokens::text;
+use crate::{engine, textlist, widgets};
+use eframe::egui::{self, Color32, RichText};
+
+/// O que todo editor de ação precisa do contexto da tela (em vez de passar cada item solto).
+pub struct PaneCtx<'a> {
+    pub ctx: &'a egui::Context,
+    pub pal: &'a Palette,
+    pub accent: Color32,
+    pub targets: &'a Targets,
+}
+
+/// Destinos possíveis das ações de navegação (id estável + nome exibido).
+pub struct Targets {
+    pages: Vec<(u64, String)>,
+    profiles: Vec<(u64, String)>,
+}
+
+impl Targets {
+    pub fn from(cfg: &AppConfig) -> Self {
+        let pages = cfg.profiles[cfg.active_profile]
+            .pages
+            .iter()
+            .map(|p| (p.id, p.name.clone()))
+            .collect();
+        let profiles = cfg
+            .profiles
+            .iter()
+            .map(|p| (p.id, p.name.clone()))
+            .collect();
+        Self { pages, profiles }
+    }
+}
+
+const ACTION_KINDS: [(&str, &str); 7] = [
+    ("none", "Nenhuma"),
+    ("hotkey", "Atalho"),
+    ("launch-app", "App"),
+    ("http-webhook", "Web"),
+    ("media-key", "Mídia"),
+    ("switch-page", "Página"),
+    ("switch-profile", "Perfil"),
+];
+
+const MEDIA_KEYS: [(&str, &str); 6] = [
+    ("playpause", "Play/Pause"),
+    ("next", "Próxima"),
+    ("prev", "Anterior"),
+    ("volup", "Vol +"),
+    ("voldown", "Vol −"),
+    ("mute", "Mudo"),
+];
+
+const BODY_ROWS: usize = 3;
+
+fn action_name(a: &ButtonAction) -> &'static str {
+    match a {
+        ButtonAction::None => "none",
+        ButtonAction::Hotkey { .. } => "hotkey",
+        ButtonAction::LaunchApp { .. } => "launch-app",
+        ButtonAction::HttpWebhook { .. } => "http-webhook",
+        ButtonAction::MediaKey { .. } => "media-key",
+        ButtonAction::SwitchPage { .. } => "switch-page",
+        ButtonAction::SwitchProfile { .. } => "switch-profile",
+    }
+}
+
+fn default_action(kind: &str) -> ButtonAction {
+    match kind {
+        "hotkey" => ButtonAction::Hotkey { keys: vec![] },
+        "launch-app" => ButtonAction::LaunchApp {
+            path: String::new(),
+            args: vec![],
+        },
+        "http-webhook" => ButtonAction::HttpWebhook {
+            url: String::new(),
+            method: "GET".into(),
+            body: None,
+        },
+        "media-key" => ButtonAction::MediaKey {
+            key: "playpause".into(),
+        },
+        "switch-page" => ButtonAction::SwitchPage { page: 0 },
+        "switch-profile" => ButtonAction::SwitchProfile { profile: 0 },
+        _ => ButtonAction::None,
+    }
+}
+
+fn pick_target(
+    ui: &mut egui::Ui,
+    id: &str,
+    label: egui::Id,
+    value: &mut u64,
+    options: &[(u64, String)],
+) -> bool {
+    let mut changed = false;
+    let shown = options
+        .iter()
+        .find(|o| o.0 == *value)
+        .map_or("(escolha)".to_string(), |o| o.1.clone());
+    let combo = egui::ComboBox::from_id_salt((id, "dest"))
+        .selected_text(shown)
+        .show_ui(ui, |ui| {
+            for (oid, name) in options {
+                if ui.selectable_label(*value == *oid, name).clicked() && *value != *oid {
+                    *value = *oid;
+                    changed = true;
+                }
+            }
+        });
+    combo.response.labelled_by(label);
+    changed
+}
+
+enum Capture {
+    Cancel,
+    Keys(Vec<String>),
+}
+
+fn key_name(k: egui::Key) -> Option<String> {
+    use egui::Key::*;
+    let name = match k {
+        ArrowUp => "up".to_string(),
+        ArrowDown => "down".to_string(),
+        ArrowLeft => "left".to_string(),
+        ArrowRight => "right".to_string(),
+        Escape => "esc".to_string(),
+        _ => k.name().to_lowercase(),
+    };
+    engine::actions::is_valid_key(&name).then_some(name)
+}
+
+/// Primeira combinação de teclas pressionada neste quadro (Esc sozinho cancela).
+fn capture_hotkey(ctx: &egui::Context) -> Option<Capture> {
+    ctx.input(|i| {
+        i.events.iter().find_map(|e| {
+            let egui::Event::Key {
+                key,
+                pressed: true,
+                modifiers,
+                ..
+            } = e
+            else {
+                return None;
+            };
+            if *key == egui::Key::Escape && !modifiers.any() {
+                return Some(Capture::Cancel);
+            }
+            let name = key_name(*key)?;
+            let mut keys = Vec::new();
+            for (held, modifier) in [
+                (modifiers.ctrl, "ctrl"),
+                (modifiers.alt, "alt"),
+                (modifiers.shift, "shift"),
+            ] {
+                if held {
+                    keys.push(modifier.to_string());
+                }
+            }
+            keys.push(name);
+            Some(Capture::Keys(keys))
+        })
+    })
+}
+
+/// Seletor do tipo de ação; trocar o tipo recomeça com os valores padrão do novo tipo.
+fn kind_picker(ui: &mut egui::Ui, cx: &PaneCtx, a: &mut ButtonAction) -> bool {
+    let mut changed = false;
+    ui.horizontal_wrapped(|ui| {
+        for (kind, label) in ACTION_KINDS {
+            let on = action_name(a) == kind;
+            if widgets::pill(ui, label, on, cx.accent, cx.pal).clicked() && !on {
+                *a = default_action(kind);
+                changed = true;
+            }
+        }
+    });
+    changed
+}
+
+/// Editor completo da ação `a`. `id` separa o estado de "Ao tocar" e "Ao segurar".
+pub fn action_editor(
+    ui: &mut egui::Ui,
+    cx: &PaneCtx,
+    id: &'static str,
+    a: &mut ButtonAction,
+    rec: &mut Option<&'static str>,
+) -> bool {
+    let mut changed = kind_picker(ui, cx, a);
+    changed |= match a {
+        ButtonAction::Hotkey { keys } => hotkey_editor(ui, cx, id, keys, rec),
+        ButtonAction::LaunchApp { path, args } => launch_editor(ui, cx.pal, id, path, args),
+        ButtonAction::HttpWebhook { url, method, body } => {
+            webhook_editor(ui, cx, url, method, body)
+        }
+        ButtonAction::MediaKey { key } => media_editor(ui, cx, key),
+        ButtonAction::SwitchPage { page } => {
+            let label = widgets::section(ui, "Página de destino", cx.pal);
+            pick_target(ui, id, label, page, &cx.targets.pages)
+        }
+        ButtonAction::SwitchProfile { profile } => {
+            let label = widgets::section(ui, "Perfil de destino", cx.pal);
+            pick_target(ui, id, label, profile, &cx.targets.profiles)
+        }
+        ButtonAction::None => false,
+    };
+    changed
+}
+
+fn hotkey_editor(
+    ui: &mut egui::Ui,
+    cx: &PaneCtx,
+    id: &'static str,
+    keys: &mut Vec<String>,
+    rec: &mut Option<&'static str>,
+) -> bool {
+    let pal = cx.pal;
+    let keys_label = widgets::section(ui, "Atalho", pal);
+    ui.horizontal_wrapped(|ui| {
+        if keys.is_empty() {
+            ui.label(RichText::new("(vazio)").color(pal.muted));
+        }
+        for k in keys.iter() {
+            widgets::kbd(ui, k, pal);
+        }
+    });
+    let mut changed = hotkey_recorder(ui, cx, id, keys, rec);
+    ui.label(
+        RichText::new("Digitar (ex: meta+d)")
+            .size(text::CAPTION)
+            .color(pal.muted),
+    );
+    let field_id = ui.id().with((id, "keys"));
+    changed |= textlist::list_field(
+        ui,
+        field_id,
+        keys_label,
+        keys,
+        textlist::parse_keys,
+        textlist::join_keys,
+    );
+    let invalid: Vec<&str> = keys
+        .iter()
+        .map(String::as_str)
+        .filter(|k| !engine::actions::is_valid_key(k))
+        .collect();
+    if !invalid.is_empty() {
+        let msg = format!("Tecla desconhecida: {}", invalid.join(", "));
+        ui.label(RichText::new(msg).size(text::CAPTION).color(pal.bad));
+    }
+    changed
+}
+
+/// "Gravar atalho": captura as próximas teclas pressionadas, ou limpa o atalho.
+fn hotkey_recorder(
+    ui: &mut egui::Ui,
+    cx: &PaneCtx,
+    id: &'static str,
+    keys: &mut Vec<String>,
+    rec: &mut Option<&'static str>,
+) -> bool {
+    let mut changed = false;
+    if *rec == Some(id) {
+        // Gravar não é erro: vermelho aqui diria "algo deu errado" a quem só digita um atalho.
+        ui.label(
+            RichText::new("● Pressione as teclas… (Esc cancela)")
+                .strong()
+                .color(theme::ink(cx.accent, cx.pal)),
+        );
+        match capture_hotkey(cx.ctx) {
+            Some(Capture::Keys(k)) => {
+                *keys = k;
+                *rec = None;
+                changed = true;
+            }
+            Some(Capture::Cancel) => *rec = None,
+            None => {}
+        }
+        return changed;
+    }
+    ui.horizontal(|ui| {
+        if ui.button("● Gravar atalho").clicked() {
+            *rec = Some(id);
+        }
+        let clear = ui.button("Limpar");
+        clear.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Limpar atalho")
+        });
+        if clear.clicked() {
+            keys.clear();
+            changed = true;
+        }
+    });
+    changed
+}
+
+fn launch_editor(
+    ui: &mut egui::Ui,
+    pal: &Palette,
+    id: &'static str,
+    path: &mut String,
+    args: &mut Vec<String>,
+) -> bool {
+    let path_label = widgets::section(ui, "Programa (caminho ou nome)", pal);
+    let mut changed = ui
+        .add(egui::TextEdit::singleline(path).desired_width(ui.available_width()))
+        .labelled_by(path_label)
+        .changed();
+    let args_label = widgets::section(ui, "Argumentos", pal);
+    let field_id = ui.id().with((id, "args"));
+    changed |= textlist::list_field(
+        ui,
+        field_id,
+        args_label,
+        args,
+        textlist::parse_args,
+        textlist::join_args,
+    );
+    changed
+}
+
+fn webhook_editor(
+    ui: &mut egui::Ui,
+    cx: &PaneCtx,
+    url: &mut String,
+    method: &mut String,
+    body: &mut Option<String>,
+) -> bool {
+    let url_label = widgets::section(ui, "URL", cx.pal);
+    let mut changed = ui
+        .add(egui::TextEdit::singleline(url).desired_width(ui.available_width()))
+        .labelled_by(url_label)
+        .changed();
+    widgets::section(ui, "Método", cx.pal);
+    ui.horizontal_wrapped(|ui| {
+        for m in engine::actions::WEBHOOK_METHODS {
+            let on = method.eq_ignore_ascii_case(m);
+            if widgets::pill(ui, m, on, cx.accent, cx.pal).clicked() {
+                *method = m.to_string();
+                changed = true;
+            }
+        }
+    });
+    let body_label = widgets::section(ui, "Corpo da requisição", cx.pal);
+    let mut s = body.clone().unwrap_or_default();
+    let edit = egui::TextEdit::multiline(&mut s)
+        .desired_width(ui.available_width())
+        .desired_rows(BODY_ROWS);
+    if ui.add(edit).labelled_by(body_label).changed() {
+        *body = (!s.is_empty()).then_some(s);
+        changed = true;
+    }
+    changed
+}
+
+fn media_editor(ui: &mut egui::Ui, cx: &PaneCtx, key: &mut String) -> bool {
+    widgets::section(ui, "Tecla de mídia", cx.pal);
+    let mut changed = false;
+    ui.horizontal_wrapped(|ui| {
+        for (k, label) in MEDIA_KEYS {
+            if widgets::pill(ui, label, key == k, cx.accent, cx.pal).clicked() {
+                *key = k.to_string();
+                changed = true;
+            }
+        }
+    });
+    changed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_action_kind_round_trips_through_its_default() {
+        for (kind, _) in ACTION_KINDS {
+            assert_eq!(action_name(&default_action(kind)), kind);
+        }
+    }
+}

@@ -394,6 +394,7 @@ mod tests {
         let mut s = UiSettings {
             theme: Theme::Light,
             accent: [10, 200, 30],
+            ..UiSettings::default()
         };
         apply(&ctx, &s);
         let v = ctx.style().visuals.clone();

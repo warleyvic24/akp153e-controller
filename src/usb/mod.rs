@@ -1,6 +1,7 @@
 //! Transporte HID do AKP153E (interface vendor-specific, usage page 0xFFA0).
 //! Relatórios de 513 bytes (report id 0x00 + 512), comandos com prefixo "CRT", imagens JPEG 85x85.
 use hidapi::{HidApi, HidDevice, HidError};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::time::{Duration, Instant};
 
@@ -13,7 +14,22 @@ const HOLD_WATCHDOG: Duration = Duration::from_secs(5);
 const CMD_OFFSET: usize = 6;
 const READ_TIMEOUT_MS: i32 = 50;
 const KEEPALIVE: Duration = Duration::from_secs(10);
-const BRIGHTNESS: u8 = 100;
+pub const DEFAULT_BRIGHTNESS: u8 = 100;
+pub const MAX_BRIGHTNESS: u8 = 100;
+/// Brilho a usar na próxima (re)inicialização do aparelho; o editor o muda pela config (`reload`).
+static BRIGHTNESS_LEVEL: AtomicU8 = AtomicU8::new(DEFAULT_BRIGHTNESS);
+
+/// Guarda o brilho (0 a 100) para a próxima inicialização do aparelho.
+pub fn set_brightness(level: u8) {
+    BRIGHTNESS_LEVEL.store(level.min(MAX_BRIGHTNESS), Ordering::Relaxed);
+}
+
+fn brightness_command(payload: usize, level: u8) -> Vec<u8> {
+    command(
+        payload,
+        &[b'L', b'I', b'G', 0, 0, level.min(MAX_BRIGHTNESS)],
+    )
+}
 const CLEAR_ALL_KEYS: u8 = 0xFF;
 const DEVICE_COLS: usize = 6;
 const UI_COLS: usize = 5;
@@ -61,8 +77,13 @@ pub enum UsbEvent {
     Key { index: usize, pressed: bool },
 }
 pub enum UsbCmd {
-    Frame { index: usize, data: Vec<u8> },
+    Frame {
+        index: usize,
+        data: Vec<u8>,
+    },
     Reconnect,
+    /// Muda o brilho (0 a 100) sem reiniciar o aparelho.
+    Brightness(u8),
 }
 
 /// Índice da grade da UI (5 colunas) -> índice físico do dispositivo (0-based).
@@ -108,7 +129,7 @@ fn write_init(dev: &HidDevice, p: Profile) -> Result<(), HidError> {
         command(n, &[b'L', b'I', b'G', 0, 0, 0, 0]),
         command(n, &clear_all),
         command(n, b"STP"),
-        command(n, &[b'L', b'I', b'G', 0, 0, BRIGHTNESS]),
+        brightness_command(n, BRIGHTNESS_LEVEL.load(Ordering::Relaxed)),
     ] {
         dev.write(&pkt)?;
     }
@@ -194,12 +215,14 @@ const UI_KEYS: usize = 15;
 /// aqui só o quadro mais recente de cada tecla vai ao aparelho.
 struct Pending {
     reconnect: bool,
+    brightness: Option<u8>,
     frames: [Option<Vec<u8>>; UI_KEYS],
 }
 
 fn collect_commands(cmds: impl Iterator<Item = UsbCmd>) -> Pending {
     let mut pending = Pending {
         reconnect: false,
+        brightness: None,
         frames: std::array::from_fn(|_| None),
     };
     for cmd in cmds {
@@ -213,6 +236,7 @@ fn collect_commands(cmds: impl Iterator<Item = UsbCmd>) -> Pending {
                     *slot = Some(data);
                 }
             }
+            UsbCmd::Brightness(level) => pending.brightness = Some(level),
         }
     }
     pending
@@ -286,6 +310,10 @@ fn run_connection(
         let pending = collect_commands(std::iter::from_fn(|| rx.try_recv().ok()));
         if pending.reconnect {
             return Ok(());
+        }
+        if let Some(level) = pending.brightness {
+            set_brightness(level);
+            dev.write(&brightness_command(profile.payload, level))?;
         }
         for (index, data) in pending.frames.iter().enumerate() {
             if let Some(data) = data {
@@ -502,6 +530,17 @@ mod tests {
         assert_eq!(pending.frames[0], Some(vec![3]));
         assert_eq!(pending.frames[1], Some(vec![1]));
         assert!(pending.frames[2].is_none() && !pending.reconnect);
+    }
+
+    #[test]
+    fn only_the_latest_brightness_is_kept_and_it_never_exceeds_the_maximum() {
+        let pending =
+            collect_commands(vec![UsbCmd::Brightness(20), UsbCmd::Brightness(60)].into_iter());
+        assert_eq!(pending.brightness, Some(60));
+        assert_eq!(
+            brightness_command(512, 250),
+            brightness_command(512, MAX_BRIGHTNESS)
+        );
     }
 
     #[test]

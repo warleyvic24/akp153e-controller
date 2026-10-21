@@ -1,12 +1,28 @@
 //! Barras do editor: topo (estado, perfis, páginas, menus) e rodapé (desfazer/refazer).
-use crate::config::schema::*;
 use crate::theme::Palette;
-use crate::tokens::{text::TITLE, TARGET_MIN};
-use crate::{runtime, theme, widgets, App};
-use eframe::egui::{self, Align, Color32, Frame, Layout, Margin, RichText};
+use crate::tokens::text::TITLE;
+use crate::{runtime, settings, shell, theme, widgets, App};
+use eframe::egui::{self, Align, Color32, Frame, Layout, Margin, RichText, Sense};
 
-const ACCENT_SWATCH_SIZE: f32 = TARGET_MIN;
-const ACCENT_SWATCH_GAP: f32 = 10.0;
+const CONN_POPUP_WIDTH: f32 = 220.0;
+const RENAME_WIDTH: f32 = 120.0;
+
+/// Página em renomeação direto na barra (duplo clique ou "Renomear" no menu de contexto).
+pub(crate) struct Rename {
+    page: usize,
+    buf: String,
+    focused: bool,
+}
+
+impl Rename {
+    fn new(page: usize, name: &str) -> Self {
+        Self {
+            page,
+            buf: name.to_string(),
+            focused: false,
+        }
+    }
+}
 
 /// Campo de texto dentro de menu. O egui tira a borda dos widgets em menus; sem ela o campo some
 /// no fundo, então a borda de controle (3:1) é restaurada só para ele.
@@ -43,20 +59,51 @@ impl App {
                             .font(theme::display_font(TITLE))
                             .strong(),
                     );
-                    let (text, color) = if g.connected {
-                        ("CONECTADO", pal.ok)
-                    } else {
-                        ("DESCONECTADO", pal.bad)
-                    };
                     ui.add_space(6.0);
-                    widgets::status_chip(ui, text, color);
+                    self.connection_chip(ui, g, pal);
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         self.manage_menu(ui, g, pal);
-                        self.appearance_menu(ui, g);
+                        if ui.button("Preferências").clicked() {
+                            self.open_settings();
+                        }
                     });
                 });
                 ui.horizontal_wrapped(|ui| self.profile_and_pages(ui, g, pal, accent));
             });
+    }
+
+    /// Chip de conexão; ao clicar, abre um menu com reconectar e a pasta de logs.
+    fn connection_chip(&mut self, ui: &mut egui::Ui, g: &runtime::Shared, pal: &Palette) {
+        let (label, color) = if g.connected {
+            ("CONECTADO", pal.ok)
+        } else {
+            ("DESCONECTADO", pal.bad)
+        };
+        let chip = widgets::status_chip(ui, label, color);
+        let resp = ui
+            .interact(chip.rect, ui.id().with("conn_chip"), Sense::click())
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        widgets::name(&resp, "Estado da conexão");
+        let popup = ui.id().with("conn_popup");
+        if resp.clicked() {
+            ui.memory_mut(|m| m.toggle_popup(popup));
+        }
+        let close = egui::PopupCloseBehavior::CloseOnClickOutside;
+        egui::popup_below_widget(ui, popup, &resp, close, |ui| {
+            ui.set_min_width(CONN_POPUP_WIDTH);
+            let msg = if g.connected {
+                "Aparelho conectado."
+            } else {
+                "Aparelho não encontrado. Confira o cabo USB."
+            };
+            ui.label(msg);
+            if ui.button("Reconectar").clicked() {
+                let _ = shell::send("reconnect");
+            }
+            if ui.button("Abrir pasta de logs").clicked() {
+                settings::open_log_folder();
+            }
+        });
     }
 
     pub(crate) fn profile_and_pages(
@@ -82,20 +129,23 @@ impl App {
         }
         let pages = g.cfg.profiles[prof].pages.len();
         for i in 0..pages {
+            if self.rename.as_ref().is_some_and(|r| r.page == i) {
+                self.rename_editor(ui, g, prof);
+                continue;
+            }
             let name = g.cfg.profiles[prof].pages[i].name.clone();
-            if widgets::pill(
-                ui,
-                &name,
-                g.cfg.profiles[prof].active_page == i,
-                accent,
-                pal,
-            )
-            .clicked()
-            {
+            let active = g.cfg.profiles[prof].active_page == i;
+            let resp = widgets::pill(ui, &name, active, accent, pal);
+            if resp.clicked() {
                 g.cfg.profiles[prof].active_page = i;
                 self.selected = 0;
                 self.touch_nav();
             }
+            if resp.double_clicked() {
+                self.rename = Some(Rename::new(i, &name));
+            }
+            resp.on_hover_text("Duplo clique renomeia · clique direito abre o menu")
+                .context_menu(|ui| self.page_menu(ui, g, prof, i, &name, pal));
         }
         let add = widgets::pill(ui, "+", false, accent, pal);
         widgets::name(&add, "Nova página");
@@ -105,37 +155,62 @@ impl App {
         }
     }
 
-    pub(crate) fn appearance_menu(&mut self, ui: &mut egui::Ui, g: &mut runtime::Shared) {
-        // "Aparência" já nomeia a aba do botão no inspetor; este menu é do programa todo.
-        ui.menu_button("Tema", |ui| {
-            for (theme, name) in [(Theme::Dark, "Escuro"), (Theme::Light, "Claro (azul)")] {
-                if ui.selectable_label(g.cfg.ui.theme == theme, name).clicked() {
-                    g.cfg.ui.theme = theme;
-                    self.dirty = true;
-                }
+    /// Campo no lugar da pílula: Enter ou perder o foco confirma, Esc cancela.
+    fn rename_editor(&mut self, ui: &mut egui::Ui, g: &mut runtime::Shared, prof: usize) {
+        let Some(r) = self.rename.as_mut() else {
+            return;
+        };
+        let edit = ui.add(egui::TextEdit::singleline(&mut r.buf).desired_width(RENAME_WIDTH));
+        widgets::name(&edit, "Novo nome da página");
+        if !r.focused {
+            edit.request_focus();
+            r.focused = true;
+        }
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.rename = None;
+            return;
+        }
+        if ui.input(|i| i.key_pressed(egui::Key::Enter)) || edit.lost_focus() {
+            let (page, name) = (r.page, r.buf.trim().to_string());
+            self.rename = None;
+            let current = &mut g.cfg.profiles[prof].pages[page].name;
+            if !name.is_empty() && *current != name {
+                *current = name;
+                self.touch();
             }
-            ui.separator();
-            ui.label("Cor de destaque");
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = ACCENT_SWATCH_GAP;
-                if ui.color_edit_button_srgb(&mut g.cfg.ui.accent).changed() {
-                    self.dirty = true;
+        }
+    }
+
+    fn page_menu(
+        &mut self,
+        ui: &mut egui::Ui,
+        g: &mut runtime::Shared,
+        prof: usize,
+        index: usize,
+        name: &str,
+        pal: &Palette,
+    ) {
+        if ui.button("Renomear").clicked() {
+            self.rename = Some(Rename::new(index, name));
+            ui.close_menu();
+        }
+        for (label, delta) in [("Mover para a esquerda", -1), ("Mover para a direita", 1)] {
+            if ui.button(label).clicked() {
+                if g.cfg.profiles[prof].move_page(index, delta).is_some() {
+                    self.touch_nav();
                 }
-                let ring = theme::palette(g.cfg.ui.theme).fg;
-                for (name, rgb) in theme::ACCENTS {
-                    let fill = Color32::from_rgb(rgb[0], rgb[1], rgb[2]);
-                    let on = g.cfg.ui.accent == rgb;
-                    let size = ACCENT_SWATCH_SIZE;
-                    if widgets::swatch(ui, size, size / 2.0, fill, on, ring)
-                        .on_hover_text(name)
-                        .clicked()
-                    {
-                        g.cfg.ui.accent = rgb;
-                        self.dirty = true;
-                    }
-                }
-            });
-        });
+                ui.close_menu();
+            }
+        }
+        let delete = ui.button(RichText::new("Excluir página").color(pal.bad));
+        if delete.clicked() {
+            if g.cfg.profiles[prof].remove_page(index) {
+                self.selected = 0;
+                self.touch_nav();
+                self.toasts.push("Página excluída", Some("Desfazer"));
+            }
+            ui.close_menu();
+        }
     }
 
     pub(crate) fn manage_menu(
@@ -177,6 +252,7 @@ impl App {
                 if g.cfg.profiles[prof].remove_page(index) {
                     self.selected = 0;
                     self.touch_nav();
+                    self.toasts.push("Página excluída", Some("Desfazer"));
                 }
                 ui.close_menu();
             }
@@ -198,6 +274,7 @@ impl App {
                 if g.cfg.remove_profile(prof) {
                     self.selected = 0;
                     self.touch_nav();
+                    self.toasts.push("Perfil excluído", Some("Desfazer"));
                 }
                 ui.close_menu();
             }

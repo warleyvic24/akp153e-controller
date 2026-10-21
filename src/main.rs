@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod action_ui;
 mod appicon;
 mod apps;
 mod bars;
@@ -8,36 +9,34 @@ mod engine;
 mod graphics;
 mod history;
 mod icons;
+mod inspector;
 mod library;
 mod panes;
 mod picker;
 mod runtime;
 mod service;
+mod settings;
 mod shell;
 mod stage;
 mod textlist;
 mod theme;
+mod toast;
 mod tokens;
 mod usb;
 mod widgets;
 
 use config::schema::*;
-use eframe::egui::{self, vec2, Color32, Frame, Margin, RichText, Rounding, Sense, Stroke};
+use eframe::egui::{self, Color32};
 use engine::actions::Executor;
-use panes::{action_pane, appearance_pane, states_pane, Targets};
-use picker::{apply_app, AppPicker};
+use picker::AppPicker;
 use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
-use theme::Palette;
 use usb::UsbCmd;
 
 const AUTOSAVE_DELAY: Duration = Duration::from_millis(300);
 const SAVE_RETRY_DELAY: Duration = Duration::from_secs(3);
 const REPAINT_EVERY: Duration = Duration::from_millis(100);
-const INSPECTOR_WIDTH: f32 = 300.0;
 const TAB_GAP: f32 = 10.0;
-const QUICK_BUTTON_PAD_X: f32 = 9.0;
-const TAB_NAMES: [&str; 3] = ["Aparência", "Ação", "Estados"];
 
 struct App {
     sh: runtime::SharedState,
@@ -63,6 +62,10 @@ struct App {
     recording: Option<&'static str>,
     key_tex: KeyTextures,
     picker: AppPicker,
+    toasts: toast::Toasts,
+    settings_open: bool,
+    autostart: bool,
+    rename: Option<bars::Rename>,
 }
 
 impl App {
@@ -88,6 +91,10 @@ impl App {
             recording: None,
             key_tex: KeyTextures::default(),
             picker: AppPicker::default(),
+            toasts: toast::Toasts::default(),
+            settings_open: false,
+            autostart: false,
+            rename: None,
         }
     }
 
@@ -212,227 +219,6 @@ impl App {
             self.touch();
         }
     }
-
-    fn app_picker(&mut self, ctx: &egui::Context, g: &mut runtime::Shared) {
-        self.picker.poll();
-        self.apply_finished_icons(g);
-        if !self.picker.open {
-            return;
-        }
-        let mut open = true;
-        let pal = theme::palette(g.cfg.ui.theme);
-        let mut chosen: Option<apps::InstalledApp> = None;
-        egui::Window::new("Apps instalados")
-            .open(&mut open)
-            .collapsible(false)
-            .default_width(360.0)
-            .show(ctx, |ui| {
-                let search = ui.add(
-                    egui::TextEdit::singleline(&mut self.picker.query)
-                        .hint_text(widgets::hint("Buscar app", &pal))
-                        .desired_width(ui.available_width()),
-                );
-                widgets::name(&search, "Buscar app");
-                let Some(list) = &self.picker.apps else {
-                    ui.label("Procurando programas instalados…");
-                    return;
-                };
-                let q = self.picker.query.to_lowercase();
-                egui::ScrollArea::vertical()
-                    .max_height(320.0)
-                    .show(ui, |ui| {
-                        for app in list
-                            .iter()
-                            .filter(|a| q.is_empty() || a.name.to_lowercase().contains(&q))
-                        {
-                            if ui
-                                .selectable_label(false, &app.name)
-                                .on_hover_text(&app.target)
-                                .clicked()
-                            {
-                                chosen = Some(app.clone());
-                            }
-                        }
-                        if list.is_empty() {
-                            ui.label("Nenhum programa encontrado. Use “Procurar .exe”.");
-                        }
-                    });
-            });
-        if let Some(app) = chosen {
-            let at = self.picker.at;
-            if let Some(b) = g.cfg.page_mut().buttons.get_mut(at.2) {
-                apply_app(b, &app, at, &self.picker.jobs);
-            }
-            self.touch();
-            open = false;
-        }
-        self.picker.open = open;
-    }
-
-    fn offline_banner(&self, ui: &mut egui::Ui, pal: &Palette) {
-        Frame::none()
-            .fill(pal.bad.gamma_multiply(0.15))
-            .stroke(Stroke::new(1.0_f32, pal.bad.gamma_multiply(0.5)))
-            .rounding(Rounding::same(10.0))
-            .inner_margin(Margin::symmetric(14.0, 10.0))
-            .show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(RichText::new("Aparelho desconectado.").strong());
-                    ui.label("Suas alterações ficam salvas e vão ao aparelho ao reconectar.");
-                    if ui.button("Reconectar").clicked() {
-                        let _ = shell::send("reconnect");
-                    }
-                });
-            });
-        ui.add_space(10.0);
-    }
-
-    fn quick_actions(
-        &mut self,
-        ui: &mut egui::Ui,
-        g: &mut runtime::Shared,
-        pal: &Palette,
-        accent: Color32,
-    ) {
-        let sel = self.selected;
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().button_padding.x = QUICK_BUTTON_PAD_X;
-            let test = egui::Button::new(
-                RichText::new("Testar")
-                    .strong()
-                    .color(theme::readable_on(accent)),
-            )
-            .fill(accent);
-            let test = ui.add(test.stroke(Stroke::new(1.0_f32, theme::ink(accent, pal))));
-            if test.clicked() {
-                runtime::trigger(g, &self.tx, &self.exec, sel, Duration::ZERO);
-            }
-            if ui.button("Copiar").clicked() {
-                self.clipboard = g.cfg.page().buttons.get(sel).cloned();
-            }
-            if ui
-                .add_enabled(self.clipboard.is_some(), egui::Button::new("Colar"))
-                .clicked()
-            {
-                if let (Some(c), Some(b)) = (
-                    self.clipboard.clone(),
-                    g.cfg.page_mut().buttons.get_mut(sel),
-                ) {
-                    *b = c;
-                    self.touch();
-                }
-            }
-            let clear = egui::Button::new(RichText::new("Limpar").color(pal.bad));
-            let clear = ui.add(clear).on_hover_text("Esvazia este botão");
-            clear.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Limpar botão")
-            });
-            if clear.clicked() {
-                if let Some(b) = g.cfg.page_mut().buttons.get_mut(sel) {
-                    *b = ButtonConfig::blank();
-                    self.touch();
-                }
-            }
-        });
-    }
-
-    /// Painel do botão selecionado, com as abas Aparência, Ação e Estados.
-    fn inspector(
-        &mut self,
-        ctx: &egui::Context,
-        g: &mut runtime::Shared,
-        pal: &Palette,
-        accent: Color32,
-    ) {
-        let frame = Frame::none()
-            .fill(pal.raise)
-            .stroke(Stroke::new(1.0_f32, pal.line))
-            .inner_margin(Margin::same(14.0));
-        egui::SidePanel::right("insp")
-            .exact_width(INSPECTOR_WIDTH)
-            .resizable(false)
-            .frame(frame)
-            .show(ctx, |ui| {
-                let sel = self.selected.min(g.cfg.page().buttons.len() - 1);
-                self.selected = sel;
-                let targets = Targets::from(&g.cfg);
-                let icon_px = g.icon_px;
-                let profile = g.cfg.active_profile;
-                self.picker.at = (profile, g.cfg.profiles[profile].active_page, sel);
-                self.quick_actions(ui, g, pal, accent);
-                ui.add_space(4.0);
-                let Some(b) = g.cfg.page_mut().buttons.get_mut(sel) else {
-                    return;
-                };
-                ui.horizontal(|ui| {
-                    let (rect, _) = ui.allocate_exact_size(vec2(56.0, 56.0), Sense::hover());
-                    let tex = self.key_tex.get(ctx, sel, b, icon_px);
-                    widgets::paint_key(
-                        ui.painter(),
-                        rect,
-                        &key_view(b, sel + 1, tex),
-                        false,
-                        false,
-                        pal,
-                        accent,
-                    );
-                    ui.vertical(|ui| {
-                        ui.label(
-                            RichText::new(format!("BOTÃO {}", sel + 1))
-                                .monospace()
-                                .size(tokens::text::CAPTION)
-                                .color(pal.muted),
-                        );
-                        let name = if b.appearance.text.is_empty() {
-                            "Sem nome"
-                        } else {
-                            b.appearance.text.as_str()
-                        };
-                        ui.label(
-                            RichText::new(name).font(theme::display_font(tokens::text::TITLE)),
-                        );
-                    });
-                });
-                if is_blank(b) {
-                    ui.label(
-                        RichText::new("Escolha uma ação na bandeja ou comece pelo rótulo.")
-                            .size(12.0)
-                            .color(pal.muted),
-                    );
-                }
-                ui.horizontal(|ui| {
-                    for (i, name) in TAB_NAMES.iter().enumerate() {
-                        if widgets::tab(ui, name, self.tab == i, accent, pal).clicked() {
-                            self.tab = i;
-                        }
-                        ui.add_space(TAB_GAP);
-                    }
-                });
-                ui.separator();
-                let mut changed = false;
-                // Um estado de rolagem por botão e aba: trocar de um para outro volta ao topo.
-                let scroll = egui::ScrollArea::vertical().id_salt(("inspector", sel, self.tab));
-                scroll.show(ui, |ui| match self.tab {
-                    0 => changed |= appearance_pane(ui, b, pal, accent),
-                    1 => {
-                        changed |= action_pane(
-                            ui,
-                            ctx,
-                            b,
-                            &targets,
-                            &mut self.recording,
-                            &mut self.picker,
-                            pal,
-                            accent,
-                        )
-                    }
-                    _ => changed |= states_pane(ui, b, pal),
-                });
-                if changed {
-                    self.touch();
-                }
-            });
-    }
 }
 
 impl Drop for App {
@@ -532,6 +318,8 @@ impl eframe::App for App {
         self.stage(ctx, g, &pal, accent);
         widgets::focus_ring(ctx);
         self.app_picker(ctx, g);
+        self.settings_window(ctx, g, &pal);
+        want_undo |= self.toasts.show(ctx, &pal);
 
         if want_undo || want_redo {
             let current = g.cfg.clone();
@@ -592,7 +380,7 @@ fn main() -> eframe::Result {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::picker::IconDone;
+    use crate::picker::{apply_app, IconDone};
     use std::sync::mpsc::channel;
 
     const NOTEPAD: &str = r"C:\Windows\System32\notepad.exe";
@@ -741,5 +529,84 @@ mod tests {
             "a janela da lista deveria estar visível"
         );
         assert!(app.picker.open);
+    }
+
+    /// Todo controle interativo precisa de nome para o leitor de tela. Roda o editor sem janela,
+    /// com as três abas, os tipos de ação e as Preferências, e lista o que ficou sem nome.
+    #[test]
+    fn every_interactive_control_has_an_accessible_name() {
+        use egui::accesskit::Role;
+        let (mut app, _rt) = test_app();
+        let sh = app.sh.clone();
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        theme::install_fonts(&ctx);
+        theme::apply(&ctx, &runtime::lock(&sh).cfg.ui);
+        // O primeiro quadro só aplica as fontes ao egui.
+        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        let actions = [
+            ButtonAction::None,
+            ButtonAction::LaunchApp {
+                path: String::new(),
+                args: vec![],
+            },
+            ButtonAction::HttpWebhook {
+                url: String::new(),
+                method: "GET".into(),
+                body: None,
+            },
+            ButtonAction::Hotkey { keys: vec![] },
+            ButtonAction::MediaKey { key: "mute".into() },
+            ButtonAction::SwitchPage { page: 0 },
+        ];
+        let checked = [
+            Role::Button,
+            Role::CheckBox,
+            Role::ComboBox,
+            Role::Slider,
+            Role::TextInput,
+            Role::MultilineTextInput,
+        ];
+        let mut unnamed: Vec<String> = Vec::new();
+        for tab in 0..3 {
+            for action in &actions {
+                if tab != 1 && *action != ButtonAction::None {
+                    continue;
+                }
+                app.tab = tab;
+                app.settings_open = true;
+                let mut guard = runtime::lock(&sh);
+                let g: &mut runtime::Shared = &mut guard;
+                g.cfg.page_mut().buttons[0].action = action.clone();
+                let (pal, accent) = (
+                    theme::palette(g.cfg.ui.theme),
+                    theme::accent_color(&g.cfg.ui),
+                );
+                let (mut undo, mut redo) = (false, false);
+                let out = ctx.run(egui::RawInput::default(), |ctx| {
+                    app.top_bar(ctx, g, &pal, accent);
+                    app.footer(ctx, &pal, &mut undo, &mut redo);
+                    app.tray(ctx, g, &pal, accent);
+                    app.inspector(ctx, g, &pal, accent);
+                    app.stage(ctx, g, &pal, accent);
+                    app.settings_window(ctx, g, &pal);
+                });
+                let update = out.platform_output.accesskit_update.expect("accesskit");
+                for (_, node) in update.nodes {
+                    let named = node.name().is_some_and(|n| !n.trim().is_empty())
+                        || !node.labelled_by().is_empty();
+                    if checked.contains(&node.role()) && !named {
+                        unnamed.push(format!("aba {tab}, {action:?}: {:?}", node.role()));
+                    }
+                }
+            }
+        }
+        unnamed.sort();
+        unnamed.dedup();
+        assert!(
+            unnamed.is_empty(),
+            "controles sem nome:\n{}",
+            unnamed.join("\n")
+        );
     }
 }
