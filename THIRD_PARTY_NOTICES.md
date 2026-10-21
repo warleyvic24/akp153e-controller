@@ -450,7 +450,7 @@ DEALINGS IN THE SOFTWARE.
 
 ## License text 5
 
-Used by: ahash 0.8.12, arrayvec 0.7.8, atomic-waker 1.1.2, autocfg 1.5.1, base64 0.22.1, base64 0.23.1, bit-set 0.6.0, bit-vec 0.7.0, bitflags 1.3.2, bitflags 2.13.2, bytemuck 1.25.2, bytemuck_derive 1.12.1, cc 1.9.0, cfg-if 1.0.5, chacha20 0.10.2, cpufeatures 0.3.1, crossbeam-channel 0.5.17, crossbeam-utils 0.8.23, defmt 1.2.0, defmt-macros 1.2.0, defmt-parser 1.1.0, displaydoc 0.2.7, document-features 0.2.12, equivalent 1.0.3, find-msvc-tools 0.1.15, flate2 1.1.10, form_urlencoded 1.2.2, glow 0.13.1, glow 0.14.2, hashbrown 0.15.5, hashbrown 0.17.1, httparse 1.10.1, hyper-rustls 0.27.10, idna 1.1.0, idna_adapter 1.2.2, indexmap 2.14.2, jobserver 0.1.35, keyboard-types 0.7.0, khronos-egl 6.0.0, lock_api 0.4.14, log 0.4.34, lru-slab 0.1.3, muda 0.15.3, nohash-hasher 0.2.0, num-traits 0.2.19, once_cell 1.21.4, parking_lot 0.12.5, parking_lot_core 0.9.12, percent-encoding 2.3.2, pkg-config 0.3.34, png 0.18.1, presser 0.3.1, quinn 0.11.12, quinn-proto 0.11.19, quinn-udp 0.5.16, regex 1.13.1, regex-automata 0.4.18, regex-syntax 0.8.11, renderdoc-sys 1.1.0, rustc-hash 1.1.0, rustls 0.23.46, scopeguard 1.2.0, smallvec 1.16.3, smol_str 0.2.2, socket2 0.6.5, stable_deref_trait 1.2.1, static_assertions 1.1.0, syn 1.0.109, tinyvec 1.13.3, tray-icon 0.19.3, ttf-parser 0.25.1, unicode-segmentation 1.13.3, unicode-width 0.1.14, unicode-xid 0.2.6, url 2.5.8, utf8_iter 1.0.4, version_check 0.9.5, zeroize 1.9.1, zune-core 0.5.3, zune-jpeg 0.5.15
+Used by: ahash 0.8.12, arrayvec 0.7.8, atomic-waker 1.1.2, autocfg 1.5.1, base64 0.22.1, base64 0.23.1, bit-set 0.6.0, bit-vec 0.7.0, bitflags 1.3.2, bitflags 2.13.2, bytemuck 1.25.2, bytemuck_derive 1.12.1, cc 1.9.0, cfg-if 1.0.5, chacha20 0.10.2, cpufeatures 0.3.1, crossbeam-channel 0.5.17, crossbeam-utils 0.8.23, defmt 1.2.0, defmt-macros 1.2.0, defmt-parser 1.1.0, displaydoc 0.2.7, document-features 0.2.12, equivalent 1.0.3, find-msvc-tools 0.1.15, flate2 1.1.10, form_urlencoded 1.2.2, glow 0.13.1, glow 0.14.2, hashbrown 0.15.5, hashbrown 0.17.1, httparse 1.10.1, hyper-rustls 0.27.10, idna 1.1.0, idna_adapter 1.2.2, indexmap 2.14.2, jobserver 0.1.35, keyboard-types 0.8.3, khronos-egl 6.0.0, lock_api 0.4.14, log 0.4.34, lru-slab 0.1.3, muda 0.21.2, nohash-hasher 0.2.0, num-traits 0.2.19, once_cell 1.21.4, parking_lot 0.12.5, parking_lot_core 0.9.12, percent-encoding 2.3.2, pkg-config 0.3.34, png 0.18.1, presser 0.3.1, quinn 0.11.12, quinn-proto 0.11.19, quinn-udp 0.5.16, regex 1.13.1, regex-automata 0.4.18, regex-syntax 0.8.11, renderdoc-sys 1.1.0, rustc-hash 1.1.0, rustls 0.23.46, scopeguard 1.2.0, smallvec 1.16.3, smol_str 0.2.2, socket2 0.6.5, stable_deref_trait 1.2.1, static_assertions 1.1.0, syn 1.0.109, tinyvec 1.13.3, tray-icon 0.26.1, ttf-parser 0.25.1, unicode-segmentation 1.13.3, unicode-width 0.1.14, unicode-xid 0.2.6, url 2.5.8, utf8_iter 1.0.4, version_check 0.9.5, zeroize 1.9.1, zune-core 0.5.3, zune-jpeg 0.5.15
 
 ```text
 Apache License
@@ -1542,7 +1542,7 @@ DEALINGS IN THE SOFTWARE.
 
 ## License text 29
 
-Used by: com 0.6.0, windows 0.52.0, windows 0.56.0, windows 0.58.0, windows-core 0.52.0, windows-core 0.56.0, windows-core 0.58.0, windows-implement 0.56.0, windows-implement 0.58.0, windows-interface 0.56.0, windows-interface 0.58.0, windows-link 0.2.1, windows-result 0.1.2, windows-result 0.2.0, windows-strings 0.1.0, windows-sys 0.48.0, windows-sys 0.52.0, windows-sys 0.59.0, windows-sys 0.61.2, windows-targets 0.48.5, windows-targets 0.52.6, windows_x86_64_msvc 0.48.5, windows_x86_64_msvc 0.52.6
+Used by: com 0.6.0, windows 0.52.0, windows 0.58.0, windows 0.61.3, windows-collections 0.2.0, windows-core 0.52.0, windows-core 0.58.0, windows-core 0.61.2, windows-future 0.2.1, windows-implement 0.58.0, windows-implement 0.60.2, windows-interface 0.58.0, windows-interface 0.59.3, windows-link 0.1.3, windows-link 0.2.1, windows-numerics 0.2.0, windows-result 0.2.0, windows-result 0.3.4, windows-strings 0.1.0, windows-strings 0.4.2, windows-sys 0.52.0, windows-sys 0.61.2, windows-targets 0.52.6, windows-threading 0.1.0, windows_x86_64_msvc 0.52.6
 
 ```text
 MIT License
@@ -2548,7 +2548,7 @@ DEALINGS IN THE SOFTWARE.
 
 ## License text 38
 
-Used by: directories 5.0.1, dirs-sys 0.4.1
+Used by: directories 6.0.0, dirs-sys 0.5.0
 
 ```text
 Apache License
@@ -2729,7 +2729,7 @@ TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
 
 ## License text 39
 
-Used by: directories 5.0.1
+Used by: directories 6.0.0
 
 ```text
 Copyright (c) 2018 directories-rs contributors
@@ -2755,7 +2755,7 @@ SOFTWARE.
 
 ## License text 40
 
-Used by: dirs-sys 0.4.1
+Used by: dirs-sys 0.5.0
 
 ```text
 Copyright (c) 2018-2019 dirs-rs contributors
@@ -2865,7 +2865,7 @@ have been licensed under extremely permissive terms.
 
 ## License text 43
 
-Used by: enigo 0.2.1
+Used by: enigo 0.6.1
 
 ```text
 MIT License
@@ -5440,7 +5440,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ## License text 84
 
-Used by: keyboard-types 0.7.0
+Used by: keyboard-types 0.8.3
 
 ```text
 Copyright (c) 2017 Pyfisch
@@ -5967,7 +5967,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## License text 97
 
-Used by: muda 0.15.3, tray-icon 0.19.3
+Used by: muda 0.21.2, tray-icon 0.26.1
 
 ```text
 MIT License
@@ -5995,7 +5995,7 @@ SOFTWARE.
 
 ## License text 98
 
-Used by: muda 0.15.3
+Used by: muda 0.21.2
 
 ```text
 SPDXVersion: SPDX-2.1
@@ -7291,7 +7291,7 @@ THE SOFTWARE.
 
 ## License text 114
 
-Used by: rfd 0.15.4
+Used by: rfd 0.17.2
 
 ```text
 MIT License
@@ -8814,7 +8814,7 @@ DEALINGS IN THE SOFTWARE.
 
 ## License text 140
 
-Used by: tray-icon 0.19.3
+Used by: tray-icon 0.26.1
 
 ```text
 SPDXVersion: SPDX-2.1
@@ -10222,7 +10222,7 @@ THE SOFTWARE.
 
 ## License text 160
 
-Used by: windows 0.52.0, windows 0.56.0, windows 0.58.0, windows-core 0.52.0, windows-core 0.56.0, windows-core 0.58.0, windows-implement 0.56.0, windows-implement 0.58.0, windows-interface 0.56.0, windows-interface 0.58.0, windows-link 0.2.1, windows-result 0.1.2, windows-result 0.2.0, windows-strings 0.1.0, windows-sys 0.48.0, windows-sys 0.52.0, windows-sys 0.59.0, windows-sys 0.61.2, windows-targets 0.48.5, windows-targets 0.52.6, windows_x86_64_msvc 0.48.5, windows_x86_64_msvc 0.52.6
+Used by: windows 0.52.0, windows 0.58.0, windows 0.61.3, windows-collections 0.2.0, windows-core 0.52.0, windows-core 0.58.0, windows-core 0.61.2, windows-future 0.2.1, windows-implement 0.58.0, windows-implement 0.60.2, windows-interface 0.58.0, windows-interface 0.59.3, windows-link 0.1.3, windows-link 0.2.1, windows-numerics 0.2.0, windows-result 0.2.0, windows-result 0.3.4, windows-strings 0.1.0, windows-strings 0.4.2, windows-sys 0.52.0, windows-sys 0.61.2, windows-targets 0.52.6, windows-threading 0.1.0, windows_x86_64_msvc 0.52.6
 
 ```text
 Apache License
