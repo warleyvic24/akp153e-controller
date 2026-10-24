@@ -23,6 +23,12 @@ fn table() -> &'static HashMap<&'static str, &'static str> {
     TABLE.get_or_init(|| EN.iter().copied().collect())
 }
 
+/// Para testes de textos que chegam a `t` por variável (o verificador de fontes não os vê).
+#[cfg(test)]
+pub(crate) fn has_translation(pt: &str) -> bool {
+    table().contains_key(pt)
+}
+
 /// Texto no idioma atual. `pt` é o texto original, em português.
 pub fn t(pt: &str) -> &str {
     if !english() {
@@ -169,7 +175,25 @@ const EN: &[(&str, &str)] = &[
     ("Escolher app instalado", "Choose installed app"),
     ("Escuro", "Dark"),
     ("Estado da conexão", "Connection status"),
-    ("Esvazia este botão", "Empties this button"),
+    ("Esvazia este botão (Del)", "Empties this button (Del)"),
+    ("Executa a ação agora", "Runs the action now"),
+    ("Esta tecla ainda não tem ação", "This key has no action yet"),
+    (
+        "Atalho vazio: grave ou digite as teclas",
+        "Empty shortcut: record or type the keys",
+    ),
+    ("O atalho tem uma tecla desconhecida", "The shortcut has an unknown key"),
+    ("Escolha o programa que a tecla abre", "Choose the program this key opens"),
+    (
+        "A URL precisa começar com http:// ou https://",
+        "The URL must start with http:// or https://",
+    ),
+    ("Escolha a página de destino", "Choose the target page"),
+    ("Escolha o perfil de destino", "Choose the target profile"),
+    (
+        "Escolha a ação ao segurar, ou desative-a",
+        "Choose the hold action, or turn it off",
+    ),
     ("Excluir perfil", "Delete profile"),
     ("Excluir página", "Delete page"),
     ("Explorador", "Explorer"),
@@ -261,6 +285,7 @@ const EN: &[(&str, &str)] = &[
     ("Tecla desconhecida: {}", "Unknown key: {}"),
     ("Tecla {} copiada", "Key {} copied"),
     ("Tecla {} limpa", "Key {} cleared"),
+    ("Tecla {} substituída", "Key {} replaced"),
     ("Tecla {} testada", "Key {} tested"),
     ("Tecla {}, {}", "Key {}, {}"),
     ("Teclas trocadas", "Keys swapped"),

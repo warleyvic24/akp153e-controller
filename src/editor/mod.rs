@@ -1,6 +1,7 @@
 //! Editor: a janela egui que edita a config e avisa o serviço. Não fala com o aparelho.
 mod action_ui;
 mod bars;
+mod checks;
 mod history;
 mod inspector;
 mod library;
@@ -112,6 +113,7 @@ impl App {
         let Some(b) = g.cfg.page_mut().buttons.get_mut(button) else {
             return;
         };
+        let replaced = !is_blank(b);
         b.action = action;
         if p.opens_app_picker() {
             // O programa escolhido define rótulo, fundo e ícone (ver `picker::apply_app`).
@@ -122,6 +124,7 @@ impl App {
             self.picker.at = slot;
             self.picker.show();
             self.touch();
+            self.warn_replaced(replaced, button);
             return;
         }
         b.appearance.text = p.label.to_string();
@@ -134,6 +137,15 @@ impl App {
             a: 255,
         };
         self.touch();
+        self.warn_replaced(replaced, button);
+    }
+
+    /// Uma ação da bandeja caiu numa tecla já configurada: avisa e oferece desfazer.
+    fn warn_replaced(&mut self, replaced: bool, button: usize) {
+        if replaced {
+            let msg = strings::tf("Tecla {} substituída", &[&(button + 1)]);
+            self.toasts.push(msg, Some("Desfazer"));
+        }
     }
 
     /// Como `touch`, para edições que mudam o perfil/página ativos.
@@ -272,7 +284,12 @@ fn is_blank(b: &ButtonConfig) -> bool {
         && ap.background == BLANK_BACKGROUND
 }
 
-fn key_view(b: &ButtonConfig, number: usize, tex: Option<egui::TextureId>) -> widgets::KeyView<'_> {
+fn key_view(
+    b: &ButtonConfig,
+    number: usize,
+    tex: Option<egui::TextureId>,
+    problem: bool,
+) -> widgets::KeyView<'_> {
     let ap = b.current_appearance();
     widgets::KeyView {
         number,
@@ -282,6 +299,7 @@ fn key_view(b: &ButtonConfig, number: usize, tex: Option<egui::TextureId>) -> wi
         text: c32(ap.text_color),
         off: is_blank(b),
         tex,
+        problem,
     }
 }
 
@@ -339,6 +357,7 @@ impl eframe::App for App {
         // Estado do quadro anterior: só se copia a config quando ela muda (comparar não aloca).
         let before = self.baseline.take().unwrap_or_else(|| g.cfg.clone());
         let (mut want_undo, mut want_redo) = self.read_undo_keys(ctx);
+        self.key_shortcuts(ctx, g);
 
         self.top_bar(ctx, g, &pal, accent);
         self.footer(ctx, &pal, &mut want_undo, &mut want_redo);

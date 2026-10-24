@@ -18,6 +18,8 @@ const KEY_NUMBER_MIN_WIDTH: f32 = 56.0;
 const KEY_NUMBER_OFFSET: egui::Vec2 = egui::Vec2::new(7.0, 5.0);
 const KEY_SELECTED_STROKE: f32 = 2.5;
 const KEY_HOVER_STROKE: f32 = 1.5;
+const PROBLEM_BADGE_RADIUS: f32 = 8.0;
+const PROBLEM_BADGE_INSET: f32 = 4.0;
 const EMPTY_RIM_ALPHA: u8 = 14;
 const EMPTY_HINT_OFFSET: f32 = 20.0;
 const SHINE_ALPHA: u8 = 5; // pré-multiplicado: soma poucos níveis de cor (from_white_alpha clareia demais)
@@ -39,6 +41,8 @@ pub struct KeyView<'a> {
     pub text: Color32,
     pub off: bool,
     pub tex: Option<egui::TextureId>,
+    /// A tecla precisa de ajuste para funcionar (ver `checks::button_problem`).
+    pub problem: bool,
 }
 
 pub fn paint_icon(p: &Painter, center: Pos2, size: f32, name: &str, color: Color32) {
@@ -125,6 +129,23 @@ pub fn paint_key(
             Stroke::new(KEY_SELECTED_STROKE, accent),
         );
     }
+    if k.problem {
+        paint_problem_badge(p, rect, pal);
+    }
+}
+
+/// Selo "!" no canto superior direito: a tecla não vai funcionar como está.
+fn paint_problem_badge(p: &Painter, rect: Rect, pal: &Palette) {
+    let offset = PROBLEM_BADGE_INSET + PROBLEM_BADGE_RADIUS;
+    let center = pos2(rect.right() - offset, rect.top() + offset);
+    p.circle_filled(center, PROBLEM_BADGE_RADIUS, pal.bad);
+    p.text(
+        center,
+        Align2::CENTER_CENTER,
+        "!",
+        FontId::proportional(text::CAPTION),
+        crate::editor::theme::readable_on(pal.bad),
+    );
 }
 
 /// Tecla sem ação: fundo preto, cantos HUD e o "+" que convida a configurá-la.

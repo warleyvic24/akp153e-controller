@@ -1,5 +1,5 @@
 //! Painel do botão selecionado (inspetor), ações rápidas, banner offline e janela de apps instalados.
-use super::{is_blank, key_view, theme, tokens, widgets, App, TAB_GAP};
+use super::{checks, is_blank, key_view, theme, tokens, widgets, App, TAB_GAP};
 use crate::config::schema::*;
 use crate::editor::action_ui::{PaneCtx, Targets};
 use crate::editor::panes::{action_pane, appearance_pane, states_pane};
@@ -169,6 +169,7 @@ impl App {
         &mut self,
         ui: &mut egui::Ui,
         g: &mut runtime::Shared,
+        untestable: Option<&'static str>,
         pal: &Palette,
         accent: Color32,
     ) {
@@ -181,18 +182,27 @@ impl App {
             let test = egui::Button::new(label)
                 .fill(accent)
                 .stroke(Stroke::new(1.0_f32, theme::ink(accent, pal)));
-            if ui.add(test).clicked() {
+            let test = ui.add_enabled(untestable.is_none(), test);
+            let test = match untestable {
+                Some(why) => test.on_disabled_hover_text(t(why)),
+                None => test.on_hover_text(t("Executa a ação agora")),
+            };
+            if test.clicked() {
                 self.test_key(g, sel);
             }
-            if ui.button(t("Copiar")).clicked() {
-                self.copy_key(g, sel);
+            let copy = ui.button(t("Copiar")).on_hover_text("Ctrl+C");
+            if copy.clicked() {
+                self.copy_key(ui.ctx(), g, sel);
             }
             let paste = egui::Button::new(t("Colar"));
-            if ui.add_enabled(self.clipboard.is_some(), paste).clicked() {
+            let paste = ui
+                .add_enabled(self.clipboard.is_some(), paste)
+                .on_hover_text("Ctrl+V");
+            if paste.clicked() {
                 self.paste_key(g, sel);
             }
             let clear = egui::Button::new(RichText::new(t("Limpar")).color(pal.bad));
-            let clear = ui.add(clear).on_hover_text(t("Esvazia este botão"));
+            let clear = ui.add(clear).on_hover_text(t("Esvazia este botão (Del)"));
             clear.widget_info(|| {
                 egui::WidgetInfo::labeled(egui::WidgetType::Button, true, t("Limpar botão"))
             });
@@ -208,10 +218,44 @@ impl App {
         self.toasts.push(msg, None);
     }
 
-    fn copy_key(&mut self, g: &runtime::Shared, sel: usize) {
+    fn copy_key(&mut self, ctx: &egui::Context, g: &runtime::Shared, sel: usize) {
         self.clipboard = g.cfg.page().buttons.get(sel).cloned();
+        // O Windows só entrega Ctrl+V ao app se a área de transferência tiver texto; por isso vai
+        // um texto curto. A tecla em si fica só na cópia interna: URLs com token não vazam.
+        let name = self
+            .clipboard
+            .as_ref()
+            .map_or("", |b| b.appearance.text.as_str());
+        ctx.copy_text(
+            format!("AKP153E #{} {name}", sel + 1)
+                .trim_end()
+                .to_string(),
+        );
         let msg = tf("Tecla {} copiada", &[&(sel + 1)]);
         self.toasts.push(msg, None);
+    }
+
+    /// Atalhos sobre a tecla selecionada: Del limpa, Ctrl+C copia, Ctrl+V cola. Ficam desligados
+    /// enquanto se digita, se grava um atalho ou há uma janela aberta.
+    pub(crate) fn key_shortcuts(&mut self, ctx: &egui::Context, g: &mut runtime::Shared) {
+        let busy = self.recording.is_some() || self.picker.open || self.settings_open;
+        if busy || ctx.wants_keyboard_input() {
+            return;
+        }
+        let (copy, paste, clear) = ctx.input_mut(|i| {
+            let copy = i.events.iter().any(|e| matches!(e, egui::Event::Copy));
+            let paste = i.events.iter().any(|e| matches!(e, egui::Event::Paste(_)));
+            let clear = i.consume_key(egui::Modifiers::NONE, egui::Key::Delete);
+            (copy, paste, clear)
+        });
+        let sel = self.selected.min(g.cfg.page().buttons.len() - 1);
+        if copy {
+            self.copy_key(ctx, g, sel);
+        } else if paste {
+            self.paste_key(g, sel);
+        } else if clear && !is_blank(&g.cfg.page().buttons[sel]) {
+            self.clear_key(g, sel);
+        }
     }
 
     fn paste_key(&mut self, g: &mut runtime::Shared, sel: usize) {
@@ -260,12 +304,26 @@ impl App {
                 let icon_px = g.icon_px;
                 let profile = g.cfg.active_profile;
                 self.picker.at = (profile, g.cfg.profiles[profile].active_page, sel);
-                self.quick_actions(ui, g, pal, accent);
+                let Some(b) = g.cfg.page().buttons.get(sel) else {
+                    return;
+                };
+                let problem = checks::button_problem(b, &targets);
+                let untestable = match b.action {
+                    ButtonAction::None => Some(checks::NO_ACTION),
+                    _ => checks::action_problem(&b.action, &targets),
+                };
+                self.quick_actions(ui, g, untestable, pal, accent);
                 ui.add_space(tokens::space::XS);
                 let Some(b) = g.cfg.page_mut().buttons.get_mut(sel) else {
                     return;
                 };
                 self.key_header(ui, ctx, b, sel, icon_px, pal, accent);
+                if let Some(problem) = problem {
+                    let msg = RichText::new(format!("! {}", t(problem)))
+                        .size(tokens::text::CAPTION)
+                        .color(pal.bad);
+                    ui.label(msg);
+                }
                 self.tab_bar(ui, accent, pal);
                 ui.separator();
                 let cx = PaneCtx {
@@ -295,7 +353,7 @@ impl App {
         ui.horizontal(|ui| {
             let (rect, _) = ui.allocate_exact_size(vec2(PREVIEW_KEY, PREVIEW_KEY), Sense::hover());
             let tex = self.key_tex.get(ctx, sel, b, icon_px);
-            let view = key_view(b, sel + 1, tex);
+            let view = key_view(b, sel + 1, tex, false);
             widgets::paint_key(ui.painter(), rect, &view, false, false, pal, accent);
             ui.vertical(|ui| {
                 let number = RichText::new(tf("BOTÃO {}", &[&(sel + 1)]))

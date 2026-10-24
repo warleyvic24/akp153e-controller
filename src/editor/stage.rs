@@ -1,6 +1,7 @@
 //! Bandeja de ações e palco central (o aparelho desenhado com as teclas).
-use super::{is_blank, key_view, widgets, App, TAB_GAP};
+use super::{checks, is_blank, key_view, widgets, App, TAB_GAP};
 use crate::config::schema::{ButtonAction, ButtonConfig};
+use crate::editor::action_ui::Targets;
 use crate::editor::library::Preset;
 use crate::editor::theme::{self, Palette};
 use crate::editor::tokens::{radius, space, text};
@@ -63,8 +64,14 @@ fn device_size(key: f32, rows: usize, cols: usize) -> egui::Vec2 {
     )
 }
 
-/// Nome que o leitor de tela anuncia: posição, o que a tecla mostra e se está selecionada.
-fn key_widget_info(index: usize, b: &ButtonConfig, selected: bool) -> egui::WidgetInfo {
+/// Nome que o leitor de tela anuncia: posição, o que a tecla mostra, se precisa de ajuste e se
+/// está selecionada.
+fn key_widget_info(
+    index: usize,
+    b: &ButtonConfig,
+    selected: bool,
+    problem: Option<&str>,
+) -> egui::WidgetInfo {
     let shown = &b.current_appearance().text;
     let what = if is_blank(b) {
         t("vazia")
@@ -73,12 +80,11 @@ fn key_widget_info(index: usize, b: &ButtonConfig, selected: bool) -> egui::Widg
     } else {
         shown
     };
-    egui::WidgetInfo::selected(
-        egui::WidgetType::Button,
-        true,
-        selected,
-        tf("Tecla {}, {}", &[&(index + 1), &what]),
-    )
+    let mut name = tf("Tecla {}, {}", &[&(index + 1), &what]);
+    if let Some(problem) = problem {
+        name = format!("{name}. {}", t(problem));
+    }
+    egui::WidgetInfo::selected(egui::WidgetType::Button, true, selected, name)
 }
 
 /// Corpo do aparelho: moldura, tela, aro interno e o LED de conexão.
@@ -163,6 +169,27 @@ fn custom_card(ui: &mut Ui, pal: &Palette, accent: Color32) -> egui::Response {
         pal.fg,
     );
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// Minúsculas e sem acento, para "musica" achar "Música".
+fn fold(s: &str) -> String {
+    s.to_lowercase()
+        .chars()
+        .map(|c| match c {
+            'á' | 'à' | 'â' | 'ã' | 'ä' => 'a',
+            'é' | 'è' | 'ê' | 'ë' => 'e',
+            'í' | 'ì' | 'î' | 'ï' => 'i',
+            'ó' | 'ò' | 'ô' | 'õ' | 'ö' => 'o',
+            'ú' | 'ù' | 'û' | 'ü' => 'u',
+            'ç' => 'c',
+            other => other,
+        })
+        .collect()
+}
+
+/// A busca (já em `fold`) casa com o nome ou a categoria, em português ou no idioma da interface.
+fn search_matches(folded_query: &str, texts: &[&str]) -> bool {
+    texts.iter().any(|s| fold(s).contains(folded_query))
 }
 
 /// Passo a passo para quem abre uma página sem nenhuma tecla configurada.
@@ -296,7 +323,7 @@ impl App {
 
     /// Índices das ações a mostrar: a categoria ativa, ou o resultado da busca.
     fn visible_presets(&self, cats: &[&'static str]) -> Vec<usize> {
-        let q = self.query.to_lowercase();
+        let q = fold(self.query.trim());
         self.presets
             .iter()
             .enumerate()
@@ -304,7 +331,7 @@ impl App {
                 if q.is_empty() {
                     Some(&p.category) == cats.get(self.tray_cat)
                 } else {
-                    p.label.to_lowercase().contains(&q)
+                    search_matches(&q, &[p.label, t(p.label), p.category, t(p.category)])
                 }
             })
             .map(|(i, _)| i)
@@ -398,6 +425,7 @@ impl App {
     ) -> DeviceEvents {
         let painter = ui.painter().clone();
         let cols = g.cfg.page().cols;
+        let targets = Targets::from(&g.cfg);
         let mut events = DeviceEvents::default();
         for i in 0..g.cfg.page().rows * cols {
             let origin = pos2(
@@ -407,7 +435,8 @@ impl App {
             let kr = Rect::from_min_size(origin, vec2(key, key));
             let resp = ui.interact(kr, ui.id().with(("key", i)), Sense::click_and_drag());
             let button = &g.cfg.page().buttons[i];
-            resp.widget_info(|| key_widget_info(i, button, i == self.selected));
+            let problem = checks::button_problem(button, &targets);
+            resp.widget_info(|| key_widget_info(i, button, i == self.selected, problem));
             // Tab e setas (navegação nativa do egui) movem o foco; a seleção o acompanha.
             if resp.has_focus() {
                 self.selected = i;
@@ -417,9 +446,13 @@ impl App {
             }
             let drop_target = resp.dnd_hover_payload::<Dragged>().is_some();
             let tex = self.key_tex.get(ctx, i, button, g.icon_px);
-            let view = key_view(button, i + 1, tex);
+            let view = key_view(button, i + 1, tex, problem.is_some());
             let hot = resp.hovered() || drop_target;
             widgets::paint_key(&painter, kr, &view, hot, i == self.selected, pal, accent);
+            let resp = match problem {
+                Some(problem) => resp.on_hover_text(t(problem)),
+                None => resp,
+            };
             if resp.clicked() {
                 self.selected = i;
                 // O egui só dá foco por Tab; sem isto, as setas não funcionam após o clique.
@@ -472,6 +505,14 @@ mod tests {
     fn the_device_is_never_wider_than_its_cap() {
         let key = fit_key_size(5000.0, 5000.0, 3, 5);
         assert!(device_size(key, 3, 5).x <= DEVICE_MAX_WIDTH + 2.0 * DEVICE_PAD);
+    }
+
+    #[test]
+    fn search_ignores_case_and_accents_and_checks_every_text() {
+        assert!(search_matches(&fold("MUSICA"), &["Música"]));
+        assert!(search_matches(&fold("ção"), &["Ação"]));
+        assert!(search_matches(&fold("mute"), &["Mudo", "Mute"]));
+        assert!(!search_matches(&fold("zzz"), &["Mudo", "Mute"]));
     }
 
     #[test]

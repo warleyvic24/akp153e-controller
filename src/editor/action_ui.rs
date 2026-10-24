@@ -35,6 +35,14 @@ impl Targets {
             .collect();
         Self { pages, profiles }
     }
+
+    pub fn has_page(&self, id: u64) -> bool {
+        self.pages.iter().any(|p| p.0 == id)
+    }
+
+    pub fn has_profile(&self, id: u64) -> bool {
+        self.profiles.iter().any(|p| p.0 == id)
+    }
 }
 
 const ACTION_KINDS: [(&str, &str); 8] = [

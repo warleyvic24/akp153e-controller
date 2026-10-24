@@ -254,6 +254,13 @@ pub fn action_pane(
     }
     if let Some(a) = b.long_press_action.as_mut() {
         changed |= action_editor(ui, cx, "lact", a, rec);
+        // O tempo só importa com uma ação ao segurar: fica junto dela, não escondido em outra aba.
+        let label = widgets::section(ui, "Segurar a partir de", pal);
+        fill_slider_width(ui);
+        changed |= ui
+            .add(egui::Slider::new(&mut b.long_press_threshold_ms, 100..=2000).suffix(" ms"))
+            .labelled_by(label)
+            .changed();
     }
     changed
 }
@@ -282,11 +289,5 @@ pub fn states_pane(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette) -> bo
             .checkbox(&mut b.toggle_state, t("Ver o estado ligado na prévia"))
             .changed();
     }
-    let label = widgets::section(ui, "Segurar a partir de", pal);
-    fill_slider_width(ui);
-    changed |= ui
-        .add(egui::Slider::new(&mut b.long_press_threshold_ms, 100..=2000).suffix(" ms"))
-        .labelled_by(label)
-        .changed();
     changed
 }
