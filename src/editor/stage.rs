@@ -22,8 +22,9 @@ const STAGE_FOOTER_HEIGHT: f32 = 30.0;
 const GUIDE_HEIGHT: f32 = 120.0;
 const OFFLINE_BANNER_HEIGHT: f32 = 60.0;
 const KEY_MIN: f32 = 48.0;
-const KEY_MAX: f32 = 110.0;
-const DEVICE_MAX_WIDTH: f32 = 640.0;
+// A imagem da tecla tem o tamanho do display (100 px); acima de ~1,4x ela fica borrada.
+const KEY_MAX: f32 = 140.0;
+const DEVICE_MAX_WIDTH: f32 = 780.0;
 const DEVICE_PAD: f32 = 24.0;
 const DEVICE_GAP: f32 = 12.0;
 const BEZEL_INSET: f32 = 8.0;
@@ -492,7 +493,7 @@ mod tests {
 
     #[test]
     fn keys_shrink_to_fit_a_short_stage_but_never_below_the_minimum() {
-        // Com sobra de altura, a largura máxima do aparelho (640 px) é que limita a tecla.
+        // Com sobra de altura, a largura máxima do aparelho (780 px) é que limita a tecla.
         let by_width = (DEVICE_MAX_WIDTH - 2.0 * DEVICE_PAD - 4.0 * DEVICE_GAP) / 5.0;
         assert_eq!(fit_key_size(900.0, 2000.0, 3, 5), by_width);
         assert_eq!(fit_key_size(900.0, 2000.0, 3, 2), KEY_MAX);

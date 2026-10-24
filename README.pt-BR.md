@@ -4,7 +4,7 @@
 
 Software de controle não oficial, de código aberto e só para Windows, para o stream controller AJAZZ AKP153E (15 teclas LCD), escrito em Rust com egui/eframe. Substitui o aplicativo do fabricante e não contém código, firmware nem arquivos dele.
 
-> **Status: inicial (v0.1).** O desenho das teclas, o editor, as ações de app/webhook/atalho, o autostart e a bandeja estão verificados no aparelho real. Aperto e soltura físicos, pressão longa e as 3 teclas laterais **ainda não foram verificados** — veja [`evals/hardware-checklist.md`](evals/hardware-checklist.md). Este projeto não tem ligação com a AJAZZ.
+> **Status: inicial (v0.1).** O desenho das teclas, o editor, as ações de app/webhook/atalho, o autostart e a bandeja estão verificados no aparelho real. Aperto e soltura físicos e pressão longa **ainda não foram verificados**; a faixa lateral é uma tela sem botões no AKP153E e não é usada — veja [`evals/hardware-checklist.md`](evals/hardware-checklist.md). Este projeto não tem ligação com a AJAZZ.
 
 > **Sem afiliação.** Projeto independente, não feito, endossado nem suportado pela AJAZZ. "AJAZZ" e "AKP153E" são marcas ou nomes de produto dos respectivos donos e aparecem aqui só para dizer com qual aparelho o programa funciona.
 

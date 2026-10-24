@@ -92,7 +92,8 @@ fn ui_to_device(i: usize) -> Option<u8> {
     OPENDECK_TO_DEVICE.get(od).copied()
 }
 
-/// Valor de tecla do relatório (1-based) -> índice da grade da UI; `None` para teclas laterais.
+/// Valor de tecla do relatório (1-based) -> índice da grade da UI; `None` para a coluna lateral
+/// (botões só do AKP153R; no AKP153E a lateral é uma tela sem teclas).
 fn device_to_ui(d: u8) -> Option<usize> {
     let od = *DEVICE_TO_OPENDECK.get((d as usize).checked_sub(1)?)? as usize;
     (od % DEVICE_COLS < UI_COLS).then(|| (od / DEVICE_COLS) * UI_COLS + od % DEVICE_COLS)
