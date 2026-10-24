@@ -9,6 +9,7 @@ mod panes;
 mod picker;
 mod settings;
 mod stage;
+mod summary;
 mod textlist;
 pub(crate) mod theme;
 mod toast;
@@ -359,8 +360,7 @@ impl eframe::App for App {
         let (mut want_undo, mut want_redo) = self.read_undo_keys(ctx);
         self.key_shortcuts(ctx, g);
 
-        self.top_bar(ctx, g, &pal, accent);
-        self.footer(ctx, &pal, &mut want_undo, &mut want_redo);
+        self.top_bar(ctx, g, (&pal, accent), &mut want_undo, &mut want_redo);
         self.tray(ctx, g, &pal, accent);
         self.inspector(ctx, g, &pal, accent);
         self.stage(ctx, g, &pal, accent);
@@ -582,8 +582,7 @@ mod tests {
                 );
                 let (mut undo, mut redo) = (false, false);
                 let out = ctx.run(egui::RawInput::default(), |ctx| {
-                    app.top_bar(ctx, g, &pal, accent);
-                    app.footer(ctx, &pal, &mut undo, &mut redo);
+                    app.top_bar(ctx, g, (&pal, accent), &mut undo, &mut redo);
                     app.tray(ctx, g, &pal, accent);
                     app.inspector(ctx, g, &pal, accent);
                     app.stage(ctx, g, &pal, accent);

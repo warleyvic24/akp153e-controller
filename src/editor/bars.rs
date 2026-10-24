@@ -1,4 +1,4 @@
-//! Barras do editor: topo (estado, perfis, páginas, menus) e rodapé (desfazer/refazer).
+//! Barra do topo do editor: estado, gravação, perfis, páginas, desfazer/refazer e menus.
 use super::{settings, theme, widgets, App};
 use crate::editor::theme::Palette;
 use crate::editor::tokens::text::TITLE;
@@ -44,12 +44,15 @@ fn menu_field(
 }
 
 impl App {
+    /// Uma linha só: marca, estado e páginas à esquerda (quebram se faltar espaço); desfazer,
+    /// refazer e menus à direita. Antes eram duas linhas e um rodapé, tirando altura das teclas.
     pub(crate) fn top_bar(
         &mut self,
         ctx: &egui::Context,
         g: &mut runtime::Shared,
-        pal: &Palette,
-        accent: Color32,
+        (pal, accent): (&Palette, Color32),
+        undo: &mut bool,
+        redo: &mut bool,
     ) {
         let frame = Frame::none()
             .fill(pal.panel)
@@ -57,23 +60,52 @@ impl App {
         egui::TopBottomPanel::top("top")
             .frame(frame)
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(t("AKP153E"))
-                            .font(theme::display_font(TITLE))
-                            .strong(),
-                    );
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    self.manage_menu(ui, g, pal);
+                    if ui.button(t("Preferências")).clicked() {
+                        self.open_settings();
+                    }
                     ui.add_space(WORDMARK_GAP);
-                    self.connection_chip(ui, g, pal);
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        self.manage_menu(ui, g, pal);
-                        if ui.button(t("Preferências")).clicked() {
-                            self.open_settings();
-                        }
+                    self.undo_redo(ui, undo, redo);
+                    let left = Layout::left_to_right(Align::Center).with_main_wrap(true);
+                    ui.with_layout(left, |ui| {
+                        ui.label(
+                            RichText::new(t("AKP153E"))
+                                .font(theme::display_font(TITLE))
+                                .strong(),
+                        );
+                        ui.add_space(WORDMARK_GAP);
+                        self.connection_chip(ui, g, pal);
+                        self.save_chip(ui, pal);
+                        ui.add_space(WORDMARK_GAP);
+                        self.profile_and_pages(ui, g, pal, accent);
                     });
                 });
-                ui.horizontal_wrapped(|ui| self.profile_and_pages(ui, g, pal, accent));
             });
+    }
+
+    /// Botões em ordem visual Desfazer, Refazer (o layout à direita os desenha ao contrário).
+    fn undo_redo(&self, ui: &mut egui::Ui, undo: &mut bool, redo: &mut bool) {
+        *redo |= ui
+            .add_enabled(self.history.can_redo(), egui::Button::new(t("Refazer")))
+            .on_hover_text(t("Ctrl+Shift+Z"))
+            .clicked();
+        *undo |= ui
+            .add_enabled(self.history.can_undo(), egui::Button::new(t("Desfazer")))
+            .on_hover_text(t("Ctrl+Z"))
+            .clicked();
+    }
+
+    /// Estado da gravação, ao lado do estado da conexão.
+    fn save_chip(&self, ui: &mut egui::Ui, pal: &Palette) {
+        if let Some(err) = &self.save_error {
+            widgets::status_chip(ui, "Falha ao salvar", pal.bad)
+                .on_hover_text(format!("{err}\n{}", t("Nova tentativa em instantes.")));
+        } else if self.dirty {
+            widgets::status_chip(ui, "Salvando…", pal.muted);
+        } else {
+            widgets::status_chip(ui, "Salvo", pal.ok);
+        }
     }
 
     /// Chip de conexão; ao clicar, abre um menu com reconectar e a pasta de logs.
@@ -275,43 +307,5 @@ impl App {
             }
             ui.close_menu();
         }
-    }
-
-    pub(crate) fn footer(
-        &self,
-        ctx: &egui::Context,
-        pal: &Palette,
-        undo: &mut bool,
-        redo: &mut bool,
-    ) {
-        let frame = Frame::none()
-            .fill(pal.bg)
-            .inner_margin(Margin::symmetric(18.0, 6.0));
-        let (can_undo, can_redo) = (self.history.can_undo(), self.history.can_redo());
-        egui::TopBottomPanel::bottom("foot")
-            .frame(frame)
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    *undo |= ui
-                        .add_enabled(can_undo, egui::Button::new(t("Desfazer")))
-                        .on_hover_text(t("Ctrl+Z"))
-                        .clicked();
-                    *redo |= ui
-                        .add_enabled(can_redo, egui::Button::new(t("Refazer")))
-                        .on_hover_text(t("Ctrl+Shift+Z"))
-                        .clicked();
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if let Some(err) = &self.save_error {
-                            widgets::status_chip(ui, "Falha ao salvar", pal.bad).on_hover_text(
-                                format!("{err}\n{}", t("Nova tentativa em instantes.")),
-                            );
-                        } else if self.dirty {
-                            widgets::status_chip(ui, "Salvando…", pal.muted);
-                        } else {
-                            widgets::status_chip(ui, "Salvo", pal.ok);
-                        }
-                    });
-                });
-            });
     }
 }

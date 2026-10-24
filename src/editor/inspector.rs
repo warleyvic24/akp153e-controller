@@ -1,5 +1,5 @@
 //! Painel do botão selecionado (inspetor), ações rápidas, banner offline e janela de apps instalados.
-use super::{checks, is_blank, key_view, theme, tokens, widgets, App, TAB_GAP};
+use super::{checks, is_blank, key_view, summary, theme, tokens, widgets, App, TAB_GAP};
 use crate::config::schema::*;
 use crate::editor::action_ui::{PaneCtx, Targets};
 use crate::editor::panes::{action_pane, appearance_pane, states_pane};
@@ -20,6 +20,18 @@ const APP_ROW_HOVER_TINT: f32 = 0.10;
 const INSPECTOR_MARGIN: f32 = 14.0;
 const PREVIEW_KEY: f32 = 56.0;
 const TAB_NAMES: [&str; 3] = ["Aparência", "Ação", "Alternar"];
+
+/// Título do inspetor: o rótulo; sem ele, o nome do programa que a tecla abre.
+fn key_title(b: &ButtonConfig) -> String {
+    if !b.appearance.text.is_empty() {
+        return b.appearance.text.clone();
+    }
+    match &b.action {
+        ButtonAction::LaunchApp { path, .. } => summary::program_name(path),
+        _ => None,
+    }
+    .unwrap_or_else(|| t("Sem nome").to_string())
+}
 
 /// Linha da lista de apps: inicial colorida, nome e o caminho ao passar o mouse.
 fn app_row(ui: &mut egui::Ui, app: &apps::InstalledApp, pal: &Palette) -> egui::Response {
@@ -174,7 +186,7 @@ impl App {
         accent: Color32,
     ) {
         let sel = self.selected;
-        ui.horizontal_wrapped(|ui| {
+        ui.horizontal(|ui| {
             ui.spacing_mut().button_padding.x = QUICK_BUTTON_PAD_X;
             let label = RichText::new(t("Testar"))
                 .strong()
@@ -201,14 +213,17 @@ impl App {
             if paste.clicked() {
                 self.paste_key(g, sel);
             }
-            let clear = egui::Button::new(RichText::new(t("Limpar")).color(pal.bad));
-            let clear = ui.add(clear).on_hover_text(t("Esvazia este botão (Del)"));
-            clear.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::Button, true, t("Limpar botão"))
+            // Destrutivo: no fim da linha, longe de Copiar, para não ser clicado por engano.
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let clear = egui::Button::new(RichText::new(t("Limpar")).color(pal.bad));
+                let clear = ui.add(clear).on_hover_text(t("Esvazia este botão (Del)"));
+                clear.widget_info(|| {
+                    egui::WidgetInfo::labeled(egui::WidgetType::Button, true, t("Limpar botão"))
+                });
+                if clear.clicked() {
+                    self.clear_key(g, sel);
+                }
             });
-            if clear.clicked() {
-                self.clear_key(g, sel);
-            }
         });
     }
 
@@ -307,23 +322,24 @@ impl App {
                 let Some(b) = g.cfg.page().buttons.get(sel) else {
                     return;
                 };
-                let problem = checks::button_problem(b, &targets);
-                let untestable = match b.action {
-                    ButtonAction::None => Some(checks::NO_ACTION),
-                    _ => checks::action_problem(&b.action, &targets),
-                };
-                self.quick_actions(ui, g, untestable, pal, accent);
-                ui.add_space(tokens::space::XS);
-                let Some(b) = g.cfg.page_mut().buttons.get_mut(sel) else {
-                    return;
-                };
-                self.key_header(ui, ctx, b, sel, icon_px, pal, accent);
-                if let Some(problem) = problem {
+                // Primeiro qual tecla é e o que faz; depois o que dá para fazer com ela.
+                self.key_header(ui, ctx, b, sel, (icon_px, &targets), pal, accent);
+                if let Some(problem) = checks::button_problem(b, &targets) {
                     let msg = RichText::new(format!("! {}", t(problem)))
                         .size(tokens::text::CAPTION)
                         .color(pal.bad);
                     ui.label(msg);
                 }
+                let untestable = match b.action {
+                    ButtonAction::None => Some(checks::NO_ACTION),
+                    _ => checks::action_problem(&b.action, &targets),
+                };
+                ui.add_space(tokens::space::XS);
+                self.quick_actions(ui, g, untestable, pal, accent);
+                ui.add_space(tokens::space::SM);
+                let Some(b) = g.cfg.page_mut().buttons.get_mut(sel) else {
+                    return;
+                };
                 self.tab_bar(ui, accent, pal);
                 ui.separator();
                 let cx = PaneCtx {
@@ -338,7 +354,7 @@ impl App {
             });
     }
 
-    /// Miniatura da tecla, seu número e nome, e a dica quando ainda está vazia.
+    /// Miniatura da tecla, número, nome e o resumo da ação; a dica quando ainda está vazia.
     #[allow(clippy::too_many_arguments)]
     fn key_header(
         &mut self,
@@ -346,7 +362,7 @@ impl App {
         ctx: &egui::Context,
         b: &ButtonConfig,
         sel: usize,
-        icon_px: u32,
+        (icon_px, targets): (u32, &Targets),
         pal: &Palette,
         accent: Color32,
     ) {
@@ -361,13 +377,15 @@ impl App {
                     .size(tokens::text::CAPTION)
                     .color(pal.muted);
                 ui.label(number);
-                let name = if b.appearance.text.is_empty() {
-                    t("Sem nome")
-                } else {
-                    b.appearance.text.as_str()
-                };
                 let title = theme::display_font(tokens::text::TITLE);
-                ui.label(RichText::new(name).font(title));
+                ui.label(RichText::new(key_title(b)).font(title));
+                if let Some(summary) = summary::action_summary(&b.action, targets) {
+                    ui.label(
+                        RichText::new(summary)
+                            .size(tokens::text::CAPTION)
+                            .color(pal.muted),
+                    );
+                }
             });
         });
         if is_blank(b) {

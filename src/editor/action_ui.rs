@@ -37,12 +37,31 @@ impl Targets {
     }
 
     pub fn has_page(&self, id: u64) -> bool {
-        self.pages.iter().any(|p| p.0 == id)
+        self.page_name(id).is_some()
     }
 
     pub fn has_profile(&self, id: u64) -> bool {
-        self.profiles.iter().any(|p| p.0 == id)
+        self.profile_name(id).is_some()
     }
+
+    pub fn page_name(&self, id: u64) -> Option<&str> {
+        self.pages.iter().find(|p| p.0 == id).map(|p| p.1.as_str())
+    }
+
+    pub fn profile_name(&self, id: u64) -> Option<&str> {
+        self.profiles
+            .iter()
+            .find(|p| p.0 == id)
+            .map(|p| p.1.as_str())
+    }
+}
+
+/// Nome exibido (em português, para passar por `t`) de uma tecla de mídia; o id se desconhecida.
+pub(crate) fn media_label(key: &str) -> &str {
+    MEDIA_KEYS
+        .iter()
+        .find(|(k, _)| *k == key)
+        .map_or(key, |(_, label)| label)
 }
 
 const ACTION_KINDS: [(&str, &str); 8] = [
