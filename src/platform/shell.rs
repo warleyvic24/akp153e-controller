@@ -159,7 +159,7 @@ pub fn set_autostart(on: bool) {
 }
 
 fn tray_pixels() -> Vec<u8> {
-    crate::appicon::rgba(TRAY_ICON_PX)
+    crate::graphics::appicon::rgba(TRAY_ICON_PX)
 }
 
 /// Cria o ícone da bandeja; deve rodar na thread que executará `message_loop`.

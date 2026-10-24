@@ -20,7 +20,7 @@ pub const SWATCHES: [[u8; 3]; 7] = [MEDIA, KEYS, APPS, WEB, NAV, [42, 47, 58], [
 
 fn hotkey(keys: &[&str]) -> ButtonAction {
     ButtonAction::Hotkey {
-        keys: keys.iter().map(|k| k.to_string()).collect(),
+        keys: keys.iter().map(std::string::ToString::to_string).collect(),
     }
 }
 
@@ -186,7 +186,7 @@ mod tests {
     fn every_preset_uses_a_known_icon() {
         for p in presets() {
             assert!(
-                !crate::icons::strokes(p.icon).is_empty(),
+                !crate::graphics::icons::strokes(p.icon).is_empty(),
                 "{}: ícone {} desconhecido",
                 p.label,
                 p.icon

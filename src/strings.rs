@@ -295,7 +295,6 @@ const EN: &[(&str, &str)] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
 
     /// Primeiro literal de texto depois de `from`, sem passar do fim da instrução (`;`).
     fn literal_after(src: &str, from: usize) -> Option<String> {
@@ -319,7 +318,6 @@ mod tests {
 
     /// Todo texto que os arquivos-fonte passam por `t`, `tf` ou pelos componentes que traduzem.
     fn keys_used_in_sources() -> Vec<(String, String)> {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let calls = [
             "widgets::section(",
             "widgets::pill(",
@@ -329,14 +327,11 @@ mod tests {
             "widgets::name(",
         ];
         let mut found = Vec::new();
-        for entry in std::fs::read_dir(dir).unwrap().flatten() {
-            let path = entry.path();
-            let name = path.file_name().unwrap().to_string_lossy().to_string();
-            if !name.ends_with(".rs") || name == "strings.rs" {
+        for (name, src) in crate::test_support::sources_without_tests() {
+            if name == "strings.rs" {
                 continue;
             }
-            let src = std::fs::read_to_string(&path).unwrap();
-            let src = &src[..src.find("#[cfg(test)]").unwrap_or(src.len())];
+            let src = src.as_str();
             let mut at = 0;
             while let Some(i) = src[at..].find("t(\"").map(|i| i + at) {
                 at = i + 3;

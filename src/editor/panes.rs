@@ -1,10 +1,11 @@
 //! Painéis do inspetor (Aparência, Ação, Alternar) e o editor de ações.
-use crate::action_ui::{action_editor, PaneCtx};
+use super::{c32, library, widgets};
 use crate::config::schema::*;
-use crate::picker::{app_buttons, AppPicker};
+use crate::editor::action_ui::{action_editor, PaneCtx};
+use crate::editor::picker::{app_buttons, AppPicker};
+use crate::editor::theme::Palette;
+use crate::graphics::icons;
 use crate::strings::t;
-use crate::theme::Palette;
-use crate::{c32, icons, library, widgets};
 use eframe::egui::{self, vec2, Color32, Rounding, Sense, Stroke};
 const IMAGE_FIELD_RESERVED: f32 = 172.0;
 const SWATCH_SIZE: f32 = 26.0;
@@ -116,7 +117,7 @@ fn icon_cell(
     let (rect, resp) = ui.allocate_exact_size(vec2(ICON_CELL, ICON_CELL), Sense::click());
     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, t(name)));
     let p = ui.painter();
-    let round = Rounding::same(crate::tokens::radius::CONTROL);
+    let round = Rounding::same(crate::editor::tokens::radius::CONTROL);
     p.rect_filled(rect, round, pal.field);
     let width = if on { 2.0_f32 } else { 1.0_f32 };
     let border = if on { ink } else { pal.control };
@@ -140,7 +141,7 @@ fn icon_cell(
 fn icon_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette, accent: Color32) -> bool {
     let mut changed = false;
     widgets::section(ui, "Ícone", pal);
-    let ink = crate::theme::ink(accent, pal);
+    let ink = crate::editor::theme::ink(accent, pal);
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = vec2(ICON_GAP, ICON_GAP);
         let none_on = b.appearance.icon.is_none();

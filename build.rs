@@ -1,6 +1,6 @@
-//! Embute no `.exe` o mesmo ícone da janela e da bandeja (`src/appicon.rs`).
+//! Embute no `.exe` o mesmo ícone da janela e da bandeja (`src/graphics/appicon.rs`).
 //! O `.ico` é gerado aqui, em `OUT_DIR`, para não manter um binário no repositório.
-#[path = "src/appicon.rs"]
+#[path = "src/graphics/appicon.rs"]
 mod appicon;
 
 use image::{codecs::png::PngEncoder, ExtendedColorType, ImageEncoder};
@@ -42,7 +42,7 @@ fn ico() -> Vec<u8> {
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=src/appicon.rs");
+    println!("cargo:rerun-if-changed=src/graphics/appicon.rs");
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }

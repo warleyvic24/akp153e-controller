@@ -1,10 +1,13 @@
 //! Serviço em segundo plano: aparelho USB, ações, bandeja do sistema e servidor de controle
 //! para o editor. Não cria janela, então não consome CPU quando está ocioso.
+pub(crate) mod mixer_runtime;
+pub(crate) mod runtime;
+
 use crate::config::schema::AppConfig;
 use crate::engine::actions::Executor;
-use crate::runtime::{self, SharedState};
-use crate::shell;
+use crate::platform::shell;
 use crate::usb::{self, UsbCmd};
+use runtime::SharedState;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::os::windows::process::CommandExt;

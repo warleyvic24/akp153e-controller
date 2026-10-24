@@ -5,7 +5,7 @@ use crate::engine::actions::Executor;
 use crate::graphics::mixer_art::render_mixer_key;
 use crate::graphics::renderer::{encode_frame, render_button_frame};
 use crate::mixer::{MixerKey, MixerView};
-use crate::mixer_runtime::{self, StepHold};
+use crate::service::mixer_runtime::{self, StepHold};
 use crate::usb::{UsbCmd, UsbEvent};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -36,7 +36,9 @@ pub fn new_state(cfg: AppConfig, icon_px: u32) -> SharedState {
 /// Trava o estado; se outra thread entrou em pânico com ele travado, recupera o valor.
 /// (Só ocorre fora do release: lá `panic = "abort"` encerra o processo antes.)
 pub fn lock(state: &SharedState) -> MutexGuard<'_, Shared> {
-    state.lock().unwrap_or_else(|e| e.into_inner())
+    state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 const PATTERN_FONT: f32 = 40.0;
@@ -111,7 +113,9 @@ pub fn change_and_draw<R>(
     tx: &Sender<UsbCmd>,
     change: impl FnOnce(&mut Shared) -> (R, bool),
 ) -> R {
-    let _order = DRAW_ORDER.lock().unwrap_or_else(|e| e.into_inner());
+    let _order = DRAW_ORDER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let (result, snapshot) = {
         let mut sh = lock(state);
         let (result, draw) = change(&mut sh);
@@ -320,7 +324,7 @@ pub fn trigger_locked(sh: &mut Shared, exec: &Executor, index: usize, held: Dura
 /// No editor: consulta o serviço a cada segundo para mostrar o estado do aparelho.
 pub fn spawn_status_poll(state: SharedState) {
     std::thread::spawn(move || loop {
-        let reply = crate::shell::send("status");
+        let reply = crate::platform::shell::send("status");
         let mut parts = reply.as_deref().unwrap_or("0").split_whitespace();
         let connected = parts.next() == Some("1");
         let icon_px = parts.next().and_then(|v| v.parse().ok());
@@ -569,8 +573,8 @@ mod tests {
 
     #[test]
     fn holding_plus_repeats_only_after_the_delay() {
-        use crate::audio::AudioSession;
         use crate::mixer::{MixerApp, MixerData, REPEAT_DELAY};
+        use crate::platform::audio::AudioSession;
         let (tx, rx) = channel();
         let state = mixer_state(14);
         let app = MixerApp {

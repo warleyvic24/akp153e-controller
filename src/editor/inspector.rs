@@ -1,11 +1,13 @@
 //! Painel do botão selecionado (inspetor), ações rápidas, banner offline e janela de apps instalados.
-use crate::action_ui::{PaneCtx, Targets};
+use super::{is_blank, key_view, theme, tokens, widgets, App, TAB_GAP};
 use crate::config::schema::*;
-use crate::panes::{action_pane, appearance_pane, states_pane};
-use crate::picker::apply_app;
+use crate::editor::action_ui::{PaneCtx, Targets};
+use crate::editor::panes::{action_pane, appearance_pane, states_pane};
+use crate::editor::picker::apply_app;
+use crate::editor::theme::Palette;
+use crate::platform::{apps, shell};
+use crate::service::runtime;
 use crate::strings::{t, tf};
-use crate::theme::Palette;
-use crate::{apps, is_blank, key_view, runtime, shell, theme, tokens, widgets, App, TAB_GAP};
 use eframe::egui::{self, vec2, Color32, Frame, Margin, RichText, Rounding, Sense, Stroke};
 use std::time::Duration;
 

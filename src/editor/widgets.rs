@@ -1,6 +1,6 @@
 //! Peças de desenho da interface: ícones, teclas do aparelho, pílulas, abas e rótulos de seção.
-use crate::theme::Palette;
-use crate::tokens::{radius, space, text, TARGET_MIN, TEXT_MIN_CONTRAST};
+use crate::editor::theme::Palette;
+use crate::editor::tokens::{radius, space, text, TARGET_MIN, TEXT_MIN_CONTRAST};
 use eframe::egui::{
     self, pos2, vec2, Align2, Color32, FontId, Painter, Pos2, Rect, Response, RichText, Rounding,
     Stroke, Ui,
@@ -45,7 +45,7 @@ pub fn paint_icon(p: &Painter, center: Pos2, size: f32, name: &str, color: Color
     let scale = size / 24.0;
     let origin = center - vec2(size / 2.0, size / 2.0);
     let stroke = Stroke::new((scale * 1.9).max(1.2), color);
-    for line in crate::icons::strokes(name) {
+    for line in crate::graphics::icons::strokes(name) {
         let points: Vec<Pos2> = line
             .iter()
             .map(|(x, y)| origin + vec2(x * scale, y * scale))
@@ -191,7 +191,9 @@ fn paint_plain_key(p: &Painter, rect: Rect, k: &KeyView, hovered: bool) {
 
 fn paint_key_content(p: &Painter, rect: Rect, k: &KeyView) {
     let (cx, has_label) = (rect.center().x, !k.label.is_empty());
-    let icon = k.icon.filter(|n| !crate::icons::strokes(n).is_empty());
+    let icon = k
+        .icon
+        .filter(|n| !crate::graphics::icons::strokes(n).is_empty());
     if let Some(name) = icon {
         let size = rect.width() * 0.34;
         let cy = if has_label {
@@ -218,7 +220,7 @@ fn paint_key_content(p: &Painter, rect: Rect, k: &KeyView) {
 /// Expõe o estado ativo aos leitores de tela (`selected`), que cor sozinha não transmite.
 pub fn pill(ui: &mut Ui, text: &str, active: bool, accent: Color32, pal: &Palette) -> Response {
     let text = crate::strings::t(text);
-    let ink = crate::theme::ink(accent, pal);
+    let ink = crate::editor::theme::ink(accent, pal);
     let (fg, fill, stroke) = if active {
         (
             pal.fg,
@@ -255,8 +257,10 @@ pub fn tab(ui: &mut Ui, text: &str, on: bool, accent: Color32, pal: &Palette) ->
     if on {
         let y = r.rect.bottom() + 1.0;
         let span = [pos2(r.rect.left() + 6.0, y), pos2(r.rect.right() - 6.0, y)];
-        ui.painter()
-            .line_segment(span, Stroke::new(2.0_f32, crate::theme::ink(accent, pal)));
+        ui.painter().line_segment(
+            span,
+            Stroke::new(2.0_f32, crate::editor::theme::ink(accent, pal)),
+        );
     }
     r
 }
@@ -269,7 +273,7 @@ pub fn section(ui: &mut Ui, text: &str, pal: &Palette) -> egui::Id {
     ui.add_space(space::XS + 2.0);
     ui.label(
         RichText::new(text.to_uppercase())
-            .font(crate::theme::display_font(text::CAPTION))
+            .font(crate::editor::theme::display_font(text::CAPTION))
             .color(pal.muted),
     )
     .id
@@ -279,8 +283,8 @@ pub fn section(ui: &mut Ui, text: &str, pal: &Palette) -> egui::Id {
 /// abaixo de 4,5:1 sobre o fundo tingido; o estado vai por escrito, não só pela cor.
 pub fn status_chip(ui: &mut Ui, label: &str, color: Color32) -> Response {
     let label = crate::strings::t(label);
-    let fill = crate::theme::mix(ui.visuals().panel_fill, color, CHIP_FILL);
-    let ink = crate::theme::ensure_contrast(color, fill, TEXT_MIN_CONTRAST);
+    let fill = crate::editor::theme::mix(ui.visuals().panel_fill, color, CHIP_FILL);
+    let ink = crate::editor::theme::ensure_contrast(color, fill, TEXT_MIN_CONTRAST);
     egui::Frame::none()
         .fill(fill)
         .stroke(Stroke::new(1.0_f32, color.gamma_multiply(CHIP_STROKE)))
@@ -336,7 +340,7 @@ pub fn swatch(
 /// tema claro). Fica distinto de hover (tinta) e de seleção (brilho de destaque).
 pub fn focus_ring(ctx: &egui::Context) {
     let Some(rect) = ctx
-        .memory(|m| m.focused())
+        .memory(eframe::egui::Memory::focused)
         .and_then(|id| ctx.read_response(id))
         .map(|r| r.rect)
     else {

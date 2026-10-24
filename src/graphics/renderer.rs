@@ -158,7 +158,7 @@ pub(super) fn draw_icon(
     let radius = (scale * 1.9).max(1.4) / 2.0;
     let (ox, oy) = (cx - size / 2.0, cy - size / 2.0);
     let mut mask = vec![0.0_f32; (w * h) as usize];
-    for line in crate::icons::strokes(name) {
+    for line in crate::graphics::icons::strokes(name) {
         for seg in line.windows(2) {
             let (a, b) = (
                 (ox + seg[0].0 * scale, oy + seg[0].1 * scale),
@@ -199,7 +199,7 @@ pub fn render_rgba(button: &ButtonConfig, width: u32, height: u32) -> RgbaImage 
     let builtin = ap
         .icon
         .as_deref()
-        .filter(|n| !crate::icons::strokes(n).is_empty());
+        .filter(|n| !crate::graphics::icons::strokes(n).is_empty());
     if let Some(name) = builtin {
         let box_h = if ap.text.is_empty() {
             height as f32

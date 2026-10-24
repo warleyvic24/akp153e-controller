@@ -3,7 +3,7 @@
 O `CLAUDE.md` diz como trabalhar aqui; este arquivo guarda por que as coisas são como são.
 
 - **Dois processos (serviço e editor):** esconder uma janela eframe mantém a CPU em 100%. O serviço sem janela fica em 0% e o editor é aberto só quando preciso.
-- **Controle por TCP local, não por memória compartilhada:** simples de testar (`tests/cli.rs`, `service.rs`) e de reiniciar um lado sem o outro. Custo: qualquer processo local conecta, por isso toda entrada é limitada.
+- **Controle por TCP local, não por memória compartilhada:** simples de testar (`tests/cli.rs`, `src/service/mod.rs`) e de reiniciar um lado sem o outro. Custo: qualquer processo local conecta, por isso toda entrada é limitada.
 - **O serviço só grava perfil/página ativos:** o editor é dono do resto da config. Gravar a cópia inteira do serviço apagou edições do editor (corrida entre `save` e `reload`).
 - **`load_existing()` para regravar:** `load()` devolve a config padrão quando o arquivo está ilegível; usá-la para regravar sobrescreveria a config do usuário.
 - **Testes isolados da config real:** `App` grava ao ser descartado; antes do isolamento, `cargo test` sobrescrevia o `config.json` do usuário.

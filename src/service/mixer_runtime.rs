@@ -2,7 +2,7 @@
 //! trata aperto, repetição e soltura. A lógica da página (puramente de dados) fica em `mixer.rs`.
 //! Nada aqui segura o lock do estado durante leitura de áudio, extração de ícone ou desenho.
 use crate::mixer::{MixerData, MixerEffect, MixerView, REPEAT_DELAY, REPEAT_INTERVAL};
-use crate::runtime::{change_and_draw, lock, SharedState};
+use crate::service::runtime::{change_and_draw, lock, SharedState};
 use crate::usb::UsbCmd;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;

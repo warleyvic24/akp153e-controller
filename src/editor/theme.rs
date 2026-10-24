@@ -1,8 +1,8 @@
 //! Aparência da interface: paleta escura/clara, cor de destaque do usuário, fontes do Windows e estilo dos widgets.
 use crate::config::schema::{Theme, UiSettings};
 #[cfg(test)]
-use crate::tokens::TEXT_MIN_CONTRAST;
-use crate::tokens::{radius, space, text, COMPONENT_MIN_CONTRAST};
+use crate::editor::tokens::TEXT_MIN_CONTRAST;
+use crate::editor::tokens::{radius, space, text, COMPONENT_MIN_CONTRAST};
 use eframe::egui::{
     self, vec2, Color32, Context, FontData, FontDefinitions, FontFamily, FontId, Stroke, TextStyle,
     Visuals,

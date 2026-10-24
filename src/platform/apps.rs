@@ -158,7 +158,10 @@ pub fn parse_apps(json: &str) -> Vec<InstalledApp> {
     items
         .iter()
         .filter_map(|v| {
-            let uwp = v.get("uwp").and_then(|u| u.as_bool()).unwrap_or(false);
+            let uwp = v
+                .get("uwp")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
             Some(InstalledApp {
                 name: v.get("name")?.as_str()?.to_string(),
                 target: v.get("target")?.as_str()?.to_string(),

@@ -1,9 +1,10 @@
 //! Editor da ação de um botão: escolha do tipo (atalho, app, web...) e os campos de cada tipo.
+use super::{textlist, widgets};
 use crate::config::schema::*;
+use crate::editor::theme::{self, Palette};
+use crate::editor::tokens::text;
+use crate::engine;
 use crate::strings::{display_name, t, tf};
-use crate::theme::{self, Palette};
-use crate::tokens::text;
-use crate::{engine, textlist, widgets};
 use eframe::egui::{self, Color32, RichText};
 
 /// O que todo editor de ação precisa do contexto da tela (em vez de passar cada item solto).

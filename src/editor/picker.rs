@@ -1,6 +1,6 @@
 //! Lista de programas instalados e extração de ícones em segundo plano.
-use crate::apps;
 use crate::config::schema::{ButtonAction, ButtonConfig, BLANK_BACKGROUND};
+use crate::platform::apps;
 use crate::strings::t;
 use eframe::egui;
 use std::sync::mpsc::{channel, Receiver, Sender};

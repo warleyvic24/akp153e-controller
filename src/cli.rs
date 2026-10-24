@@ -1,7 +1,10 @@
 //! Modos de linha de comando e o editor: log em arquivo, `--run-action` e a janela do editor.
 use crate::config::schema::*;
+use crate::editor::{theme, App};
 use crate::engine::actions::Executor;
-use crate::{runtime, shell, theme, usb, App};
+use crate::platform::shell;
+use crate::service::runtime;
+use crate::usb;
 use eframe::egui;
 use std::sync::mpsc::channel;
 use std::time::Duration;
@@ -86,7 +89,7 @@ pub(crate) fn run_editor() -> eframe::Result {
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_icon(egui::IconData {
-                rgba: crate::appicon::rgba(WINDOW_ICON_PX),
+                rgba: crate::graphics::appicon::rgba(WINDOW_ICON_PX),
                 width: WINDOW_ICON_PX,
                 height: WINDOW_ICON_PX,
             })

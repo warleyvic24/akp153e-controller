@@ -1,9 +1,11 @@
 //! Janela de Preferências: tema, destaque, início com o Windows, brilho do aparelho e diagnóstico.
+use super::{widgets, App};
 use crate::config::schema::{AppConfig, Language, Theme};
+use crate::editor::theme::{self, Palette};
+use crate::editor::tokens::{text, TARGET_MIN};
+use crate::platform::shell;
+use crate::service::runtime;
 use crate::strings::{t, tf};
-use crate::theme::{self, Palette};
-use crate::tokens::{text, TARGET_MIN};
-use crate::{runtime, shell, widgets, App};
 use eframe::egui::{self, Color32, RichText};
 
 const WINDOW_WIDTH: f32 = 360.0;

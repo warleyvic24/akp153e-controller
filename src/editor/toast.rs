@@ -1,7 +1,7 @@
 //! Avisos curtos no rodapé ("Teclas trocadas · Desfazer"): dão retorno a ações que, sozinhas,
 //! não mudam nada visível na tela (copiar, colar, limpar, excluir).
-use crate::theme::Palette;
-use crate::tokens::{radius, space};
+use crate::editor::theme::Palette;
+use crate::editor::tokens::{radius, space};
 use eframe::egui::{self, vec2, Align2, Frame, Margin, Stroke};
 use std::time::{Duration, Instant};
 

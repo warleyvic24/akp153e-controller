@@ -1,8 +1,10 @@
 //! Barras do editor: topo (estado, perfis, páginas, menus) e rodapé (desfazer/refazer).
+use super::{settings, theme, widgets, App};
+use crate::editor::theme::Palette;
+use crate::editor::tokens::text::TITLE;
+use crate::platform::shell;
+use crate::service::runtime;
 use crate::strings::{display_name, t, tf};
-use crate::theme::Palette;
-use crate::tokens::text::TITLE;
-use crate::{runtime, settings, shell, theme, widgets, App};
 use eframe::egui::{self, Align, Color32, Frame, Layout, Margin, RichText, Sense};
 
 const CONN_POPUP_WIDTH: f32 = 220.0;

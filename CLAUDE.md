@@ -25,14 +25,22 @@ cargo build --release           # -> target\release\akp153e.exe
 - O serviço só grava perfil/página ativos (`runtime::persist`); o resto da config é do editor.
 - A porta de controle aceita qualquer processo local: valide e limite toda entrada nova (veja `service::read_command`, `parse_px`).
 - Segure o mutex `SharedState` só o tempo de copiar dados; desenhar, gravar e codificar JPEG ficam fora do lock (`runtime::Snapshot`, `Followup`).
-- Release usa `panic = "abort"`; o gancho de pânico em `service.rs` registra o erro e reinicia o serviço (até 3 quedas seguidas).
+- Release usa `panic = "abort"`; o gancho de pânico em `service/mod.rs` registra o erro e reinicia o serviço (até 3 quedas seguidas).
 
 ## Convenções
 
 - Comentários e mensagens ao usuário em português; nomes de código em inglês. Constantes nomeadas em vez de números soltos.
-- Nenhum arquivo acima de 800 linhas (hoje: `main.rs` ~610, `schema.rs` ~730, `stage.rs` ~460). Painéis em `panes.rs`, editor de ações em `action_ui.rs`, inspetor em `inspector.rs`, barras em `bars.rs`, palco em `stage.rs`, preferências em `settings.rs`, avisos em `toast.rs`, textos/idiomas em `strings.rs` (texto novo = `t`/`tf` + entrada em `EN`), CLI em `cli.rs`, áudio do Windows em `audio.rs`, página de mixer em `mixer.rs` (dados puros, testáveis) e `mixer_runtime.rs` (thread de leitura, teclas, repetição); ação `open-mixer`.
-- Unsafe só em `shell.rs` e `audio.rs` (Core Audio do mixer), sempre com `// SAFETY:`.
-- Interface: siga `docs/DESIGN.md` (tokens em `tokens.rs`, cores em `theme::Palette`, texto mínimo 12 px, alvo mínimo 24 px, contraste imposto por testes em `theme.rs`). Confira nos dois temas e, para testar clicando sem risco, use em debug `AKP153E_PREVIEW_THEME=light|dark` e `AKP153E_CONFIG_DIR=<pasta com cópia do config.json>`.
+- Nenhum arquivo acima de 800 linhas (hoje o maior é `config/schema.rs`, ~770). Testes grandes vão para `tests.rs` ao lado (ex.: `mixer/tests.rs`).
+- Camadas em `src/`, dependência só para baixo. O editor usa do serviço apenas `service::runtime` (estado compartilhado); o serviço nunca usa o editor.
+  - `main.rs`: lê os argumentos e escolhe o modo. `cli.rs`: log, `--run-action`, abertura do editor.
+  - `editor/`: janela egui. `mod.rs` (`App`), painéis `panes.rs`, ações `action_ui.rs`, inspetor `inspector.rs`, barras `bars.rs`, palco `stage.rs`, preferências `settings.rs`, avisos `toast.rs`, design `tokens.rs`/`theme.rs`/`widgets.rs`.
+  - `service/`: serviço em segundo plano (`mod.rs`), estado compartilhado `runtime.rs`, thread do mixer `mixer_runtime.rs`.
+  - `mixer/`: página de mixer, dados puros e testáveis; ação `open-mixer`.
+  - `platform/`: Windows (`shell.rs`, `audio.rs` Core Audio, `apps.rs` apps instalados).
+  - `config/`, `engine/` (ações), `graphics/` (desenho das teclas, ícones, ícone do app), `usb/` (protocolo), `strings.rs` (texto novo = `t`/`tf` + entrada em `EN`).
+- Unsafe só em `platform/` (`shell.rs`, `audio.rs`), sempre com `// SAFETY:`.
+- Testes que leem o código usam `test_support::sources_without_tests()`, que percorre todas as subpastas.
+- Interface: siga `docs/DESIGN.md` (tokens em `editor/tokens.rs`, cores em `theme::Palette`, texto mínimo 12 px, alvo mínimo 24 px, contraste imposto por testes em `editor/theme.rs`). Confira nos dois temas e, para testar clicando sem risco, use em debug `AKP153E_PREVIEW_THEME=light|dark` e `AKP153E_CONFIG_DIR=<pasta com cópia do config.json>`.
 
 ## Hardware
 

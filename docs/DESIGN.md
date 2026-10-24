@@ -1,7 +1,7 @@
 # Design system — AKP153E
 
-Regras para a interface do editor (egui). O código das escalas está em `src/tokens.rs`, as cores em
-`src/theme.rs` (`Palette`) e as peças reutilizáveis em `src/widgets.rs`. O que não está num teste é
+Regras para a interface do editor (egui). O código das escalas está em `src/editor/tokens.rs`, as cores em
+`src/editor/theme.rs` (`Palette`) e as peças reutilizáveis em `src/editor/widgets.rs`. O que não está num teste é
 convenção: confira com os olhos nos dois temas antes de concluir. Só em build debug:
 `AKP153E_PREVIEW_THEME=light|dark` força o tema sem gravar, e `AKP153E_CONFIG_DIR=<pasta>` aponta o
 editor para uma cópia da config (com `config.json` dentro), para testar clicando, editando e
@@ -17,7 +17,7 @@ excluindo sem tocar no arquivo real. O release não tem nenhum dos dois desvios.
    temas: o destaque como traço/ícone passa por `theme::ink`, que o ajusta só quando falta contraste.
 4. **Nada abaixo de 12 px**, nenhum alvo de clique abaixo de 24 px.
 
-## Tokens (`src/tokens.rs`)
+## Tokens (`src/editor/tokens.rs`)
 
 | Grupo | Valores |
 |---|---|
@@ -43,7 +43,7 @@ espaçamento artificial entre letras (só o logotipo "AKP153E" o tem).
 | `device_fg` | símbolos sobre as teclas, que são pretas nos dois temas |
 | destaque (`accent`) | escolhido pelo usuário; preenchimento direto, traço e ícone via `theme::ink` |
 
-## Componentes (`src/widgets.rs`)
+## Componentes (`src/editor/widgets.rs`)
 
 | Peça | Regra |
 |---|---|
@@ -58,14 +58,14 @@ espaçamento artificial entre letras (só o logotipo "AKP153E" o tem).
 
 ## Retorno, orientação e preferências
 
-- **Toasts** (`toast.rs`): ações sem resultado visível (copiar, colar, limpar, trocar teclas, excluir
+- **Toasts** (`editor/toast.rs`): ações sem resultado visível (copiar, colar, limpar, trocar teclas, excluir
   página ou perfil) avisam por 4 s; as que se desfazem trazem o botão "Desfazer".
-- **Estado vazio** (`stage.rs::empty_guide`): página sem nenhuma tecla configurada mostra o passo a
+- **Estado vazio** (`editor/stage.rs::empty_guide`): página sem nenhuma tecla configurada mostra o passo a
   passo em vez de uma dica de uma linha.
 - **Arrastar**: uma ação da bandeja solta numa tecla a aplica; uma tecla solta noutra troca as duas.
   O cartão "Personalizada" cria um atalho vazio e abre a aba Ação.
 - **Páginas**: duplo clique renomeia; clique direito abre Renomear, Mover e Excluir.
-- **Preferências** (`settings.rs`): tema, destaque, iniciar com o Windows, brilho do aparelho
+- **Preferências** (`editor/settings.rs`): tema, destaque, iniciar com o Windows, brilho do aparelho
   (5 a 100 %, vai ao aparelho pelo `reload` que o salvamento já envia), reconectar, pasta de logs.
 - O chip de conexão abre um menu com Reconectar e a pasta de logs.
 
@@ -98,7 +98,7 @@ são traduzidos.
 
 ## O que os testes impõem (`cargo test`)
 
-`theme.rs`: contraste de `fg`, `muted`, `ok` e `bad` ≥ 4,5:1 sobre `panel`, `raise` e `bg`, nos dois
+`editor/theme.rs`: contraste de `fg`, `muted`, `ok` e `bad` ≥ 4,5:1 sobre `panel`, `raise` e `bg`, nos dois
 temas; `control` ≥ 3:1; símbolos da tecla ≥ 4,5:1; `ink` ≥ 3:1 para todo destaque sugerido nos dois
 temas e inalterado no escuro; texto sobre cada destaque sugerido ≥ 4,5:1. Mudou a paleta e quebrou o
 contraste? O teste diz qual par.
@@ -109,7 +109,7 @@ O destaque usado como traço ou ícone sempre passa por `ink`.
 
 ## Teste automático de nomes acessíveis
 
-`main.rs::every_interactive_control_has_an_accessible_name` roda o editor sem janela (AccessKit
+`editor/mod.rs::every_interactive_control_has_an_accessible_name` roda o editor sem janela (AccessKit
 ligado), com as três abas, cada tipo de ação e as Preferências, e falha listando todo botão, caixa,
 seletor, controle deslizante ou campo sem nome. Foi ele que achou os seletores de destino sem nome.
 A caixa numérica interna dos sliders (`SpinButton`) fica fora da checagem: é do egui.

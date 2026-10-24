@@ -1,10 +1,11 @@
 //! Bandeja de ações e palco central (o aparelho desenhado com as teclas).
+use super::{is_blank, key_view, widgets, App, TAB_GAP};
 use crate::config::schema::{ButtonAction, ButtonConfig};
-use crate::library::Preset;
+use crate::editor::library::Preset;
+use crate::editor::theme::{self, Palette};
+use crate::editor::tokens::{radius, space, text};
+use crate::service::runtime;
 use crate::strings::{t, tf};
-use crate::theme::{self, Palette};
-use crate::tokens::{radius, space, text};
-use crate::{is_blank, key_view, runtime, widgets, App, TAB_GAP};
 use eframe::egui::{
     self, pos2, vec2, Align, Color32, Frame, Layout, Margin, Rect, RichText, Rounding, Sense,
     Stroke, Ui,
@@ -348,7 +349,7 @@ impl App {
         &mut self,
         ui: &mut Ui,
         ctx: &egui::Context,
-        g: &mut runtime::Shared,
+        g: &runtime::Shared,
         pal: &Palette,
         accent: Color32,
     ) -> DeviceEvents {
