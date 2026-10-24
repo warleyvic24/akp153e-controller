@@ -285,6 +285,93 @@ mod tests {
         assert!(started.elapsed() < CONTROL_DEADLINE * 3);
     }
 
+    /// Manda `request` à porta como um cliente faria; devolve a resposta e o que foi ao USB.
+    fn command(request: &[u8], connected: bool) -> (String, Vec<UsbCmd>) {
+        let state = runtime::new_state(AppConfig::default(), 100);
+        runtime::lock(&state).connected = connected;
+        let (tx, rx) = channel();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let request = request.to_vec();
+        let client = std::thread::spawn(move || {
+            let mut c = TcpStream::connect(addr).unwrap();
+            // Um pedido recusado pode fechar a conexão antes de tudo ser enviado.
+            let _ = c.write_all(&request);
+            let mut reply = String::new();
+            let _ = c.read_to_string(&mut reply);
+            reply
+        });
+        let (server, _) = listener.accept().unwrap();
+        handle(server, &state, &tx);
+        let reply = client.join().unwrap();
+        (reply, rx.try_iter().collect())
+    }
+
+    fn frames(sent: &[UsbCmd]) -> usize {
+        sent.iter()
+            .filter(|c| matches!(c, UsbCmd::Frame { .. }))
+            .count()
+    }
+
+    #[test]
+    fn a_line_exactly_at_the_limit_is_accepted_and_one_byte_more_is_not() {
+        let at_limit = serve_once(|mut c| {
+            c.write_all(&[b'a'; MAX_COMMAND_BYTES]).unwrap();
+            c.write_all(b"\n").unwrap();
+        });
+        assert_eq!(at_limit.map(|l| l.len()), Some(MAX_COMMAND_BYTES));
+        let over = serve_once(|mut c| {
+            let _ = c.write_all(&[b'a'; MAX_COMMAND_BYTES + 1]);
+            let _ = c.write_all(b"\n");
+        });
+        assert_eq!(over, None);
+    }
+
+    #[test]
+    fn a_line_closed_without_newline_is_still_read() {
+        let line = serve_once(|mut c| c.write_all(b"reconnect").unwrap());
+        assert_eq!(line.as_deref(), Some("reconnect"));
+    }
+
+    #[test]
+    fn invalid_utf8_is_rejected() {
+        let line = serve_once(|mut c| c.write_all(b"st\xFFtus\n").unwrap());
+        assert_eq!(line, None);
+    }
+
+    #[test]
+    fn status_reports_connection_and_key_size() {
+        assert_eq!(command(b"status\n", true).0, "1 100\n");
+        assert_eq!(command(b"  status  \n", false).0, "0 100\n");
+    }
+
+    #[test]
+    fn reconnect_asks_the_usb_thread_and_replies_nothing() {
+        let (reply, sent) = command(b"reconnect\n", false);
+        assert_eq!(reply, "");
+        assert!(matches!(sent.as_slice(), [UsbCmd::Reconnect]));
+    }
+
+    #[test]
+    fn unknown_or_oversized_commands_do_nothing() {
+        let oversized = [b'x'; MAX_COMMAND_BYTES * 2];
+        for request in [&b"rm -rf /\n"[..], b"STATUS\n", b"\n", &oversized] {
+            let (reply, sent) = command(request, true);
+            assert_eq!(reply, "", "{request:?}");
+            assert!(sent.is_empty(), "{request:?}");
+        }
+    }
+
+    #[test]
+    fn calibration_draws_every_key_only_with_a_valid_size() {
+        let keys = AppConfig::default().page().buttons.len();
+        assert_eq!(frames(&command(b"calib 100\n", true).1), keys);
+        assert_eq!(frames(&command(b"pattern 64\n", true).1), keys);
+        for bad in [&b"calib 9999\n"[..], b"calib abc\n", b"pattern 0\n"] {
+            assert_eq!(frames(&command(bad, true).1), 0, "{bad:?}");
+        }
+    }
+
     #[test]
     fn diagnostic_size_is_bounded() {
         assert_eq!(parse_px(""), Ok(None));
