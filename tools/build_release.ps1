@@ -11,7 +11,13 @@ $root = Split-Path -Parent $PSScriptRoot
 $cargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE ".cargo" }
 
 # Em caso de coincidência vence a regra mais à direita; por isso a mais geral (perfil do usuário) vai primeiro.
-$env:RUSTFLAGS = "--remap-path-prefix=$env:USERPROFILE=~ --remap-path-prefix=$cargoHome=cargo --remap-path-prefix=$root=src"
+# CARGO_ENCODED_RUSTFLAGS separa por 0x1F; RUSTFLAGS quebraria caminhos com espaço.
+$env:RUSTFLAGS = $null
+$env:CARGO_ENCODED_RUSTFLAGS = @(
+    "--remap-path-prefix=$env:USERPROFILE=~",
+    "--remap-path-prefix=$cargoHome=cargo",
+    "--remap-path-prefix=$root=src"
+) -join [char]0x1F
 $env:CARGO_TARGET_DIR = Join-Path $root "target-release"
 
 Push-Location $root
@@ -25,7 +31,13 @@ try {
     Remove-Item -Recurse -Force $folder -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force $folder | Out-Null
 
-    Copy-Item (Join-Path $env:CARGO_TARGET_DIR "release\akp153e.exe") $folder
+    $exe = Join-Path $env:CARGO_TARGET_DIR "release\akp153e.exe"
+    # Confere que o nome de usuário não ficou gravado no executável.
+    $bytes = [System.IO.File]::ReadAllBytes($exe)
+    $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+    if ($text.Contains($env:USERPROFILE)) { throw "o executável ainda contém $env:USERPROFILE" }
+
+    Copy-Item $exe $folder
     foreach ($file in "LICENSE", "README.md", "README.pt-BR.md", "THIRD_PARTY_NOTICES.md") {
         Copy-Item (Join-Path $root $file) $folder
     }
