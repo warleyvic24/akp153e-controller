@@ -18,3 +18,9 @@ jobs:
         run: cargo test
       - name: Testes (hook de guarda)
         run: node --test "tests/**/*.test.js"
+      - name: Instalar cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: Auditoria de dependências
+        run: cargo audit

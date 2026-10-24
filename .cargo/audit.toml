@@ -1,0 +1,5 @@
+# Configuração do `cargo audit`.
+[advisories]
+# quick-xml 0.30 só entra por zbus_xml (dependência Linux do eframe/accesskit).
+# O executável é só Windows; esse código não é compilado. Rever ao atualizar o eframe.
+ignore = ["RUSTSEC-2026-0194", "RUSTSEC-2026-0195"]
