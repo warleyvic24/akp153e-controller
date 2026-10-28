@@ -7,7 +7,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-eframe = "0.29"
+eframe = "0.37"
 egui = "0.29"
 hidapi = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
