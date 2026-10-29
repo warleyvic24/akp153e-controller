@@ -70,7 +70,13 @@ fn an_unknown_webhook_method_sends_nothing() {
 fn a_launch_action_starts_the_program_with_its_arguments() {
     let out = std::env::temp_dir().join(format!("akp_cli_launch_{}.txt", std::process::id()));
     let _ = std::fs::remove_file(&out);
-    let action = json!({"type": "launch-app", "path": "cmd", "args": ["/C", "echo", "ok", ">", out.display().to_string()]});
+    let target = out.display().to_string();
+    #[cfg(windows)]
+    let (program, args) = ("cmd", json!(["/C", "echo", "ok", ">", target]));
+    // No Linux o arquivo vai como `$0` do `sh -c`.
+    #[cfg(not(windows))]
+    let (program, args) = ("sh", json!(["-c", "echo ok > \"$0\"", target]));
+    let action = json!({"type": "launch-app", "path": program, "args": args});
     assert!(run_action(Some(&action.to_string())).status.success());
     let written = std::fs::read_to_string(&out).expect("o programa deveria ter gravado o arquivo");
     let _ = std::fs::remove_file(&out);
