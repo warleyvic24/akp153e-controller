@@ -376,10 +376,13 @@ impl eframe::App for App {
 mod tests {
     use super::*;
     use crate::platform::apps;
-    use picker::{apply_app, IconDone};
+    #[cfg(windows)]
+    use picker::apply_app;
+    use picker::IconDone;
     use std::sync::mpsc::channel;
 
     const NOTEPAD: &str = r"C:\Windows\System32\notepad.exe";
+    #[cfg(windows)]
     const ICON_WAIT: Duration = Duration::from_secs(20);
 
     fn test_app() -> (App, tokio::runtime::Runtime) {
