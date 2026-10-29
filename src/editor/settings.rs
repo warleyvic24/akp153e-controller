@@ -25,7 +25,8 @@ pub(crate) fn open_log_folder() {
     let dir = AppConfig::path().and_then(|p| p.parent().map(std::path::Path::to_path_buf));
     match dir {
         Some(dir) => {
-            if let Err(e) = std::process::Command::new(opener).arg(&dir).spawn() {
+            let mut cmd = std::process::Command::new(opener);
+            if let Err(e) = crate::platform::spawn_detached(cmd.arg(&dir)) {
                 log::warn!("abrir pasta de logs: {e}");
             }
         }

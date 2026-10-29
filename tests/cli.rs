@@ -10,6 +10,12 @@ const REQUEST_WAIT: Duration = Duration::from_secs(10);
 
 fn run_action(arg: Option<&str>) -> std::process::Output {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_akp153e"));
+    // O executável de teste é debug: aponta config e log para uma pasta temporária, senão as
+    // falhas provocadas aqui iriam parar no log real do usuário.
+    cmd.env(
+        "AKP153E_CONFIG_DIR",
+        std::env::temp_dir().join("akp153e-cli-tests"),
+    );
     cmd.arg("--run-action");
     cmd.args(arg);
     cmd.output().expect("o executável deveria iniciar")

@@ -33,3 +33,37 @@ pub(crate) fn hide_console(cmd: &mut Command) -> &mut Command {
         cmd
     }
 }
+
+/// Inicia um programa sem esperar por ele. Uma thread o recolhe ao terminar: no Linux, um filho
+/// que sai e nunca recebe `wait` fica como zumbi enquanto o processo pai viver (o serviço vive a
+/// sessão inteira). Devolve o pid.
+pub(crate) fn spawn_detached(cmd: &mut Command) -> std::io::Result<u32> {
+    let mut child = cmd.spawn()?;
+    let pid = child.id();
+    std::thread::spawn(move || child.wait());
+    Ok(pid)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Lê o estado ("Z" = zumbi) de um processo em /proc.
+    #[cfg(target_os = "linux")]
+    fn proc_state(pid: u32) -> Option<char> {
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        // O nome vai entre parênteses e pode ter espaços; o estado vem logo depois do ")".
+        stat.rsplit_once(')')?.1.trim_start().chars().next()
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_detached_child_that_exits_is_reaped() {
+        let pid = spawn_detached(&mut Command::new("true")).expect("true");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while proc_state(pid).is_some() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert_eq!(proc_state(pid), None, "o filho {pid} ficou como zumbi");
+    }
+}

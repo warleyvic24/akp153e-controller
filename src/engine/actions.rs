@@ -1,5 +1,5 @@
 use crate::config::schema::ButtonAction;
-use crate::platform::hide_console;
+use crate::platform::{hide_console, spawn_detached};
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 
 /// Maior pausa aceita num passo `Delay`; valores maiores são cortados.
@@ -46,8 +46,7 @@ impl Executor {
                     // Sem console: o serviço não tem janela, e um programa de console abriria uma do nada.
                     // Programas com janela própria não são afetados.
                     let mut cmd = std::process::Command::new(&path);
-                    hide_console(cmd.args(&args))
-                        .spawn()
+                    spawn_detached(hide_console(cmd.args(&args)))
                         .map_err(|e| format!("launch {path}: {e}"))
                 })
                 .await;

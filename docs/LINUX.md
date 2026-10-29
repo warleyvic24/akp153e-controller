@@ -54,10 +54,11 @@ cd packaging/arch && makepkg -si      # compila, instala o binário, a regra ude
 
 Depois reconecte o aparelho (a regra udev vale para o usuário logado).
 
-- **Iniciar com a sessão:** o Hyprland não executa o autostart XDG por conta própria. No Omarchy com
-  config em Lua (Hyprland 0.56+), acrescente em `~/.config/hypr/autostart.lua`:
-  `o.launch_on_start("akp153e --background")`
-  Na config antiga (`autostart.conf`): `exec-once = uwsm app -- akp153e --background`
+- **Iniciar com a sessão:** no Omarchy basta Preferências > "Iniciar com o sistema" (ou
+  `akp153e --autostart on`): a sessão roda pelo `uwsm`, que executa o autostart XDG
+  (`~/.config/autostart`). Confira com `systemctl --user is-active xdg-desktop-autostart.target`.
+  Num Hyprland sem `uwsm`, que ignora o autostart XDG, use na config em Lua
+  `o.launch_on_start("akp153e --background")` ou, na antiga, `exec-once = akp153e --background`.
 - **Cores do Omarchy:** em Preferências > Tema, a opção "Omarchy" (que já vem escolhida na primeira
   abertura dentro do Omarchy) usa as cores, o destaque e o modo claro/escuro do tema ativo, lidos de
   `~/.local/state/omarchy/current/theme/colors.toml`. Ao trocar o tema no Omarchy, o editor acompanha

@@ -175,21 +175,21 @@ pub fn send(command: &str) -> Option<String> {
 
 /// Abre o editor como processo separado (se já existir um, ele mesmo se traz para a frente).
 pub fn open_editor() {
-    let Ok(exe) = std::env::current_exe() else {
-        return;
-    };
-    if let Err(e) = hide_console(Command::new(exe).arg("--editor")).spawn() {
-        log::error!("não foi possível abrir o editor: {e}");
-    }
+    spawn_self("--editor", "abrir o editor");
 }
 
 /// Inicia o serviço em segundo plano (se já houver um, a cópia nova encerra sozinha).
 pub fn start_service() {
+    spawn_self("--background", "iniciar o serviço");
+}
+
+/// Roda este mesmo programa com `mode` sem esperar por ele.
+fn spawn_self(mode: &str, what: &str) {
     let Ok(exe) = std::env::current_exe() else {
         return;
     };
-    if let Err(e) = hide_console(Command::new(exe).arg("--background")).spawn() {
-        log::error!("não foi possível iniciar o serviço: {e}");
+    if let Err(e) = super::spawn_detached(hide_console(Command::new(exe).arg(mode))) {
+        log::error!("não foi possível {what}: {e}");
     }
 }
 
