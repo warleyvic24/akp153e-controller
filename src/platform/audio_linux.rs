@@ -5,7 +5,9 @@
 pub use super::audio_model::AudioSession;
 use super::audio_model::{group, RawSession};
 use serde_json::Value;
-use std::process::Command;
+use std::io::Read;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 type AudioResult<T> = Result<T, String>;
 
@@ -39,19 +41,56 @@ pub fn set_session_mute(ids: &[u32], muted: bool) -> AudioResult<()> {
     Ok(())
 }
 
+/// Um `pactl` travado (servidor de som parado) não pode prender o mixer.
+const PACTL_TIMEOUT: Duration = Duration::from_secs(3);
+const WAIT_STEP: Duration = Duration::from_millis(20);
+
 fn pactl(args: &[&str]) -> AudioResult<String> {
-    let out = Command::new("pactl")
+    let mut child = Command::new("pactl")
         .args(args)
-        .output()
+        // Saída sempre no mesmo formato, qualquer que seja o idioma do sistema.
+        .env("LC_ALL", "C")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| format!("pactl indisponível: {e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "pactl {}: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
+    let stdout = drain(child.stdout.take());
+    let stderr = drain(child.stderr.take());
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait().map_err(|e| format!("pactl: {e}"))? {
+            Some(status) => break status,
+            None if started.elapsed() >= PACTL_TIMEOUT => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("pactl {}: demorou demais", args.join(" ")));
+            }
+            None => std::thread::sleep(WAIT_STEP),
+        }
+    };
+    let (stdout, stderr) = (join_text(stdout), join_text(stderr));
+    if !status.success() {
+        return Err(format!("pactl {}: {}", args.join(" "), stderr.trim()));
     }
-    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    Ok(stdout)
+}
+
+/// Lê o cano numa thread à parte, para o processo não travar com a saída cheia.
+fn drain(pipe: Option<impl Read + Send + 'static>) -> std::thread::JoinHandle<String> {
+    std::thread::spawn(move || {
+        let mut text = String::new();
+        if let Some(mut pipe) = pipe {
+            let mut bytes = Vec::new();
+            let _ = pipe.read_to_end(&mut bytes);
+            text = String::from_utf8_lossy(&bytes).into_owned();
+        }
+        text
+    })
+}
+
+fn join_text(reader: std::thread::JoinHandle<String>) -> String {
+    reader.join().unwrap_or_default()
 }
 
 /// Lê a saída de `pactl -f json list sink-inputs`. Entradas malformadas são puladas.

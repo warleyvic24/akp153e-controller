@@ -429,6 +429,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_linux_udev_rule_covers_every_known_device() {
+        let rules = include_str!("../../packaging/linux/99-akp153e.rules").to_lowercase();
+        for (vid, pid) in IDS {
+            for subsystem in ["hidraw", "usb"] {
+                let line = format!(
+                    "subsystem==\"{subsystem}\", attrs{{idvendor}}==\"{vid:04x}\", attrs{{idproduct}}==\"{pid:04x}\""
+                );
+                assert!(rules.contains(&line), "falta na regra udev: {line}");
+            }
+        }
+    }
+
+    #[test]
     fn key_maps_are_inverse_permutations() {
         for (od, &d) in OPENDECK_TO_DEVICE.iter().enumerate() {
             assert_eq!(DEVICE_TO_OPENDECK[d as usize] as usize, od);
