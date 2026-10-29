@@ -84,9 +84,11 @@ pub fn app_buttons(ui: &mut egui::Ui, b: &mut ButtonConfig, picker: &mut AppPick
             picker.show();
         }
         if ui.button(t("Procurar .exe")).clicked() {
-            let file = rfd::FileDialog::new()
-                .add_filter("Programa", &["exe"])
-                .pick_file();
+            let dialog = rfd::FileDialog::new();
+            // Programas do Linux não têm extensão: sem filtro, qualquer arquivo pode ser escolhido.
+            #[cfg(windows)]
+            let dialog = dialog.add_filter("Programa", &["exe"]);
+            let file = dialog.pick_file();
             if let Some(p) = file {
                 let name = p
                     .file_stem()

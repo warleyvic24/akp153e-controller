@@ -1,8 +1,8 @@
-//! Integração com o Windows: instância única, controle entre serviço e editor (TCP local),
-//! bandeja do sistema, laço de mensagens e início automático.
+//! Integração com o sistema: instância única, controle entre serviço e editor (TCP local),
+//! bandeja, laço de eventos e início automático. Windows e Linux diferem só nos trechos com `cfg`.
+use super::hide_console;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::os::windows::process::CommandExt;
 use std::process::Command;
 use std::time::Duration;
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
@@ -12,13 +12,19 @@ pub const WINDOW_TITLE: &str = "Controle AKP153E";
 const SERVICE_ADDR: &str = "127.0.0.1:47153";
 const EDITOR_ADDR: &str = "127.0.0.1:47154";
 const IPC_TIMEOUT: Duration = Duration::from_millis(400);
+#[cfg(windows)]
 const AUTOSTART_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
+#[cfg(windows)]
 const AUTOSTART_VALUE: &str = "AKP153E";
+#[cfg(not(windows))]
+const AUTOSTART_FILE: &str = "akp153e.desktop";
 const TRAY_ICON_PX: u32 = 32;
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+#[cfg(windows)]
 const SW_SHOW: i32 = 5;
+#[cfg(windows)]
 const SW_RESTORE: i32 = 9;
 
+#[cfg(windows)]
 mod ffi {
     #[repr(C)]
     pub struct Msg {
@@ -43,6 +49,21 @@ mod ffi {
 }
 
 /// Traz a janela do editor (já aberta) para a frente.
+#[cfg(not(windows))]
+pub fn show_window() {
+    // Sem API de janelas portável entre X11 e Wayland: usa o `wmctrl` se existir; senão o editor
+    // fica onde está (não é erro).
+    let _ = Command::new("wmctrl").args(["-a", WINDOW_TITLE]).status();
+}
+
+/// Bloqueia rodando o laço de eventos do GTK (necessário para o ícone da bandeja). Sem uso de CPU.
+#[cfg(not(windows))]
+pub fn message_loop() {
+    gtk::main();
+}
+
+/// Traz a janela do editor (já aberta) para a frente.
+#[cfg(windows)]
 pub fn show_window() {
     let title: Vec<u16> = WINDOW_TITLE.encode_utf16().chain([0]).collect();
     // SAFETY: `title` é UTF-16 terminado em zero e vive durante a chamada; classe nula é permitida.
@@ -58,6 +79,7 @@ pub fn show_window() {
 }
 
 /// Bloqueia processando mensagens do Windows (necessário para o ícone da bandeja). Sem uso de CPU.
+#[cfg(windows)]
 pub fn message_loop() {
     let mut msg = ffi::Msg {
         hwnd: 0,
@@ -105,34 +127,82 @@ pub fn open_editor() {
     let Ok(exe) = std::env::current_exe() else {
         return;
     };
-    if let Err(e) = Command::new(exe)
-        .arg("--editor")
-        .creation_flags(CREATE_NO_WINDOW)
-        .spawn()
-    {
+    if let Err(e) = hide_console(Command::new(exe).arg("--editor")).spawn() {
         log::error!("não foi possível abrir o editor: {e}");
     }
 }
 
 /// Caminho absoluto do `reg.exe`: um nome solto seria procurado primeiro na pasta do programa.
+#[cfg(windows)]
 fn reg_exe() -> std::path::PathBuf {
     let root = std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into());
     std::path::Path::new(&root).join("System32").join("reg.exe")
 }
 
+#[cfg(windows)]
 fn reg(args: &[&str]) -> std::io::Result<std::process::ExitStatus> {
-    Command::new(reg_exe())
-        .args(args)
-        .creation_flags(CREATE_NO_WINDOW)
-        .status()
+    hide_console(Command::new(reg_exe()).args(args)).status()
 }
 
+/// Atalho de início automático do Linux (padrão XDG: `~/.config/autostart`).
+#[cfg(not(windows))]
+fn autostart_path() -> Option<std::path::PathBuf> {
+    let config = std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::Path::new(&h).join(".config")))?;
+    Some(config.join("autostart").join(AUTOSTART_FILE))
+}
+
+/// Texto do atalho `.desktop`; aspas no caminho do programa para suportar espaços.
+#[cfg(not(windows))]
+fn autostart_entry(exe: &std::path::Path) -> String {
+    let path = exe
+        .display()
+        .to_string()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    format!(
+        "[Desktop Entry]\nType=Application\nName=AKP153E\nExec=\"{path}\" --background\nX-GNOME-Autostart-enabled=true\n"
+    )
+}
+
+#[cfg(not(windows))]
+pub fn autostart_enabled() -> bool {
+    autostart_path().is_some_and(|p| p.is_file())
+}
+
+#[cfg(not(windows))]
+pub fn set_autostart(on: bool) {
+    let Some(path) = autostart_path() else {
+        log::error!("não foi possível alterar o início automático: sem pasta de configuração");
+        return;
+    };
+    let result = if on {
+        std::env::current_exe().and_then(|exe| {
+            if let Some(dir) = path.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            std::fs::write(&path, autostart_entry(&exe))
+        })
+    } else {
+        match std::fs::remove_file(&path) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        }
+    };
+    if let Err(e) = result {
+        log::error!("não foi possível alterar o início automático: {e}");
+    }
+}
+
+#[cfg(windows)]
 pub fn autostart_enabled() -> bool {
     reg(&["query", AUTOSTART_KEY, "/v", AUTOSTART_VALUE])
         .map(|s| s.success())
         .unwrap_or(false)
 }
 
+#[cfg(windows)]
 pub fn set_autostart(on: bool) {
     let result = if on {
         let Ok(exe) = std::env::current_exe() else {
@@ -164,10 +234,20 @@ fn tray_pixels() -> Vec<u8> {
 
 /// Cria o ícone da bandeja; deve rodar na thread que executará `message_loop`.
 pub fn create_tray() -> Option<TrayIcon> {
+    // O GTK precisa ser iniciado na thread que roda `message_loop`.
+    #[cfg(not(windows))]
+    if let Err(e) = gtk::init() {
+        log::error!("bandeja: GTK indisponível: {e}");
+        return None;
+    }
     let open = MenuItem::with_id("open", crate::strings::t("Abrir editor"), true, None);
+    #[cfg(windows)]
+    let autostart_label = "Iniciar com o Windows";
+    #[cfg(not(windows))]
+    let autostart_label = "Iniciar com o sistema";
     let auto = CheckMenuItem::with_id(
         "autostart",
-        crate::strings::t("Iniciar com o Windows"),
+        crate::strings::t(autostart_label),
         true,
         autostart_enabled(),
         None,
@@ -212,9 +292,21 @@ mod tests {
         );
     }
 
+    #[cfg(windows)]
     #[test]
     fn reg_is_resolved_to_the_system_directory() {
         assert!(reg_exe().is_file(), "{}", reg_exe().display());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn autostart_entry_quotes_the_program_path() {
+        let entry = autostart_entry(std::path::Path::new("/opt/meu app/akp153e"));
+        assert!(
+            entry.contains("Exec=\"/opt/meu app/akp153e\" --background"),
+            "{entry}"
+        );
+        assert!(entry.starts_with("[Desktop Entry]"));
     }
 
     #[test]

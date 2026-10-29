@@ -146,6 +146,7 @@ dependencies = [
  "egui",
  "enigo",
  "env_logger",
+ "gtk",
  "hidapi",
  "image",
  "log",

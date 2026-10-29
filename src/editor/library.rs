@@ -35,10 +35,18 @@ fn app(path: &str) -> ButtonAction {
     }
 }
 
+#[cfg(not(windows))]
+const WINDOWS_ONLY_APPS: [&str; 3] = ["Calculadora", "Bloco de notas", "Explorador"];
+
 /// Pelo Explorer, não pelo `cmd /C start`: o `cmd` trata `&` da URL como separador de comandos.
+/// No Linux, pelo `xdg-open`, que abre no navegador padrão.
 fn open_url(url: &str) -> ButtonAction {
+    #[cfg(windows)]
+    let opener = "explorer";
+    #[cfg(not(windows))]
+    let opener = "xdg-open";
     ButtonAction::LaunchApp {
-        path: "explorer".into(),
+        path: opener.into(),
         args: vec![url.into()],
     }
 }
@@ -74,7 +82,8 @@ pub fn presets() -> Vec<Preset> {
         color,
         action,
     };
-    vec![
+    #[allow(unused_mut)]
+    let mut list = vec![
         p("Mídia", "Play/Pause", "play", MEDIA, media("playpause")),
         p("Mídia", "Próxima", "next", MEDIA, media("next")),
         p("Mídia", "Anterior", "prev", MEDIA, media("prev")),
@@ -152,7 +161,12 @@ pub fn presets() -> Vec<Preset> {
             NAV,
             ButtonAction::SwitchProfile { profile: 1 },
         ),
-    ]
+    ];
+    // Calculadora, Bloco de notas e Explorador são programas do Windows; no Linux o nome muda
+    // de uma distribuição para outra, então o usuário escolhe o app em "Aplicativo...".
+    #[cfg(not(windows))]
+    list.retain(|preset| !WINDOWS_ONLY_APPS.contains(&preset.label));
+    list
 }
 
 #[cfg(test)]

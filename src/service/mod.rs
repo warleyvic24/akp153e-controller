@@ -10,7 +10,6 @@ use crate::usb::{self, UsbCmd};
 use runtime::SharedState;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::os::windows::process::CommandExt;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Sender};
@@ -30,7 +29,6 @@ const STABLE_AFTER: Duration = Duration::from_secs(60);
 /// A cópia reiniciada espera a antiga soltar a porta de controle.
 const LOCK_RETRY_FOR: Duration = Duration::from_secs(5);
 const LOCK_RETRY_STEP: Duration = Duration::from_millis(250);
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 static STABLE: AtomicBool = AtomicBool::new(false);
 
@@ -57,11 +55,12 @@ fn relaunch_after_panic() {
     let Ok(exe) = std::env::current_exe() else {
         return;
     };
-    let spawned = Command::new(exe)
-        .arg("--background")
-        .env(RESTART_ENV, count.to_string())
-        .creation_flags(CREATE_NO_WINDOW)
-        .spawn();
+    let spawned = crate::platform::hide_console(
+        Command::new(exe)
+            .arg("--background")
+            .env(RESTART_ENV, count.to_string()),
+    )
+    .spawn();
     if let Err(e) = spawned {
         log::error!("não foi possível reiniciar o serviço: {e}");
     }
