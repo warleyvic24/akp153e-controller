@@ -3,24 +3,63 @@ use ab_glyph::{point, Font, FontArc, PxScale, ScaleFont};
 use image::{imageops, Rgba, RgbaImage};
 use std::sync::OnceLock;
 
-const FONT_FILES: [&str; 3] = ["segoeui.ttf", "arial.ttf", "tahoma.ttf"];
-const BOLD_FONT_FILES: [&str; 2] = ["segoeuib.ttf", "arialbd.ttf"];
+/// Fontes do Windows primeiro; depois as mais comuns nas distribuições Linux.
+const FONT_FILES: [&str; 6] = [
+    "segoeui.ttf",
+    "arial.ttf",
+    "tahoma.ttf",
+    "DejaVuSans.ttf",
+    "LiberationSans-Regular.ttf",
+    "NotoSans-Regular.ttf",
+];
+const BOLD_FONT_FILES: [&str; 5] = [
+    "segoeuib.ttf",
+    "arialbd.ttf",
+    "DejaVuSans-Bold.ttf",
+    "LiberationSans-Bold.ttf",
+    "NotoSans-Bold.ttf",
+];
 
-/// Pasta de fontes do Windows, mesmo que o sistema não esteja em `C:`.
-fn font_dir() -> std::path::PathBuf {
+/// Pastas onde procurar as fontes.
+#[cfg(windows)]
+fn font_dirs() -> Vec<std::path::PathBuf> {
+    // Mesmo que o sistema não esteja em `C:`.
     let windows = std::env::var_os("WINDIR").unwrap_or_else(|| r"C:\Windows".into());
-    std::path::Path::new(&windows).join("Fonts")
+    vec![std::path::Path::new(&windows).join("Fonts")]
 }
+
+#[cfg(not(windows))]
+fn font_dirs() -> Vec<std::path::PathBuf> {
+    let mut dirs: Vec<std::path::PathBuf> = [
+        "/usr/share/fonts/truetype/dejavu",
+        "/usr/share/fonts/truetype/liberation",
+        "/usr/share/fonts/truetype/noto",
+        "/usr/share/fonts/dejavu",
+        "/usr/share/fonts/liberation",
+        "/usr/share/fonts/noto",
+        "/usr/share/fonts/TTF",
+    ]
+    .into_iter()
+    .map(std::path::PathBuf::from)
+    .collect();
+    if let Some(home) = std::env::var_os("HOME") {
+        dirs.push(std::path::Path::new(&home).join(".local/share/fonts"));
+    }
+    dirs
+}
+
 const MIN_FONT_PX: f32 = 6.0;
 const JPEG_QUALITY: u8 = 90;
 const ICON_STEP_PX: f32 = 0.35;
 
 fn load_font(files: &[&str]) -> Option<FontArc> {
-    let dir = font_dir();
+    let dirs = font_dirs();
     files.iter().find_map(|f| {
-        std::fs::read(dir.join(f))
-            .ok()
-            .and_then(|d| FontArc::try_from_vec(d).ok())
+        dirs.iter().find_map(|dir| {
+            std::fs::read(dir.join(f))
+                .ok()
+                .and_then(|d| FontArc::try_from_vec(d).ok())
+        })
     })
 }
 

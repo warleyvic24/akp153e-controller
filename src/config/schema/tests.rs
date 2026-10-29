@@ -121,7 +121,8 @@ fn adopting_the_disk_navigation_follows_ids_not_positions() {
 
 #[test]
 fn backup_names_carry_a_timestamp_and_keep_the_config_directory() {
-    let path = std::path::Path::new(r"C:\x\config.json");
+    let path = std::env::temp_dir().join("x").join("config.json");
+    let path = path.as_path();
     let name = backup_path(path);
     assert_eq!(name.parent(), path.parent());
     let file = name.file_name().unwrap().to_string_lossy().into_owned();

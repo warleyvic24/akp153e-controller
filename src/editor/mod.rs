@@ -394,6 +394,8 @@ mod tests {
         (App::new(sh, tx, exec), rt)
     }
 
+    /// Extrai o ícone de um .exe com o PowerShell, então só faz sentido no Windows.
+    #[cfg(windows)]
     #[test]
     fn choosing_an_app_sets_action_and_extracted_icon_without_a_label() {
         let (mut app, _rt) = test_app();
