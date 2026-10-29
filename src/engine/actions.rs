@@ -1,10 +1,7 @@
 use crate::config::schema::ButtonAction;
+use crate::platform::hide_console;
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
 
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 /// Maior pausa aceita num passo `Delay`; valores maiores são cortados.
 pub const MAX_DELAY_MS: u64 = 60_000;
 /// Maior texto que `TypeText` digita de uma vez.
@@ -46,13 +43,12 @@ impl Executor {
             }
             ButtonAction::LaunchApp { path, args } => {
                 let spawned = tokio::task::spawn_blocking(move || {
-                    let mut cmd = std::process::Command::new(&path);
-                    cmd.args(&args);
                     // Sem console: o serviço não tem janela, e um programa de console abriria uma do nada.
                     // Programas com janela própria não são afetados.
-                    #[cfg(windows)]
-                    cmd.creation_flags(CREATE_NO_WINDOW);
-                    cmd.spawn().map_err(|e| format!("launch {path}: {e}"))
+                    let mut cmd = std::process::Command::new(&path);
+                    hide_console(cmd.args(&args))
+                        .spawn()
+                        .map_err(|e| format!("launch {path}: {e}"))
                 })
                 .await;
                 if let Ok(Err(e)) = spawned {
@@ -279,7 +275,6 @@ mod tests {
 
     #[tokio::test]
     async fn multi_action_runs_steps_in_order_and_waits_on_delay() {
-        let out = std::env::temp_dir().join(format!("akp_multi_{}.txt", std::process::id()));
         let exec = Executor::new(tokio::runtime::Handle::current());
         let started = std::time::Instant::now();
         exec.run_step(ButtonAction::MultiAction {
@@ -293,7 +288,6 @@ mod tests {
         })
         .await;
         assert!(started.elapsed() >= std::time::Duration::from_millis(150));
-        assert!(!out.exists());
     }
 
     #[test]

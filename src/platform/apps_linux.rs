@@ -1,6 +1,6 @@
 //! Programas instalados no Linux: lê os atalhos `.desktop` (a mesma lista do menu de aplicativos).
 //! Ícones não são extraídos; a tecla mostra o nome do app.
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Programa detectado. `target` é o comando do atalho (programa e argumentos).
 #[derive(Clone, Debug, PartialEq)]
@@ -147,15 +147,6 @@ fn split_words(command: &str) -> Vec<String> {
 /// No Linux os ícones dos apps não são extraídos.
 pub fn extract_icon(_app: &InstalledApp) -> Option<String> {
     None
-}
-
-/// Nome do arquivo de ícone de um programa; mantido por compatibilidade com o Windows.
-#[allow(dead_code)]
-pub fn icon_file_name(target: &str) -> String {
-    Path::new(target).file_name().map_or_else(
-        || "app.png".to_string(),
-        |n| format!("{}.png", n.to_string_lossy()),
-    )
 }
 
 #[cfg(test)]

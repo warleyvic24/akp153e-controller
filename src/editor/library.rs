@@ -82,8 +82,7 @@ pub fn presets() -> Vec<Preset> {
         color,
         action,
     };
-    #[allow(unused_mut)]
-    let mut list = vec![
+    let list = vec![
         p("Mídia", "Play/Pause", "play", MEDIA, media("playpause")),
         p("Mídia", "Próxima", "next", MEDIA, media("next")),
         p("Mídia", "Anterior", "prev", MEDIA, media("prev")),
@@ -165,7 +164,10 @@ pub fn presets() -> Vec<Preset> {
     // Calculadora, Bloco de notas e Explorador são programas do Windows; no Linux o nome muda
     // de uma distribuição para outra, então o usuário escolhe o app em "Aplicativo...".
     #[cfg(not(windows))]
-    list.retain(|preset| !WINDOWS_ONLY_APPS.contains(&preset.label));
+    let list = list
+        .into_iter()
+        .filter(|preset| !WINDOWS_ONLY_APPS.contains(&preset.label))
+        .collect();
     list
 }
 
