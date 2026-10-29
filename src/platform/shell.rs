@@ -183,6 +183,16 @@ pub fn open_editor() {
     }
 }
 
+/// Inicia o serviço em segundo plano (se já houver um, a cópia nova encerra sozinha).
+pub fn start_service() {
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    if let Err(e) = hide_console(Command::new(exe).arg("--background")).spawn() {
+        log::error!("não foi possível iniciar o serviço: {e}");
+    }
+}
+
 /// Caminho absoluto do `reg.exe`: um nome solto seria procurado primeiro na pasta do programa.
 #[cfg(windows)]
 fn reg_exe() -> std::path::PathBuf {

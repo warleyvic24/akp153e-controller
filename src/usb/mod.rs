@@ -430,7 +430,7 @@ mod tests {
 
     #[test]
     fn the_linux_udev_rule_covers_every_known_device() {
-        let rules = include_str!("../../packaging/linux/99-akp153e.rules").to_lowercase();
+        let rules = include_str!("../../packaging/linux/70-akp153e.rules").to_lowercase();
         for (vid, pid) in IDS {
             for subsystem in ["hidraw", "usb"] {
                 let line = format!(

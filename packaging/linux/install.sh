@@ -19,7 +19,9 @@ install -m 755 "$binary" "$bin_dir/akp153e"
 install -m 644 "$here/akp153e.desktop" "$apps_dir/akp153e.desktop"
 
 echo "Instalando a regra udev (precisa de sudo)..."
-sudo install -m 644 "$here/99-akp153e.rules" /etc/udev/rules.d/99-akp153e.rules
+sudo install -m 644 "$here/70-akp153e.rules" /etc/udev/rules.d/70-akp153e.rules
+# Nome antigo (99-) vinha depois do 73-seat-late.rules e não dava acesso.
+sudo rm -f /etc/udev/rules.d/99-akp153e.rules
 sudo udevadm control --reload
 sudo udevadm trigger
 

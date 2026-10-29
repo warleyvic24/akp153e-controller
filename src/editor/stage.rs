@@ -13,7 +13,8 @@ use eframe::egui::{
 const STAGE_MARGIN: f32 = 16.0;
 const STAGE_FOOTER_HEIGHT: f32 = 30.0;
 const PAGE_TABS_HEIGHT: f32 = 40.0;
-const GUIDE_HEIGHT: f32 = 120.0;
+// Título e três passos de uma linha, com margens; medido na tela (o antigo 120 cortava o fim).
+const GUIDE_HEIGHT: f32 = 170.0;
 const OFFLINE_BANNER_HEIGHT: f32 = 60.0;
 const KEY_MIN: f32 = 48.0;
 // A imagem da tecla tem o tamanho do display (100 px); acima de ~1,4x ela fica borrada.
@@ -127,30 +128,35 @@ fn shortcut_hints(ui: &mut Ui, pal: &Palette) {
 /// Passo a passo para quem abre uma página sem nenhuma tecla configurada.
 fn empty_guide(ui: &mut Ui, pal: &Palette, accent: Color32, width: f32) {
     let ink = theme::ink(accent, pal);
-    ui.set_max_width(width);
-    Frame::none()
-        .fill(pal.raise)
-        .stroke(Stroke::new(1.0_f32, pal.control))
-        .rounding(Rounding::same(radius::CARD))
-        .inner_margin(Margin::same(space::MD))
-        .show(ui, |ui| {
-            ui.label(
-                RichText::new(t("COMECE POR AQUI"))
-                    .font(theme::display_font(text::CAPTION))
-                    .color(pal.muted),
-            );
-            let steps = [
-                "Clique numa tecla do aparelho",
-                "Escolha uma ação na biblioteca à esquerda, ou arraste-a até a tecla",
-                "Ajuste texto, cor e ícone no painel à direita",
-            ];
-            for (n, step) in steps.iter().enumerate() {
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(format!("{}", n + 1)).monospace().color(ink));
-                    ui.label(t(step));
+    // Da largura do aparelho e alinhado à esquerda, como as páginas, não ao centro do palco.
+    ui.allocate_ui(vec2(width, 0.0), |ui| {
+        ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+            Frame::none()
+                .fill(pal.raise)
+                .stroke(Stroke::new(1.0_f32, pal.control))
+                .rounding(Rounding::same(radius::CARD))
+                .inner_margin(Margin::same(space::MD))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.label(
+                        RichText::new(t("COMECE POR AQUI"))
+                            .font(theme::display_font(text::CAPTION))
+                            .color(pal.muted),
+                    );
+                    let steps = [
+                        "Clique numa tecla do aparelho",
+                        "Escolha uma ação na biblioteca à esquerda, ou arraste-a até a tecla",
+                        "Ajuste texto, cor e ícone no painel à direita",
+                    ];
+                    for (n, step) in steps.iter().enumerate() {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new(format!("{}", n + 1)).monospace().color(ink));
+                            ui.label(t(step));
+                        });
+                    }
                 });
-            }
         });
+    });
 }
 
 impl App {
@@ -186,23 +192,31 @@ impl App {
         accent: Color32,
     ) -> DeviceEvents {
         let page_blank = g.cfg.page().buttons.iter().all(is_blank);
-        let mut reserved = STAGE_FOOTER_HEIGHT + PAGE_TABS_HEIGHT;
-        if !g.connected {
-            reserved += OFFLINE_BANNER_HEIGHT;
-        }
-        if page_blank {
-            reserved += GUIDE_HEIGHT;
-        }
-        let avail_h = ui.available_height() - reserved;
-        if !g.connected {
-            self.offline_banner(ui, pal);
-        }
+        let banner = if g.connected {
+            0.0
+        } else {
+            OFFLINE_BANNER_HEIGHT
+        };
+        let below = space::MD
+            + if page_blank {
+                GUIDE_HEIGHT
+            } else {
+                STAGE_FOOTER_HEIGHT
+            };
+        let above = banner + PAGE_TABS_HEIGHT + space::SM;
         let (rows, cols) = (g.cfg.page().rows, g.cfg.page().cols);
-        let key = fit_key_size(ui.available_width(), avail_h, rows, cols);
+        let key = fit_key_size(
+            ui.available_width(),
+            ui.available_height() - above - below,
+            rows,
+            cols,
+        );
         let device = device_size(key, rows, cols);
-        // Centraliza na vertical o bloco páginas + aparelho + rodapé quando sobra altura.
-        let content = PAGE_TABS_HEIGHT + space::SM + device.y + space::MD + STAGE_FOOTER_HEIGHT;
-        ui.add_space(((avail_h + reserved - content) / 2.0).clamp(0.0, f32::MAX));
+        // Centraliza na vertical o bloco inteiro (aviso, páginas, aparelho e o que vem abaixo).
+        ui.add_space(((ui.available_height() - above - device.y - below) / 2.0).max(0.0));
+        if !g.connected {
+            self.offline_banner(ui, pal, g.service_running, device.x);
+        }
         // As páginas pertencem ao aparelho: ficam coladas a ele, alinhadas à sua borda esquerda.
         ui.allocate_ui(vec2(device.x, PAGE_TABS_HEIGHT), |ui| {
             ui.horizontal(|ui| self.page_tabs(ui, g, pal));

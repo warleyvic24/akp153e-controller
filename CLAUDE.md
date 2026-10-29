@@ -1,6 +1,6 @@
 # AJAZZ AKP153E (Rust)
 
-Substituto do aplicativo oficial do AJAZZ AKP153E (stream controller com 15 teclas LCD). Rust + egui/eframe, Windows e Linux. O Linux (`platform/*_linux.rs`, `shell.rs` com `cfg`) só é compilado pelo CI (`.github/workflows/ci.yml`); nunca foi rodado: instalação e dependências em `docs/LINUX.md`; precisa de regra udev (`packaging/linux/`) para o HID, `pactl` para o mixer e GTK/appindicator para a bandeja.
+Substituto do aplicativo oficial do AJAZZ AKP153E (stream controller com 15 teclas LCD). Rust + egui/eframe, Windows e Linux. O Linux (`platform/*_linux.rs`, `shell.rs` com `cfg`) é compilado pelo CI (`.github/workflows/ci.yml`) e foi rodado no Omarchy (Hyprland 0.56, config em Lua) em 2026-10-29: instalação, dependências e o que foi provado em `docs/LINUX.md`; precisa de regra udev (`packaging/linux/`) para o HID, `pactl` para o mixer e GTK/appindicator para a bandeja.
 Um executável, dois modos:
 
 - **Serviço** (`akp153e.exe --background`, bandeja, sem janela): dono do USB/HID, das ações e do desenho das teclas.

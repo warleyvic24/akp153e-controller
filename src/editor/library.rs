@@ -35,8 +35,35 @@ fn app(path: &str) -> ButtonAction {
     }
 }
 
+/// "Área de trabalho" é o Win+D; no Linux o Super+D de cada ambiente faz outra coisa (no Omarchy,
+/// nada), então a ação não aparece.
 #[cfg(not(windows))]
-const WINDOWS_ONLY_APPS: [&str; 3] = ["Calculadora", "Bloco de notas", "Explorador"];
+const WINDOWS_ONLY: [&str; 4] = [
+    "Calculadora",
+    "Bloco de notas",
+    "Explorador",
+    "Área de trabalho",
+];
+
+/// Win+Shift+S no Windows; no Linux a tecla Print, que GNOME, KDE e Omarchy ligam à captura.
+fn screenshot() -> ButtonAction {
+    #[cfg(windows)]
+    return hotkey(&["meta", "shift", "s"]);
+    #[cfg(not(windows))]
+    return hotkey(&["print"]);
+}
+
+/// Win+L no Windows; no Linux o `loginctl`, que pede ao gerenciador de sessão para bloquear
+/// (o Super+L do Linux não é padrão: no Omarchy, por exemplo, não bloqueia).
+fn lock_screen() -> ButtonAction {
+    #[cfg(windows)]
+    return hotkey(&["meta", "l"]);
+    #[cfg(not(windows))]
+    return ButtonAction::LaunchApp {
+        path: "loginctl".into(),
+        args: vec!["lock-session".into()],
+    };
+}
 
 /// Pelo Explorer, não pelo `cmd /C start`: o `cmd` trata `&` da URL como separador de comandos.
 /// No Linux, pelo `xdg-open`, que abre no navegador padrão.
@@ -95,13 +122,7 @@ pub fn presets() -> Vec<Preset> {
         p("Atalhos", "Recortar", "bolt", KEYS, hotkey(&["ctrl", "x"])),
         p("Atalhos", "Desfazer", "bolt", KEYS, hotkey(&["ctrl", "z"])),
         p("Atalhos", "Salvar", "bolt", KEYS, hotkey(&["ctrl", "s"])),
-        p(
-            "Atalhos",
-            "Captura",
-            "bolt",
-            KEYS,
-            hotkey(&["meta", "shift", "s"]),
-        ),
+        p("Atalhos", "Captura", "bolt", KEYS, screenshot()),
         p(
             "Atalhos",
             "Área de trabalho",
@@ -109,7 +130,7 @@ pub fn presets() -> Vec<Preset> {
             KEYS,
             hotkey(&["meta", "d"]),
         ),
-        p("Atalhos", "Bloquear", "lock", KEYS, hotkey(&["meta", "l"])),
+        p("Atalhos", "Bloquear", "lock", KEYS, lock_screen()),
         p("Aplicativos", "Calculadora", "calc", APPS, app("calc")),
         p(
             "Aplicativos",
@@ -161,12 +182,12 @@ pub fn presets() -> Vec<Preset> {
             ButtonAction::SwitchProfile { profile: 1 },
         ),
     ];
-    // Calculadora, Bloco de notas e Explorador são programas do Windows; no Linux o nome muda
-    // de uma distribuição para outra, então o usuário escolhe o app em "Aplicativo...".
+    // Calculadora, Bloco de notas e Explorador são programas do Windows (no Linux o nome muda
+    // de uma distribuição para outra: o usuário escolhe em "Aplicativo..."), e Área de trabalho é o Win+D.
     #[cfg(not(windows))]
     let list = list
         .into_iter()
-        .filter(|preset| !WINDOWS_ONLY_APPS.contains(&preset.label))
+        .filter(|preset| !WINDOWS_ONLY.contains(&preset.label))
         .collect();
     list
 }
@@ -196,6 +217,18 @@ mod tests {
             missing.resolved_action(&cfg),
             ButtonAction::SwitchProfile { profile: 0 }
         );
+    }
+
+    /// No Linux o Super não tem significado padrão (Win+D, Win+L, Win+Shift+S são do Windows).
+    #[cfg(not(windows))]
+    #[test]
+    fn linux_presets_do_not_send_windows_key_shortcuts() {
+        for p in presets() {
+            if let ButtonAction::Hotkey { keys } = &p.action {
+                assert!(!keys.iter().any(|k| k == "meta"), "{}", p.label);
+            }
+        }
+        assert!(presets().iter().all(|p| p.label != "Área de trabalho"));
     }
 
     #[test]

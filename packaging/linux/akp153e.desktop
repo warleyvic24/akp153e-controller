@@ -2,7 +2,7 @@
 Type=Application
 Name=AKP153E
 Comment=Controle do AJAZZ AKP153E
-Exec=akp153e --editor
+Exec=akp153e
 Terminal=false
 Categories=Utility;Settings;
 StartupNotify=false

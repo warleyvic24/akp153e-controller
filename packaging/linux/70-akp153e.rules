@@ -1,4 +1,5 @@
 # Permite que o usuário logado acesse o AJAZZ AKP153E sem ser root.
+# O número precisa ser menor que 73: o `uaccess` só vale se a marca chegar antes do 73-seat-late.rules do systemd.
 # Instalar em /etc/udev/rules.d/ e recarregar: sudo udevadm control --reload && sudo udevadm trigger
 # Os pares VID/PID são os de `usb::IDS` (src/usb/mod.rs); um teste confere que não saíram de sincronia.
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0300", ATTRS{idProduct}=="3010", TAG+="uaccess", MODE="0660"

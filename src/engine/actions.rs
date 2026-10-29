@@ -153,6 +153,7 @@ fn parse_key(s: &str) -> Option<Key> {
         "space" => Key::Space,
         "backspace" => Key::Backspace,
         "delete" => Key::Delete,
+        "print" | "printscreen" | "prtsc" => Key::PrintScr,
         "up" => Key::UpArrow,
         "down" => Key::DownArrow,
         "left" => Key::LeftArrow,

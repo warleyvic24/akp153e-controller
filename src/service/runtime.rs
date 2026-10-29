@@ -17,6 +17,8 @@ const STATUS_POLL: Duration = Duration::from_secs(1);
 pub struct Shared {
     pub cfg: AppConfig,
     pub connected: bool,
+    /// No editor: o serviço respondeu ao último `status`. Sem ele nada chega ao aparelho.
+    pub service_running: bool,
     pub icon_px: u32,
     /// Mixer de volume aberto no aparelho; enquanto existir, ele substitui a página nas teclas.
     pub mixer: Option<MixerView>,
@@ -28,6 +30,7 @@ pub fn new_state(cfg: AppConfig, icon_px: u32) -> SharedState {
     Arc::new(Mutex::new(Shared {
         cfg,
         connected: false,
+        service_running: true,
         icon_px,
         mixer: None,
     }))
@@ -351,6 +354,7 @@ pub fn spawn_status_poll(state: SharedState) {
         {
             let mut sh = lock(&state);
             sh.connected = connected;
+            sh.service_running = reply.is_some();
             if let Some(px) = icon_px {
                 sh.icon_px = px;
             }
@@ -469,6 +473,7 @@ mod tests {
         Shared {
             cfg,
             connected: true,
+            service_running: true,
             icon_px: 85,
             mixer: None,
         }

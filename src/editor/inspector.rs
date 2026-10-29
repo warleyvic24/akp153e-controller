@@ -160,23 +160,58 @@ impl App {
         self.picker.open = open;
     }
 
-    pub(crate) fn offline_banner(&self, ui: &mut egui::Ui, pal: &Palette) {
-        Frame::none()
-            .fill(pal.bad.gamma_multiply(0.15))
-            .stroke(Stroke::new(1.0_f32, pal.bad.gamma_multiply(0.5)))
-            .rounding(Rounding::same(tokens::radius::CARD))
-            .inner_margin(Margin::symmetric(14.0, 10.0))
-            .show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(RichText::new(t("Aparelho desconectado.")).strong());
-                    ui.label(t(
-                        "Suas alterações ficam salvas e vão ao aparelho ao reconectar.",
-                    ));
-                    if ui.button(t("Reconectar")).clicked() {
-                        let _ = shell::send("reconnect");
-                    }
+    /// Aviso acima do aparelho, da largura dele. Sem serviço, nada chega ao aparelho: o botão o
+    /// inicia em vez de pedir uma reconexão que ninguém atenderia.
+    pub(crate) fn offline_banner(
+        &self,
+        ui: &mut egui::Ui,
+        pal: &Palette,
+        service_running: bool,
+        width: f32,
+    ) {
+        let (title, body, button) = if service_running {
+            (
+                "Aparelho desconectado.",
+                "Suas alterações ficam salvas e vão ao aparelho ao reconectar.",
+                "Reconectar",
+            )
+        } else {
+            (
+                "Serviço parado.",
+                "Ele é quem fala com o aparelho; sem ele as teclas não respondem.",
+                "Iniciar serviço",
+            )
+        };
+        ui.allocate_ui(egui::vec2(width, 0.0), |ui| {
+            Frame::none()
+                .fill(pal.bad.gamma_multiply(0.15))
+                .stroke(Stroke::new(1.0_f32, pal.bad.gamma_multiply(0.5)))
+                .rounding(Rounding::same(tokens::radius::CARD))
+                .inner_margin(Margin::symmetric(14.0, 10.0))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal(|ui| {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.button(t(button)).clicked() {
+                                if service_running {
+                                    let _ = shell::send("reconnect");
+                                } else {
+                                    shell::start_service();
+                                }
+                            }
+                            ui.with_layout(
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    ui.horizontal_wrapped(|ui| {
+                                        ui.label(RichText::new(t(title)).strong());
+                                        ui.label(t(body));
+                                    });
+                                },
+                            );
+                        });
+                    });
                 });
-            });
+        });
         ui.add_space(tokens::space::SM + 2.0);
     }
 

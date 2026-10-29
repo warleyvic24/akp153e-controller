@@ -13,3 +13,8 @@ akp153e_probe.txt
 # Release local
 /target-release
 /dist
+
+# makepkg (o cargo não consegue ler o pkg/ que ele cria)
+/packaging/arch/pkg/
+/packaging/arch/src/
+/packaging/arch/*.pkg.tar.*

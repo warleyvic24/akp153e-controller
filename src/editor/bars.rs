@@ -123,7 +123,9 @@ impl App {
 
     /// Chip de conexão; ao clicar, abre um menu com reconectar e a pasta de logs.
     fn connection_chip(&mut self, ui: &mut egui::Ui, g: &runtime::Shared, pal: &Palette) {
-        let (label, color) = if g.connected {
+        let (label, color) = if !g.service_running {
+            ("SERVIÇO PARADO", pal.bad)
+        } else if g.connected {
             ("CONECTADO", pal.ok)
         } else {
             ("DESCONECTADO", pal.bad)
@@ -140,13 +142,19 @@ impl App {
         let close = egui::PopupCloseBehavior::CloseOnClickOutside;
         egui::popup_below_widget(ui, popup, &resp, close, |ui| {
             ui.set_min_width(CONN_POPUP_WIDTH);
-            let msg = if g.connected {
+            let msg = if !g.service_running {
+                t("O serviço em segundo plano não está rodando.")
+            } else if g.connected {
                 t("Aparelho conectado.")
             } else {
                 t("Aparelho não encontrado. Confira o cabo USB.")
             };
             ui.label(msg);
-            if ui.button(t("Reconectar")).clicked() {
+            if !g.service_running {
+                if ui.button(t("Iniciar serviço")).clicked() {
+                    shell::start_service();
+                }
+            } else if ui.button(t("Reconectar")).clicked() {
                 let _ = shell::send("reconnect");
             }
             if ui.button(t("Abrir pasta de logs")).clicked() {

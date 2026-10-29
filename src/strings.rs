@@ -109,6 +109,17 @@ const EN: &[(&str, &str)] = &[
     ("Aparelho conectado.", "Device connected."),
     ("Aparelho desconectado", "Device disconnected"),
     ("Aparelho desconectado.", "Device disconnected."),
+    ("Serviço parado.", "Service stopped."),
+    (
+        "Ele é quem fala com o aparelho; sem ele as teclas não respondem.",
+        "It is what talks to the device; without it the keys do nothing.",
+    ),
+    ("Iniciar serviço", "Start service"),
+    ("SERVIÇO PARADO", "SERVICE STOPPED"),
+    (
+        "O serviço em segundo plano não está rodando.",
+        "The background service is not running.",
+    ),
     (
         "Aparelho não encontrado. Confira o cabo USB.",
         "Device not found. Check the USB cable.",
