@@ -1,0 +1,27 @@
+# Maintainer: warleyvic24
+# Compila o repositório local (esta pasta fica em packaging/arch). Uso: cd packaging/arch && makepkg -si
+pkgname=akp153e
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Software livre e não oficial para o stream controller AJAZZ AKP153E"
+arch=('x86_64')
+license=('MIT')
+depends=('gtk3' 'libayatana-appindicator' 'systemd-libs' 'libxkbcommon' 'libpulse' 'ttf-dejavu')
+makedepends=('cargo' 'pkgconf')
+optdepends=('hyprland: foco do editor pelo hyprctl'
+            'wmctrl: foco do editor no X11')
+options=('!lto')
+
+_root="$startdir/../.."
+
+build() {
+  cd "$_root"
+  cargo build --release --locked --target-dir "$srcdir/target"
+}
+
+package() {
+  cd "$_root"
+  install -Dm755 "$srcdir/target/release/akp153e" "$pkgdir/usr/bin/akp153e"
+  install -Dm644 packaging/linux/99-akp153e.rules "$pkgdir/usr/lib/udev/rules.d/99-akp153e.rules"
+  install -Dm644 packaging/linux/akp153e.desktop "$pkgdir/usr/share/applications/akp153e.desktop"
+}
