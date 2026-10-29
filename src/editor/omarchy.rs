@@ -166,11 +166,17 @@ fn lock() -> std::sync::MutexGuard<'static, Cache> {
     CACHE.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// Nada a mudar: o texto é o mesmo, ou o arquivo sumiu. Ao trocar de tema o Omarchy troca a pasta,
+/// e uma leitura nesse instante falharia; mantém-se o tema anterior até o novo aparecer.
+fn keeps_previous(new: Option<&str>, old: Option<&str>) -> bool {
+    new == old || (new.is_none() && old.is_some())
+}
+
 /// Relê o arquivo e guarda o resultado; `true` se o tema mudou desde a leitura anterior.
 fn reload(cache: &mut Cache) -> bool {
     cache.checked = Some(Instant::now());
     let text = source::read_colors();
-    if text == cache.text {
+    if keeps_previous(text.as_deref(), cache.text.as_deref()) {
         return false;
     }
     cache.theme = text.as_deref().and_then(|t| from_colors(&parse_colors(t)));
@@ -312,6 +318,18 @@ blue = "#7aa2f7"
         assert!(from_colors(&parse_colors("accent = \"#ffffff\"")).is_none());
         assert!(from_colors(&parse_colors("background = \"#000000\"")).is_none());
         assert!(from_colors(&parse_colors("")).is_none());
+    }
+
+    #[test]
+    fn a_missing_file_mid_switch_keeps_the_previous_theme() {
+        assert!(
+            keeps_previous(None, Some("a")),
+            "arquivo sumiu no meio da troca"
+        );
+        assert!(keeps_previous(Some("a"), Some("a")), "nada mudou");
+        assert!(keeps_previous(None, None), "nunca houve tema");
+        assert!(!keeps_previous(Some("b"), Some("a")), "tema novo");
+        assert!(!keeps_previous(Some("a"), None), "primeira leitura");
     }
 
     #[test]
