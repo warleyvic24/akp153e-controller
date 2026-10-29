@@ -52,21 +52,30 @@ const MIN_FONT_PX: f32 = 6.0;
 const JPEG_QUALITY: u8 = 90;
 const ICON_STEP_PX: f32 = 0.35;
 
-fn load_font(files: &[&str]) -> Option<FontArc> {
+/// A primeira fonte da lista que existir; no Linux, se nenhuma estiver nas pastas conhecidas, a
+/// que o `fc-match` escolher para `fallback` (cada distribuição guarda as fontes num lugar).
+fn load_font(
+    files: &[&str],
+    #[cfg_attr(windows, allow(unused_variables))] fallback: &str,
+) -> Option<FontArc> {
+    let read = |path: std::path::PathBuf| {
+        std::fs::read(path)
+            .ok()
+            .and_then(|d| FontArc::try_from_vec(d).ok())
+    };
     let dirs = font_dirs();
-    files.iter().find_map(|f| {
-        dirs.iter().find_map(|dir| {
-            std::fs::read(dir.join(f))
-                .ok()
-                .and_then(|d| FontArc::try_from_vec(d).ok())
-        })
-    })
+    let found = files
+        .iter()
+        .find_map(|f| dirs.iter().find_map(|dir| read(dir.join(f))));
+    #[cfg(not(windows))]
+    let found = found.or_else(|| read(crate::platform::fc_match_file(fallback)?));
+    found
 }
 
 fn font() -> Option<&'static FontArc> {
     static FONT: OnceLock<Option<FontArc>> = OnceLock::new();
     FONT.get_or_init(|| {
-        load_font(&FONT_FILES).or_else(|| {
+        load_font(&FONT_FILES, "sans-serif").or_else(|| {
             log::warn!("nenhuma fonte do sistema encontrada; texto não será renderizado");
             None
         })
@@ -77,7 +86,7 @@ fn font() -> Option<&'static FontArc> {
 /// Fonte em negrito; sem ela, cai na normal.
 pub(super) fn bold_font() -> Option<&'static FontArc> {
     static FONT: OnceLock<Option<FontArc>> = OnceLock::new();
-    FONT.get_or_init(|| load_font(&BOLD_FONT_FILES))
+    FONT.get_or_init(|| load_font(&BOLD_FONT_FILES, "sans-serif:bold"))
         .as_ref()
         .or_else(font)
 }

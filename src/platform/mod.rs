@@ -34,6 +34,35 @@ pub(crate) fn hide_console(cmd: &mut Command) -> &mut Command {
     }
 }
 
+/// Caminho deste executável. No Linux, se o pacote foi atualizado com o programa rodando, o
+/// kernel informa "/usr/bin/akp153e (deleted)"; o arquivo novo está no mesmo caminho sem o sufixo.
+pub(crate) fn current_exe() -> std::io::Result<std::path::PathBuf> {
+    let exe = std::env::current_exe()?;
+    Ok(strip_deleted(exe))
+}
+
+const DELETED_SUFFIX: &str = " (deleted)";
+
+fn strip_deleted(exe: std::path::PathBuf) -> std::path::PathBuf {
+    match exe.to_str().and_then(|s| s.strip_suffix(DELETED_SUFFIX)) {
+        Some(path) if cfg!(target_os = "linux") => path.into(),
+        _ => exe,
+    }
+}
+
+/// Arquivo `.ttf` ou `.otf` que o `fc-match` escolhe para o padrão (ex.: "sans-serif:bold");
+/// coleções (`.ttc`) e erros dão `None`.
+#[cfg(not(windows))]
+pub(crate) fn fc_match_file(pattern: &str) -> Option<std::path::PathBuf> {
+    let out = Command::new("fc-match")
+        .args(["-f", "%{file}", pattern])
+        .output()
+        .ok()?;
+    let path = std::path::PathBuf::from(String::from_utf8_lossy(&out.stdout).trim());
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    (ext == "ttf" || ext == "otf").then_some(path)
+}
+
 /// Inicia um programa sem esperar por ele. Uma thread o recolhe ao terminar: no Linux, um filho
 /// que sai e nunca recebe `wait` fica como zumbi enquanto o processo pai viver (o serviço vive a
 /// sessão inteira). Devolve o pid.
@@ -54,6 +83,18 @@ mod tests {
         let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
         // O nome vai entre parênteses e pode ter espaços; o estado vem logo depois do ")".
         stat.rsplit_once(')')?.1.trim_start().chars().next()
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_replaced_binary_is_found_at_its_original_path() {
+        let deleted = std::path::PathBuf::from("/usr/bin/akp153e (deleted)");
+        assert_eq!(
+            strip_deleted(deleted),
+            std::path::Path::new("/usr/bin/akp153e")
+        );
+        let normal = std::path::PathBuf::from("/usr/bin/akp153e");
+        assert_eq!(strip_deleted(normal.clone()), normal);
     }
 
     #[cfg(target_os = "linux")]

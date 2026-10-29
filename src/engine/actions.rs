@@ -107,8 +107,26 @@ fn type_text(text: &str) -> Result<(), String> {
     if text.chars().count() > MAX_TYPE_CHARS {
         return Err(format!("texto maior que {MAX_TYPE_CHARS} caracteres"));
     }
-    let mut e = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
-    e.text(text).map_err(|e| e.to_string())
+    with_enigo(|e| e.text(text).map_err(|e| e.to_string()))
+}
+
+/// Um só Enigo para o serviço inteiro. No Wayland cada `Enigo::new` registra um teclado virtual
+/// novo, e o compositor só aplica o keymap dele depois de um vaivém: as primeiras teclas podiam se
+/// perder. Se uma ação falhar, a instância é descartada e a próxima cria outra (conexão caída).
+static ENIGO: std::sync::Mutex<Option<Enigo>> = std::sync::Mutex::new(None);
+
+fn with_enigo(job: impl FnOnce(&mut Enigo) -> Result<(), String>) -> Result<(), String> {
+    let mut slot = ENIGO
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if slot.is_none() {
+        *slot = Some(Enigo::new(&Settings::default()).map_err(|e| e.to_string())?);
+    }
+    let result = job(slot.as_mut().expect("criado acima"));
+    if result.is_err() {
+        *slot = None;
+    }
+    result
 }
 
 /// Só métodos usuais; qualquer outro texto é recusado em vez de virar GET sem aviso.
@@ -194,9 +212,10 @@ fn hotkey(keys: &[String]) -> Result<(), String> {
         .iter()
         .map(|k| parse_key(k).ok_or(format!("tecla inválida: {k}")))
         .collect::<Result<_, _>>()?;
-    let mut e = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
-    press_chord(&parsed, |key, direction| {
-        e.key(key, direction).map_err(|e| e.to_string())
+    with_enigo(|e| {
+        press_chord(&parsed, |key, direction| {
+            e.key(key, direction).map_err(|e| e.to_string())
+        })
     })
 }
 

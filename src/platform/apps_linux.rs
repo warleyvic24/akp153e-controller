@@ -31,20 +31,35 @@ impl InstalledApp {
     }
 }
 
-/// Lista os programas dos atalhos `.desktop`, em ordem alfabética e sem repetir nome.
+/// Lista os programas dos atalhos `.desktop`, em ordem alfabética.
+///
+/// Como manda a especificação XDG, um atalho é identificado pelo nome do arquivo, e a pasta mais
+/// prioritária vence, mesmo que a cópia dela esteja escondida (`Hidden`/`NoDisplay`): é assim que
+/// o usuário tira um app do menu.
 pub fn scan() -> Vec<InstalledApp> {
-    let mut apps: Vec<InstalledApp> = desktop_dirs()
+    scan_dirs(&desktop_dirs())
+}
+
+/// `scan` sobre pastas dadas, da mais prioritária para a menos.
+fn scan_dirs(dirs: &[PathBuf]) -> Vec<InstalledApp> {
+    let mut seen = std::collections::HashSet::new();
+    let mut apps: Vec<InstalledApp> = dirs
         .iter()
         .filter_map(|dir| std::fs::read_dir(dir).ok())
-        .flatten()
-        .flatten()
-        .map(|entry| entry.path())
+        .flat_map(|entries| {
+            let mut paths: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
+            paths.sort();
+            paths
+        })
         .filter(|path| path.extension().is_some_and(|ext| ext == "desktop"))
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|id| seen.insert(id.to_os_string()))
+        })
         .filter_map(|path| std::fs::read_to_string(path).ok())
         .filter_map(|text| parse_desktop(&text))
         .collect();
     apps.sort_by_key(|a| a.name.to_lowercase());
-    apps.dedup_by(|a, b| a.name.eq_ignore_ascii_case(&b.name));
     apps
 }
 
@@ -88,7 +103,7 @@ pub fn parse_desktop(text: &str) -> Option<InstalledApp> {
         match key.trim() {
             "Type" => is_app = value.trim() == "Application",
             "Name" => name = Some(value.trim().to_string()),
-            "Exec" => exec = Some(strip_field_codes(value.trim())),
+            "Exec" => exec = Some(strip_field_codes(&unescape_value(value.trim()))),
             "NoDisplay" | "Hidden" => hidden |= value.trim() == "true",
             _ => {}
         }
@@ -98,7 +113,34 @@ pub fn parse_desktop(text: &str) -> Option<InstalledApp> {
         .then(|| InstalledApp::exe(&name, &exec))
 }
 
+/// Desfaz os escapes de valor do formato `.desktop` (`\s`, `\n`, `\t`, `\r`, `\\`). É a primeira
+/// das duas camadas de escape do `Exec`; a segunda (aspas) fica para `split_words`.
+fn unescape_value(value: &str) -> String {
+    let mut out = String::new();
+    let mut chars = value.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('s') => out.push(' '),
+            Some('n') => out.push('\n'),
+            Some('t') => out.push('\t'),
+            Some('r') => out.push('\r'),
+            Some('\\') => out.push('\\'),
+            Some(other) => {
+                out.push('\\');
+                out.push(other);
+            }
+            None => out.push('\\'),
+        }
+    }
+    out
+}
+
 /// Tira os códigos de campo do `Exec` (`%f`, `%U`...), que o menu preencheria com arquivos.
+/// Os espaços ficam como estão: dentro de aspas eles fazem parte do argumento.
 fn strip_field_codes(exec: &str) -> String {
     let mut out = String::new();
     let mut chars = exec.chars();
@@ -112,7 +154,7 @@ fn strip_field_codes(exec: &str) -> String {
             out.push('%');
         }
     }
-    out.split_whitespace().collect::<Vec<_>>().join(" ")
+    out.trim().to_string()
 }
 
 /// Divide um comando em palavras respeitando aspas simples e duplas (sem expandir nada).
@@ -121,9 +163,19 @@ fn split_words(command: &str) -> Vec<String> {
     let mut current = String::new();
     let mut quote: Option<char> = None;
     let mut started = false;
-    for c in command.chars() {
+    let mut chars = command.chars();
+    while let Some(c) = chars.next() {
         match (quote, c) {
             (Some(q), c) if c == q => quote = None,
+            // Dentro de aspas duplas, `\"`, `\``, `\$` e `\\` valem o caractere em si.
+            (Some('"'), '\\') => match chars.next() {
+                Some(next @ ('"' | '`' | '$' | '\\')) => current.push(next),
+                Some(next) => {
+                    current.push('\\');
+                    current.push(next);
+                }
+                None => current.push('\\'),
+            },
             (Some(_), c) => current.push(c),
             (None, '"' | '\'') => {
                 quote = Some(c);
@@ -172,11 +224,48 @@ mod tests {
     }
 
     #[test]
+    fn a_hidden_user_copy_hides_the_system_app_and_same_names_stay_apart() {
+        let root = std::env::temp_dir().join(format!("akp153e-apps-{}", std::process::id()));
+        let (user, system) = (root.join("user"), root.join("system"));
+        for dir in [&user, &system] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        let entry = |name: &str, exec: &str, extra: &str| {
+            format!("[Desktop Entry]\nType=Application\nName={name}\nExec={exec}\n{extra}")
+        };
+        std::fs::write(
+            user.join("game.desktop"),
+            entry("Game", "game", "Hidden=true"),
+        )
+        .unwrap();
+        std::fs::write(system.join("game.desktop"), entry("Game", "game", "")).unwrap();
+        std::fs::write(system.join("kitty.desktop"), entry("Terminal", "kitty", "")).unwrap();
+        std::fs::write(system.join("foot.desktop"), entry("Terminal", "foot", "")).unwrap();
+        let apps = scan_dirs(&[user, system]);
+        let _ = std::fs::remove_dir_all(&root);
+        let targets: Vec<&str> = apps.iter().map(|a| a.target.as_str()).collect();
+        assert_eq!(targets, vec!["foot", "kitty"]);
+    }
+
+    #[test]
     fn launch_splits_program_and_arguments() {
         let app = InstalledApp::exe("Code", r#"/usr/bin/code --new-window "my folder""#);
         let (program, args) = app.launch();
         assert_eq!(program, "/usr/bin/code");
         assert_eq!(args, vec!["--new-window", "my folder"]);
+    }
+
+    #[test]
+    fn spaces_and_escapes_inside_quotes_are_kept() {
+        let text = "[Desktop Entry]\nType=Application\nName=A\nExec=\"/opt/My  App/run\" --x \"a\\\\$b \\\\\"c\\\\\"\" %U\n";
+        let (program, args) = parse_desktop(text).unwrap().launch();
+        assert_eq!(program, "/opt/My  App/run");
+        assert_eq!(args, vec!["--x", "a$b \"c\""]);
+    }
+
+    #[test]
+    fn a_value_escape_turns_into_a_space() {
+        assert_eq!(unescape_value(r"a\sb\\c"), r"a b\c");
     }
 
     #[test]

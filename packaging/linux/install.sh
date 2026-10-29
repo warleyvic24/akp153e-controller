@@ -16,7 +16,9 @@ bin_dir="$HOME/.local/bin"
 apps_dir="$HOME/.local/share/applications"
 mkdir -p "$bin_dir" "$apps_dir"
 install -m 755 "$binary" "$bin_dir/akp153e"
-install -m 644 "$here/akp153e.desktop" "$apps_dir/akp153e.desktop"
+# Caminho absoluto no atalho: o lançador do menu pode não ter ~/.local/bin no PATH.
+sed "s|^Exec=akp153e|Exec=\"$bin_dir/akp153e\"|" "$here/akp153e.desktop" > "$apps_dir/akp153e.desktop"
+chmod 644 "$apps_dir/akp153e.desktop"
 
 echo "Instalando a regra udev (precisa de sudo)..."
 sudo install -m 644 "$here/70-akp153e.rules" /etc/udev/rules.d/70-akp153e.rules

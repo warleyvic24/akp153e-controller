@@ -256,20 +256,8 @@ fn system_fonts() -> Vec<(&'static str, std::path::PathBuf)> {
 fn system_fonts() -> Vec<(&'static str, std::path::PathBuf)> {
     [("ui", "sans-serif"), ("mono", "monospace")]
         .into_iter()
-        .filter_map(|(name, family)| Some((name, fc_match_file(family)?)))
+        .filter_map(|(name, family)| Some((name, crate::platform::fc_match_file(family)?)))
         .collect()
-}
-
-/// Arquivo `.ttf` ou `.otf` da fonte da família; coleções (`.ttc`) e erros dão `None`.
-#[cfg(not(windows))]
-fn fc_match_file(family: &str) -> Option<std::path::PathBuf> {
-    let out = std::process::Command::new("fc-match")
-        .args(["-f", "%{file}", family])
-        .output()
-        .ok()?;
-    let path = std::path::PathBuf::from(String::from_utf8_lossy(&out.stdout).trim());
-    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
-    (ext == "ttf" || ext == "otf").then_some(path)
 }
 
 /// Carrega as fontes do sistema; o que faltar cai nas fontes padrão do egui.

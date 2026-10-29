@@ -52,7 +52,7 @@ fn relaunch_after_panic() {
         log::error!("serviço caiu {MAX_QUICK_RESTARTS} vezes seguidas; sem novo reinício");
         return;
     };
-    let Ok(exe) = std::env::current_exe() else {
+    let Ok(exe) = crate::platform::current_exe() else {
         return;
     };
     let spawned = crate::platform::hide_console(

@@ -185,7 +185,7 @@ pub fn start_service() {
 
 /// Roda este mesmo programa com `mode` sem esperar por ele.
 fn spawn_self(mode: &str, what: &str) {
-    let Ok(exe) = std::env::current_exe() else {
+    let Ok(exe) = super::current_exe() else {
         return;
     };
     if let Err(e) = super::spawn_detached(hide_console(Command::new(exe).arg(mode))) {
@@ -215,13 +215,20 @@ fn autostart_path() -> Option<std::path::PathBuf> {
 }
 
 /// Texto do atalho `.desktop`; aspas no caminho do programa para suportar espaços.
+/// O `Exec` tem duas camadas de escape: dentro das aspas, `"`, `` ` ``, `$` e `\` levam uma barra;
+/// depois o valor inteiro dobra as barras (escape de string do formato).
 #[cfg(not(windows))]
 fn autostart_entry(exe: &std::path::Path) -> String {
-    let path = exe
+    let quoted: String = exe
         .display()
         .to_string()
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"");
+        .chars()
+        .flat_map(|c| match c {
+            '"' | '`' | '$' | '\\' => vec!['\\', c],
+            _ => vec![c],
+        })
+        .collect();
+    let path = quoted.replace('\\', "\\\\");
     format!(
         "[Desktop Entry]\nType=Application\nName=AKP153E\nExec=\"{path}\" --background\nX-GNOME-Autostart-enabled=true\n"
     )
@@ -239,7 +246,7 @@ pub fn set_autostart(on: bool) {
         return;
     };
     let result = if on {
-        std::env::current_exe().and_then(|exe| {
+        super::current_exe().and_then(|exe| {
             if let Some(dir) = path.parent() {
                 std::fs::create_dir_all(dir)?;
             }
@@ -266,7 +273,7 @@ pub fn autostart_enabled() -> bool {
 #[cfg(windows)]
 pub fn set_autostart(on: bool) {
     let result = if on {
-        let Ok(exe) = std::env::current_exe() else {
+        let Ok(exe) = super::current_exe() else {
             return;
         };
         let cmd = format!("\"{}\" --background", exe.display());
@@ -364,6 +371,11 @@ mod tests {
             "{entry}"
         );
         assert!(entry.starts_with("[Desktop Entry]"));
+        let odd = autostart_entry(std::path::Path::new("/opt/a$b`c\"d/akp153e"));
+        assert!(
+            odd.contains(r#"Exec="/opt/a\\$b\\`c\\"d/akp153e" --background"#),
+            "{odd}"
+        );
     }
 
     #[cfg(not(windows))]
@@ -379,7 +391,10 @@ mod tests {
         );
     }
 
+    // Chama o sistema de verdade: no Hyprland ou no Windows traz a janela real do editor para a
+    // frente, no meio do trabalho de quem roda os testes. Rode à mão: cargo test -- --ignored
     #[test]
+    #[ignore = "foca a janela real do editor"]
     fn missing_window_is_not_an_error() {
         show_window();
     }
