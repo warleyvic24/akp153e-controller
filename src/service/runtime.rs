@@ -270,6 +270,21 @@ fn dispatch(sh: &mut Shared, exec: &Executor, index: usize, action: ButtonAction
             };
             sh.cfg.active_profile = index;
         }
+        ButtonAction::NextPage | ButtonAction::PreviousPage => {
+            let forward = matches!(action, ButtonAction::NextPage);
+            let i = sh.cfg.active_profile;
+            let profile = &mut sh.cfg.profiles[i];
+            let count = profile.pages.len();
+            if count < 2 {
+                return Followup::default();
+            }
+            let current = profile.active_page;
+            profile.active_page = if forward {
+                (current + 1) % count
+            } else {
+                (current + count - 1) % count
+            };
+        }
         ButtonAction::OpenMixer => {
             return Followup {
                 open_mixer: Some(index),
@@ -306,11 +321,16 @@ pub fn trigger_locked(sh: &mut Shared, exec: &Executor, index: usize, held: Dura
         return Followup::default();
     };
     let long = held >= Duration::from_millis(b.long_press_threshold_ms);
+    let toggles = b.toggles();
+    // Tecla de dois estados: no segundo toque (já ligada) vale a ação do estado ligado, se houver.
+    let tap = match (&b.toggled_action, b.toggle_state) {
+        (Some(a), true) => a,
+        _ => &b.action,
+    };
     let action = match (&b.long_press_action, long) {
         (Some(a), true) => a.clone(),
-        _ => b.action.clone(),
+        _ => tap.clone(),
     };
-    let toggles = b.toggled_appearance.is_some();
     if toggles {
         sh.cfg.page_mut().buttons[index].toggle_state = !b.toggle_state;
     }

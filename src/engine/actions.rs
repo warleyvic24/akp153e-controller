@@ -1,10 +1,17 @@
 use crate::config::schema::ButtonAction;
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
+#[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
+#[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+/// Maior pausa aceita num passo `Delay`; valores maiores são cortados.
+pub const MAX_DELAY_MS: u64 = 60_000;
+/// Maior texto que `TypeText` digita de uma vez.
+pub const MAX_TYPE_CHARS: usize = 2_000;
 
-/// Executa ações assíncronas. SwitchPage/SwitchProfile são tratadas pelo estado da UI.
+/// Executa ações assíncronas. Navegação (página, perfil, mixer) é tratada pelo estado do serviço;
+/// dentro de uma multi-ação ela é ignorada.
 #[derive(Clone)]
 pub struct Executor {
     rt: tokio::runtime::Handle,
@@ -20,60 +27,93 @@ impl Executor {
     }
 
     pub fn run(&self, action: ButtonAction) {
+        let this = self.clone();
+        self.rt.spawn(async move { this.run_step(action).await });
+    }
+
+    /// Executa uma ação e espera terminar (menos `LaunchApp`, que só dispara o programa), para
+    /// que os passos de uma multi-ação saiam na ordem.
+    async fn run_step(&self, action: ButtonAction) {
         match action {
             ButtonAction::Hotkey { keys } => {
-                self.rt.spawn_blocking(move || {
-                    if let Err(e) = hotkey(&keys) {
-                        log::error!("hotkey: {e}")
-                    }
-                });
+                run_blocking("hotkey", move || hotkey(&keys)).await;
             }
             ButtonAction::MediaKey { key } => {
-                self.rt.spawn_blocking(move || {
-                    if let Err(e) = hotkey(&[key]) {
-                        log::error!("media: {e}")
-                    }
-                });
+                run_blocking("media", move || hotkey(&[key])).await;
+            }
+            ButtonAction::TypeText { text } => {
+                run_blocking("texto", move || type_text(&text)).await;
             }
             ButtonAction::LaunchApp { path, args } => {
-                self.rt.spawn_blocking(move || {
+                let spawned = tokio::task::spawn_blocking(move || {
+                    let mut cmd = std::process::Command::new(&path);
+                    cmd.args(&args);
                     // Sem console: o serviço não tem janela, e um programa de console abriria uma do nada.
                     // Programas com janela própria não são afetados.
-                    let spawned = std::process::Command::new(&path)
-                        .args(&args)
-                        .creation_flags(CREATE_NO_WINDOW)
-                        .spawn();
-                    if let Err(e) = spawned {
-                        log::error!("launch {path}: {e}")
-                    }
-                });
+                    #[cfg(windows)]
+                    cmd.creation_flags(CREATE_NO_WINDOW);
+                    cmd.spawn().map_err(|e| format!("launch {path}: {e}"))
+                })
+                .await;
+                if let Ok(Err(e)) = spawned {
+                    log::error!("{e}");
+                }
             }
             ButtonAction::HttpWebhook { url, method, body } => {
                 let Some(m) = webhook_method(&method) else {
                     log::error!("webhook {}: método inválido {method:?}", loggable_url(&url));
                     return;
                 };
-                let c = self.http.clone();
-                self.rt.spawn(async move {
-                    let shown = loggable_url(&url);
-                    let mut r = c
-                        .request(m, &url)
-                        .timeout(std::time::Duration::from_secs(10));
-                    if let Some(b) = body {
-                        r = r.body(b);
-                    }
-                    match r.send().await {
-                        Ok(x) => log::info!("webhook {shown}: {}", x.status()),
-                        Err(e) => log::error!("webhook {shown}: {}", e.without_url()),
-                    }
-                });
+                let shown = loggable_url(&url);
+                let mut r = self
+                    .http
+                    .request(m, &url)
+                    .timeout(std::time::Duration::from_secs(10));
+                if let Some(b) = body {
+                    r = r.body(b);
+                }
+                match r.send().await {
+                    Ok(x) => log::info!("webhook {shown}: {}", x.status()),
+                    Err(e) => log::error!("webhook {shown}: {}", e.without_url()),
+                }
+            }
+            ButtonAction::MultiAction { steps } => {
+                for step in steps {
+                    // Box::pin: função assíncrona recursiva.
+                    Box::pin(self.run_step(step)).await;
+                }
+            }
+            ButtonAction::Delay { ms } => {
+                tokio::time::sleep(std::time::Duration::from_millis(ms.min(MAX_DELAY_MS))).await;
             }
             ButtonAction::None
             | ButtonAction::SwitchPage { .. }
             | ButtonAction::SwitchProfile { .. }
+            | ButtonAction::NextPage
+            | ButtonAction::PreviousPage
             | ButtonAction::OpenMixer => {}
         }
     }
+}
+
+/// Roda código bloqueante (teclado) fora das threads async e registra o erro, se houver.
+async fn run_blocking(
+    what: &'static str,
+    job: impl FnOnce() -> Result<(), String> + Send + 'static,
+) {
+    match tokio::task::spawn_blocking(job).await {
+        Ok(Err(e)) => log::error!("{what}: {e}"),
+        Ok(Ok(())) => {}
+        Err(e) => log::error!("{what}: {e}"),
+    }
+}
+
+fn type_text(text: &str) -> Result<(), String> {
+    if text.chars().count() > MAX_TYPE_CHARS {
+        return Err(format!("texto maior que {MAX_TYPE_CHARS} caracteres"));
+    }
+    let mut e = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
+    e.text(text).map_err(|e| e.to_string())
 }
 
 /// Só métodos usuais; qualquer outro texto é recusado em vez de virar GET sem aviso.
@@ -237,6 +277,31 @@ mod tests {
         assert_eq!(releases, 2);
     }
 
+    #[tokio::test]
+    async fn multi_action_runs_steps_in_order_and_waits_on_delay() {
+        let out = std::env::temp_dir().join(format!("akp_multi_{}.txt", std::process::id()));
+        let exec = Executor::new(tokio::runtime::Handle::current());
+        let started = std::time::Instant::now();
+        exec.run_step(ButtonAction::MultiAction {
+            steps: vec![
+                ButtonAction::Delay { ms: 150 },
+                ButtonAction::TypeText {
+                    text: "x".repeat(MAX_TYPE_CHARS + 1),
+                },
+                ButtonAction::NextPage,
+            ],
+        })
+        .await;
+        assert!(started.elapsed() >= std::time::Duration::from_millis(150));
+        assert!(!out.exists());
+    }
+
+    #[test]
+    fn type_text_refuses_oversized_text() {
+        let err = type_text(&"a".repeat(MAX_TYPE_CHARS + 1)).unwrap_err();
+        assert!(err.contains("maior"), "{err}");
+    }
+
     #[test]
     fn webhook_method_accepts_known_and_rejects_the_rest() {
         assert_eq!(webhook_method(" post "), Some(reqwest::Method::POST));
@@ -297,13 +362,22 @@ mod tests {
     async fn launch_app_runs_process_with_args() {
         let out = std::env::temp_dir().join(format!("akp_launch_{}.txt", std::process::id()));
         let exec = Executor::new(tokio::runtime::Handle::current());
+        #[cfg(windows)]
+        let (program, flags) = ("cmd", ["/C", "echo", "ok", ">"]);
+        #[cfg(not(windows))]
+        let (program, flags) = ("sh", ["-c", "echo ok >\"$0\"", ""]);
+        // No Linux o caminho vai como `$0` do `sh -c`; no Windows, depois do `>`.
+        let mut args: Vec<String> = flags.map(String::from).into_iter().collect();
+        #[cfg(windows)]
+        args.push(out.display().to_string());
+        #[cfg(not(windows))]
+        {
+            args.pop();
+            args.push(out.display().to_string());
+        }
         exec.run(ButtonAction::LaunchApp {
-            path: "cmd".into(),
-            args: ["/C", "echo", "ok", ">"]
-                .map(String::from)
-                .into_iter()
-                .chain([out.display().to_string()])
-                .collect(),
+            path: program.into(),
+            args,
         });
         let probe = out.clone();
         assert!(wait_for(move || probe.exists()).await);

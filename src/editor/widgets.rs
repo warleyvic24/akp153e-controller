@@ -3,11 +3,14 @@ use crate::editor::theme::Palette;
 use crate::editor::tokens::{radius, space, text, TARGET_MIN, TEXT_MIN_CONTRAST};
 use eframe::egui::{
     self, pos2, vec2, Align2, Color32, FontId, Painter, Pos2, Rect, Response, RichText, Rounding,
-    Stroke, Ui,
+    Sense, Stroke, Ui,
 };
 
 const KEY_RADIUS: f32 = radius::KEY;
 const PILL_ACTIVE_TINT: f32 = 0.22;
+const ICON_BUTTON: f32 = 32.0;
+const ICON_GLYPH: f32 = 18.0;
+const SEGMENT_RADIUS: f32 = 7.0;
 const KBD_RADIUS: f32 = 5.0;
 const FOCUS_RING_GAP: f32 = 2.0;
 const FOCUS_RING_RADIUS: f32 = 10.0;
@@ -269,21 +272,75 @@ pub fn pill(ui: &mut Ui, text: &str, active: bool, accent: Color32, pal: &Palett
     r
 }
 
-/// Aba com sublinhado na cor de destaque (2 px, 3:1 no mínimo sobre o fundo).
-pub fn tab(ui: &mut Ui, text: &str, on: bool, accent: Color32, pal: &Palette) -> Response {
-    let text = crate::strings::t(text);
-    let color = if on { pal.fg } else { pal.muted };
-    let r = ui.add(egui::Button::new(RichText::new(text).color(color)).frame(false));
-    r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, on, text));
-    if on {
-        let y = r.rect.bottom() + 1.0;
-        let span = [pos2(r.rect.left() + 6.0, y), pos2(r.rect.right() - 6.0, y)];
-        ui.painter().line_segment(
-            span,
-            Stroke::new(2.0_f32, crate::editor::theme::ink(accent, pal)),
-        );
+/// Botão quadrado só com ícone (desfazer, copiar...). `name` é o texto falado e a dica.
+pub fn icon_button(ui: &mut Ui, icon: &str, name: &str, enabled: bool, pal: &Palette) -> Response {
+    icon_button_tinted(ui, icon, name, enabled, pal.fg, pal)
+}
+
+/// Como `icon_button`, com a cor do ícone escolhida (ex.: vermelho para excluir).
+pub fn icon_button_tinted(
+    ui: &mut Ui,
+    icon: &str,
+    name: &str,
+    enabled: bool,
+    ink: Color32,
+    pal: &Palette,
+) -> Response {
+    let name = crate::strings::t(name);
+    let sense = if enabled {
+        Sense::click()
+    } else {
+        Sense::hover()
+    };
+    let (rect, resp) = ui.allocate_exact_size(vec2(ICON_BUTTON, ICON_BUTTON), sense);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name));
+    let hot = enabled && (resp.hovered() || resp.has_focus());
+    if hot {
+        ui.painter()
+            .rect_filled(rect, Rounding::same(radius::CONTROL), pal.raise);
     }
+    let color = if enabled {
+        ink
+    } else {
+        pal.muted.gamma_multiply(0.6)
+    };
+    paint_icon(ui.painter(), rect.center(), ICON_GLYPH, icon, color);
+    resp.on_hover_text(name)
+}
+
+/// Item de controle segmentado (abas do inspetor, páginas): o ativo ganha uma superfície.
+/// `width` 0 = só o necessário para o texto.
+pub fn segment(ui: &mut Ui, text: &str, on: bool, width: f32, pal: &Palette) -> Response {
+    let text = crate::strings::t(text);
+    let label = RichText::new(text).size(text::BODY - 1.0);
+    let label = if on {
+        label.color(pal.fg).strong()
+    } else {
+        label.color(pal.muted)
+    };
+    let fill = if on { pal.raise } else { Color32::TRANSPARENT };
+    let r = ui.add(
+        egui::Button::new(label)
+            .fill(fill)
+            .stroke(Stroke::NONE)
+            .rounding(Rounding::same(SEGMENT_RADIUS))
+            .min_size(vec2(width, TARGET_MIN + 6.0)),
+    );
+    r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, on, text));
     r
+}
+
+/// Moldura dos segmentos: um trilho escuro com cantos arredondados.
+pub fn segmented<R>(ui: &mut Ui, pal: &Palette, add: impl FnOnce(&mut Ui) -> R) -> R {
+    egui::Frame::none()
+        .fill(pal.field)
+        .rounding(Rounding::same(SEGMENT_RADIUS + 3.0))
+        .inner_margin(egui::Margin::same(3.0))
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            ui.horizontal(add).inner
+        })
+        .inner
 }
 
 /// Rótulo de seção em caixa alta. Sem espaçamento artificial entre letras: o espaço fino que

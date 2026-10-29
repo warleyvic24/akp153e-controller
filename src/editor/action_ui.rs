@@ -2,7 +2,7 @@
 use super::{textlist, widgets};
 use crate::config::schema::*;
 use crate::editor::theme::{self, Palette};
-use crate::editor::tokens::text;
+use crate::editor::tokens::{radius, text};
 use crate::engine;
 use crate::strings::{display_name, t, tf};
 use eframe::egui::{self, Color32, RichText};
@@ -64,16 +64,34 @@ pub(crate) fn media_label(key: &str) -> &str {
         .map_or(key, |(_, label)| label)
 }
 
-const ACTION_KINDS: [(&str, &str); 8] = [
+const ACTION_KINDS: [(&str, &str); 12] = [
     ("none", "Nenhuma"),
     ("hotkey", "Atalho"),
     ("launch-app", "App"),
     ("http-webhook", "Web"),
     ("media-key", "Mídia"),
+    ("type-text", "Texto"),
+    ("multi-action", "Multi"),
     ("switch-page", "Página"),
+    ("next-page", "Pág. +"),
+    ("previous-page", "Pág. −"),
     ("switch-profile", "Perfil"),
     ("open-mixer", "Mixer"),
 ];
+
+/// Tipos que podem ser passo de uma multi-ação (navegação não cabe: o serviço a ignora lá dentro).
+const STEP_KINDS: [(&str, &str); 6] = [
+    ("hotkey", "Atalho"),
+    ("type-text", "Texto"),
+    ("launch-app", "App"),
+    ("http-webhook", "Web"),
+    ("media-key", "Mídia"),
+    ("delay", "Pausa"),
+];
+
+const DEFAULT_STEP_DELAY_MS: u64 = 500;
+const STEP_BUTTON: f32 = 24.0;
+const TYPE_TEXT_ROWS: usize = 3;
 
 const MEDIA_KEYS: [(&str, &str); 6] = [
     ("playpause", "Play/Pause"),
@@ -85,6 +103,14 @@ const MEDIA_KEYS: [(&str, &str); 6] = [
 ];
 
 const BODY_ROWS: usize = 3;
+const KIND_COLUMNS: usize = 4;
+const KIND_GAP: f32 = 6.0;
+const KIND_TILE_HEIGHT: f32 = 54.0;
+const KIND_ICON: f32 = 18.0;
+const KIND_ICON_TOP: f32 = 19.0;
+const KIND_LABEL_BOTTOM: f32 = 13.0;
+const KIND_ON_TINT: f32 = 0.12;
+const KIND_HOVER_TINT: f32 = 0.08;
 
 /// Explica a ação "Mixer": o que aparece no aparelho e como sair.
 const MIXER_HINT: &str = "Mostra no aparelho os apps com som: ícone com a porcentagem em cima, + no meio e − embaixo. Esta tecla vira SAIR (segure para sair se houver mais de 5 apps).";
@@ -99,6 +125,11 @@ fn action_name(a: &ButtonAction) -> &'static str {
         ButtonAction::SwitchPage { .. } => "switch-page",
         ButtonAction::SwitchProfile { .. } => "switch-profile",
         ButtonAction::OpenMixer => "open-mixer",
+        ButtonAction::TypeText { .. } => "type-text",
+        ButtonAction::MultiAction { .. } => "multi-action",
+        ButtonAction::Delay { .. } => "delay",
+        ButtonAction::NextPage => "next-page",
+        ButtonAction::PreviousPage => "previous-page",
     }
 }
 
@@ -120,6 +151,15 @@ fn default_action(kind: &str) -> ButtonAction {
         "switch-page" => ButtonAction::SwitchPage { page: 0 },
         "switch-profile" => ButtonAction::SwitchProfile { profile: 0 },
         "open-mixer" => ButtonAction::OpenMixer,
+        "type-text" => ButtonAction::TypeText {
+            text: String::new(),
+        },
+        "multi-action" => ButtonAction::MultiAction { steps: vec![] },
+        "delay" => ButtonAction::Delay {
+            ms: DEFAULT_STEP_DELAY_MS,
+        },
+        "next-page" => ButtonAction::NextPage,
+        "previous-page" => ButtonAction::PreviousPage,
         _ => ButtonAction::None,
     }
 }
@@ -204,16 +244,80 @@ fn capture_hotkey(ctx: &egui::Context) -> Option<Capture> {
 /// Seletor do tipo de ação; trocar o tipo recomeça com os valores padrão do novo tipo.
 fn kind_picker(ui: &mut egui::Ui, cx: &PaneCtx, a: &mut ButtonAction) -> bool {
     let mut changed = false;
-    ui.horizontal_wrapped(|ui| {
-        for (kind, label) in ACTION_KINDS {
-            let on = action_name(a) == kind;
-            if widgets::pill(ui, label, on, cx.accent, cx.pal).clicked() && !on {
-                *a = default_action(kind);
-                changed = true;
+    let gap = KIND_GAP;
+    let width = (ui.available_width() - gap * (KIND_COLUMNS - 1) as f32) / KIND_COLUMNS as f32;
+    for row in ACTION_KINDS.chunks(KIND_COLUMNS) {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            for &(kind, label) in row {
+                let on = action_name(a) == kind;
+                if kind_tile(ui, kind, label, on, width, cx).clicked() && !on {
+                    *a = default_action(kind);
+                    changed = true;
+                }
             }
-        }
-    });
+        });
+    }
     changed
+}
+
+/// Bloco da grade de tipos: ícone em cima, nome embaixo; o escolhido em destaque.
+fn kind_tile(
+    ui: &mut egui::Ui,
+    kind: &str,
+    label: &str,
+    on: bool,
+    width: f32,
+    cx: &PaneCtx,
+) -> egui::Response {
+    let label = t(label);
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(width, KIND_TILE_HEIGHT), egui::Sense::click());
+    resp.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, on, label)
+    });
+    let pal = cx.pal;
+    let ink = theme::ink(cx.accent, pal);
+    let round = egui::Rounding::same(radius::CONTROL);
+    let (fill, fg) = if on {
+        (cx.accent.gamma_multiply(KIND_ON_TINT), ink)
+    } else if resp.hovered() || resp.has_focus() {
+        (theme::mix(pal.raise, pal.fg, KIND_HOVER_TINT), pal.fg)
+    } else {
+        (pal.raise, pal.fg)
+    };
+    let p = ui.painter();
+    p.rect_filled(rect, round, fill);
+    if on {
+        p.rect_stroke(rect, round, egui::Stroke::new(1.5_f32, ink));
+    }
+    let icon_at = egui::pos2(rect.center().x, rect.top() + KIND_ICON_TOP);
+    widgets::paint_icon(p, icon_at, KIND_ICON, kind_icon(kind), fg);
+    p.text(
+        egui::pos2(rect.center().x, rect.bottom() - KIND_LABEL_BOTTOM),
+        egui::Align2::CENTER_CENTER,
+        label,
+        egui::FontId::proportional(text::CAPTION),
+        fg,
+    );
+    resp
+}
+
+fn kind_icon(kind: &str) -> &'static str {
+    match kind {
+        "hotkey" => "keyboard",
+        "launch-app" => "app",
+        "http-webhook" => "globe",
+        "media-key" => "music",
+        "switch-page" => "page",
+        "switch-profile" => "user",
+        "open-mixer" => "mixer",
+        "type-text" => "keyboard",
+        "multi-action" => "plus",
+        "next-page" => "next",
+        "previous-page" => "prev",
+        _ => "ban",
+    }
 }
 
 /// Editor completo da ação `a`. `id` separa o estado de "Ao tocar" e "Ao segurar".
@@ -244,9 +348,128 @@ pub fn action_editor(
             ui.label(widgets::hint(t(MIXER_HINT), cx.pal));
             false
         }
-        ButtonAction::None => false,
+        ButtonAction::TypeText { text } => type_text_editor(ui, cx, text),
+        ButtonAction::MultiAction { steps } => multi_editor(ui, cx, id, steps),
+        ButtonAction::Delay { ms } => delay_editor(ui, cx, ms),
+        ButtonAction::None | ButtonAction::NextPage | ButtonAction::PreviousPage => false,
     };
     changed
+}
+
+fn type_text_editor(ui: &mut egui::Ui, cx: &PaneCtx, text: &mut String) -> bool {
+    let label = widgets::section(ui, "Texto a digitar", cx.pal);
+    ui.add(
+        egui::TextEdit::multiline(text)
+            .desired_width(ui.available_width())
+            .desired_rows(TYPE_TEXT_ROWS),
+    )
+    .labelled_by(label)
+    .changed()
+}
+
+fn delay_editor(ui: &mut egui::Ui, cx: &PaneCtx, ms: &mut u64) -> bool {
+    let label = widgets::section(ui, "Pausa (ms)", cx.pal);
+    ui.add(egui::DragValue::new(ms).range(0..=engine::actions::MAX_DELAY_MS))
+        .labelled_by(label)
+        .changed()
+}
+
+/// Passo de multi-ação: os mesmos campos da ação isolada, menos a gravação de atalho
+/// (só um editor por vez pode gravar) e a navegação.
+fn step_editor(ui: &mut egui::Ui, cx: &PaneCtx, step: &mut ButtonAction) -> bool {
+    match step {
+        ButtonAction::Hotkey { keys } => {
+            let label = widgets::section(ui, "Atalho", cx.pal);
+            let field_id = ui.id().with("step-keys");
+            textlist::list_field(
+                ui,
+                field_id,
+                label,
+                keys,
+                textlist::parse_keys,
+                textlist::join_keys,
+            )
+        }
+        ButtonAction::LaunchApp { path, args } => launch_editor(ui, cx.pal, "step", path, args),
+        ButtonAction::HttpWebhook { url, method, body } => {
+            webhook_editor(ui, cx, url, method, body)
+        }
+        ButtonAction::MediaKey { key } => media_editor(ui, cx, key),
+        ButtonAction::TypeText { text } => type_text_editor(ui, cx, text),
+        ButtonAction::Delay { ms } => delay_editor(ui, cx, ms),
+        _ => false,
+    }
+}
+
+/// Lista de passos executados em sequência, cada um recolhível, com subir/descer/remover.
+fn multi_editor(
+    ui: &mut egui::Ui,
+    cx: &PaneCtx,
+    id: &'static str,
+    steps: &mut Vec<ButtonAction>,
+) -> bool {
+    let mut changed = false;
+    widgets::section(ui, "Passos (em ordem)", cx.pal);
+    let last = steps.len().saturating_sub(1);
+    let (mut remove, mut up, mut down) = (None, None, None);
+    for (i, step) in steps.iter_mut().enumerate() {
+        ui.push_id((id, i), |ui| {
+            ui.horizontal(|ui| {
+                if step_button(ui, "↑", "Subir passo", i > 0).clicked() {
+                    up = Some(i);
+                }
+                if step_button(ui, "↓", "Descer passo", i < last).clicked() {
+                    down = Some(i);
+                }
+                if widgets::icon_button(ui, "trash", t("Remover passo"), true, cx.pal).clicked() {
+                    remove = Some(i);
+                }
+                let title = super::summary::action_summary(step, cx.targets)
+                    .unwrap_or_else(|| t(action_label(step)).to_string());
+                ui.label(format!("{}. {title}", i + 1));
+            });
+            egui::CollapsingHeader::new(t("Editar"))
+                .id_salt("step-body")
+                .show(ui, |ui| changed |= step_editor(ui, cx, step));
+        });
+    }
+    if let Some(i) = remove {
+        steps.remove(i);
+        changed = true;
+    } else if let Some(i) = up {
+        steps.swap(i, i - 1);
+        changed = true;
+    } else if let Some(i) = down {
+        steps.swap(i, i + 1);
+        changed = true;
+    }
+    widgets::section(ui, "Adicionar passo", cx.pal);
+    ui.horizontal_wrapped(|ui| {
+        for (kind, label) in STEP_KINDS {
+            if widgets::pill(ui, t(label), false, cx.accent, cx.pal).clicked() {
+                steps.push(default_action(kind));
+                changed = true;
+            }
+        }
+    });
+    changed
+}
+
+fn step_button(ui: &mut egui::Ui, glyph: &str, name: &str, enabled: bool) -> egui::Response {
+    let button = egui::Button::new(glyph).min_size(egui::vec2(STEP_BUTTON, STEP_BUTTON));
+    let resp = ui.add_enabled(enabled, button);
+    let name = t(name);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name));
+    resp
+}
+
+/// Nome do tipo (para passar por `t`) quando o passo ainda não tem o que resumir.
+fn action_label(a: &ButtonAction) -> &'static str {
+    let kind = action_name(a);
+    STEP_KINDS
+        .iter()
+        .find(|(k, _)| *k == kind)
+        .map_or("Nenhuma", |(_, label)| label)
 }
 
 fn hotkey_editor(

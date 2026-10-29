@@ -5,6 +5,7 @@ mod checks;
 mod history;
 mod inspector;
 mod library;
+mod library_panel;
 mod panes;
 mod picker;
 mod settings;
@@ -30,7 +31,6 @@ use usb::UsbCmd;
 const AUTOSAVE_DELAY: Duration = Duration::from_millis(300);
 const SAVE_RETRY_DELAY: Duration = Duration::from_secs(3);
 const REPAINT_EVERY: Duration = Duration::from_millis(100);
-const TAB_GAP: f32 = 10.0;
 
 pub(crate) struct App {
     sh: runtime::SharedState,
@@ -50,7 +50,6 @@ pub(crate) struct App {
     edited: bool,
     applied_ui: Option<UiSettings>,
     tab: usize,
-    tray_cat: usize,
     query: String,
     clipboard: Option<ButtonConfig>,
     recording: Option<&'static str>,
@@ -79,7 +78,6 @@ impl App {
             edited: false,
             applied_ui: None,
             tab: 0,
-            tray_cat: 0,
             query: String::new(),
             clipboard: None,
             recording: None,
@@ -361,7 +359,7 @@ impl eframe::App for App {
         self.key_shortcuts(ctx, g);
 
         self.top_bar(ctx, g, (&pal, accent), &mut want_undo, &mut want_redo);
-        self.tray(ctx, g, &pal, accent);
+        self.library(ctx, g, &pal, accent);
         self.inspector(ctx, g, &pal, accent);
         self.stage(ctx, g, &pal, accent);
         widgets::focus_ring(ctx);
@@ -568,7 +566,7 @@ mod tests {
         let mut unnamed: Vec<String> = Vec::new();
         for tab in 0..3 {
             for action in &actions {
-                if tab != 1 && *action != ButtonAction::None {
+                if tab != inspector::TAB_ACTION && *action != ButtonAction::None {
                     continue;
                 }
                 app.tab = tab;
@@ -583,7 +581,7 @@ mod tests {
                 let (mut undo, mut redo) = (false, false);
                 let out = ctx.run(egui::RawInput::default(), |ctx| {
                     app.top_bar(ctx, g, (&pal, accent), &mut undo, &mut redo);
-                    app.tray(ctx, g, &pal, accent);
+                    app.library(ctx, g, &pal, accent);
                     app.inspector(ctx, g, &pal, accent);
                     app.stage(ctx, g, &pal, accent);
                     app.settings_window(ctx, g, &pal);

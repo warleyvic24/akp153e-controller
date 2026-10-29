@@ -1,5 +1,5 @@
 //! Painel do botão selecionado (inspetor), ações rápidas, banner offline e janela de apps instalados.
-use super::{checks, is_blank, key_view, summary, theme, tokens, widgets, App, TAB_GAP};
+use super::{checks, is_blank, key_view, summary, theme, tokens, widgets, App};
 use crate::config::schema::*;
 use crate::editor::action_ui::{PaneCtx, Targets};
 use crate::editor::panes::{action_pane, appearance_pane, states_pane};
@@ -11,15 +11,18 @@ use crate::strings::{t, tf};
 use eframe::egui::{self, vec2, Color32, Frame, Margin, RichText, Rounding, Sense, Stroke};
 use std::time::Duration;
 
-const INSPECTOR_WIDTH: f32 = 300.0;
-const QUICK_BUTTON_PAD_X: f32 = 9.0;
+const INSPECTOR_WIDTH: f32 = 340.0;
 const APP_ROW_HEIGHT: f32 = 36.0;
 const APP_LIST_MAX_HEIGHT: f32 = 320.0;
 const APP_BADGE: f32 = 24.0;
 const APP_ROW_HOVER_TINT: f32 = 0.10;
 const INSPECTOR_MARGIN: f32 = 14.0;
 const PREVIEW_KEY: f32 = 56.0;
-const TAB_NAMES: [&str; 3] = ["Aparência", "Ação", "Alternar"];
+// O que a tecla faz vem antes de como ela parece.
+const TAB_NAMES: [&str; 3] = ["Ação", "Aparência", "Alternar"];
+pub(crate) const TAB_ACTION: usize = 0;
+const TAB_LOOK: usize = 1;
+const TEST_HEIGHT: f32 = 34.0;
 
 /// Título do inspetor: o rótulo; sem ele, o nome do programa que a tecla abre.
 fn key_title(b: &ButtonConfig) -> String {
@@ -187,41 +190,48 @@ impl App {
     ) {
         let sel = self.selected;
         ui.horizontal(|ui| {
-            ui.spacing_mut().button_padding.x = QUICK_BUTTON_PAD_X;
-            let label = RichText::new(t("Testar"))
-                .strong()
-                .color(theme::readable_on(accent));
-            let test = egui::Button::new(label)
-                .fill(accent)
-                .stroke(Stroke::new(1.0_f32, theme::ink(accent, pal)));
-            let test = ui.add_enabled(untestable.is_none(), test);
-            let test = match untestable {
-                Some(why) => test.on_disabled_hover_text(t(why)),
-                None => test.on_hover_text(t("Executa a ação agora")),
-            };
-            if test.clicked() {
-                self.test_key(g, sel);
-            }
-            let copy = ui.button(t("Copiar")).on_hover_text("Ctrl+C");
-            if copy.clicked() {
-                self.copy_key(ui.ctx(), g, sel);
-            }
-            let paste = egui::Button::new(t("Colar"));
-            let paste = ui
-                .add_enabled(self.clipboard.is_some(), paste)
-                .on_hover_text("Ctrl+V");
-            if paste.clicked() {
-                self.paste_key(g, sel);
-            }
-            // Destrutivo: no fim da linha, longe de Copiar, para não ser clicado por engano.
+            // Ícones à direita (o layout os desenha ao contrário); "Testar" ocupa o resto.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let clear = egui::Button::new(RichText::new(t("Limpar")).color(pal.bad));
-                let clear = ui.add(clear).on_hover_text(t("Esvazia este botão (Del)"));
-                clear.widget_info(|| {
-                    egui::WidgetInfo::labeled(egui::WidgetType::Button, true, t("Limpar botão"))
-                });
+                // Destrutivo: na ponta, em vermelho, longe de "Testar".
+                let clear = widgets::icon_button_tinted(
+                    ui,
+                    "trash",
+                    "Limpar tecla (Del)",
+                    true,
+                    pal.bad,
+                    pal,
+                );
                 if clear.clicked() {
                     self.clear_key(g, sel);
+                }
+                let can_paste = self.clipboard.is_some();
+                if widgets::icon_button(ui, "paste", "Colar (Ctrl+V)", can_paste, pal).clicked() {
+                    self.paste_key(g, sel);
+                }
+                if widgets::icon_button(ui, "copy", "Copiar (Ctrl+C)", true, pal).clicked() {
+                    self.copy_key(ui.ctx(), g, sel);
+                }
+                let label = RichText::new(format!("▶  {}", t("Testar")))
+                    .strong()
+                    .color(theme::readable_on(accent));
+                let test = egui::Button::new(label)
+                    .fill(accent)
+                    .stroke(Stroke::NONE)
+                    .min_size(vec2(ui.available_width(), TEST_HEIGHT));
+                let test = ui.add_enabled(untestable.is_none(), test);
+                let test = match untestable {
+                    Some(why) => test.on_disabled_hover_text(t(why)),
+                    None => test.on_hover_text(t("Executa a ação agora")),
+                };
+                test.widget_info(|| {
+                    egui::WidgetInfo::labeled(
+                        egui::WidgetType::Button,
+                        untestable.is_none(),
+                        t("Testar"),
+                    )
+                });
+                if test.clicked() {
+                    self.test_key(g, sel);
                 }
             });
         });
@@ -305,7 +315,7 @@ impl App {
         accent: Color32,
     ) {
         let frame = Frame::none()
-            .fill(pal.raise)
+            .fill(pal.panel)
             .stroke(Stroke::new(1.0_f32, pal.line))
             .inner_margin(Margin::same(INSPECTOR_MARGIN));
         egui::SidePanel::right("insp")
@@ -340,8 +350,8 @@ impl App {
                 let Some(b) = g.cfg.page_mut().buttons.get_mut(sel) else {
                     return;
                 };
-                self.tab_bar(ui, accent, pal);
-                ui.separator();
+                self.tab_bar(ui, pal);
+                ui.add_space(tokens::space::SM);
                 let cx = PaneCtx {
                     ctx,
                     pal,
@@ -397,13 +407,15 @@ impl App {
         }
     }
 
-    fn tab_bar(&mut self, ui: &mut egui::Ui, accent: Color32, pal: &Palette) {
-        ui.horizontal(|ui| {
+    fn tab_bar(&mut self, ui: &mut egui::Ui, pal: &Palette) {
+        // Abas do mesmo tamanho, ocupando a largura do painel (trilho de 3 px de cada lado).
+        let width = (ui.available_width() - 6.0 - 2.0 * (TAB_NAMES.len() - 1) as f32)
+            / TAB_NAMES.len() as f32;
+        widgets::segmented(ui, pal, |ui| {
             for (i, name) in TAB_NAMES.iter().enumerate() {
-                if widgets::tab(ui, name, self.tab == i, accent, pal).clicked() {
+                if widgets::segment(ui, name, self.tab == i, width, pal).clicked() {
                     self.tab = i;
                 }
-                ui.add_space(TAB_GAP);
             }
         });
     }
@@ -420,8 +432,8 @@ impl App {
         // Um estado de rolagem por botão e aba: trocar de um para outro volta ao topo.
         let scroll = egui::ScrollArea::vertical().id_salt(("inspector", sel, self.tab));
         scroll.show(ui, |ui| match self.tab {
-            0 => changed |= appearance_pane(ui, b, cx.pal, cx.accent),
-            1 => changed |= action_pane(ui, cx, b, &mut self.recording, &mut self.picker),
+            TAB_ACTION => changed |= action_pane(ui, cx, b, &mut self.recording, &mut self.picker),
+            TAB_LOOK => changed |= appearance_pane(ui, b, cx.pal, cx.accent),
             _ => changed |= states_pane(ui, b, cx.pal),
         });
         changed

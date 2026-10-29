@@ -2,7 +2,6 @@
 use crate::config::schema::ButtonAction;
 use crate::editor::action_ui::{media_label, Targets};
 use crate::strings::{t, tf};
-use std::path::Path;
 
 /// Uma linha para o usuário; `None` quando a tecla não tem ação.
 pub(crate) fn action_summary(a: &ButtonAction, targets: &Targets) -> Option<String> {
@@ -28,6 +27,15 @@ pub(crate) fn action_summary(a: &ButtonAction, targets: &Targets) -> Option<Stri
             None => t("Troca de perfil").to_string(),
         },
         ButtonAction::OpenMixer => t("Abre o mixer de volume").to_string(),
+        ButtonAction::TypeText { text } if text.is_empty() => t("Digita um texto").to_string(),
+        ButtonAction::TypeText { text } => tf("Digita: {}", &[&preview(text)]),
+        ButtonAction::Delay { ms } => tf("Espera {} ms", &[ms]),
+        ButtonAction::MultiAction { steps } if steps.is_empty() => {
+            t("Multi-ação sem passos").to_string()
+        }
+        ButtonAction::MultiAction { steps } => tf("Multi-ação: {} passos", &[&steps.len()]),
+        ButtonAction::NextPage => t("Vai para a próxima página").to_string(),
+        ButtonAction::PreviousPage => t("Volta à página anterior").to_string(),
     };
     Some(text)
 }
@@ -43,9 +51,27 @@ pub(crate) fn program_name(path: &str) -> Option<String> {
         let package = family.split('_').next().unwrap_or(family);
         return package.rsplit('.').next().map(str::to_string);
     }
-    Path::new(path)
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_string())
+    let file = path.rsplit(['/', '\\']).next().unwrap_or_default();
+    let stem = match file.rsplit_once('.') {
+        Some((stem, _)) if !stem.is_empty() => stem,
+        _ => file,
+    };
+    (!stem.is_empty()).then(|| stem.to_string())
+}
+
+const PREVIEW_CHARS: usize = 24;
+
+/// Começo do texto digitado, em uma linha; o texto pode ser uma senha, então não vai inteiro.
+fn preview(text: &str) -> String {
+    let one_line: String = text
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let mut shown: String = one_line.chars().take(PREVIEW_CHARS).collect();
+    if one_line.chars().count() > PREVIEW_CHARS {
+        shown.push('…');
+    }
+    shown
 }
 
 /// "ctrl", "shift", "m" vira "Ctrl + Shift + M".

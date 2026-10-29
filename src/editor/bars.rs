@@ -1,4 +1,4 @@
-//! Barra do topo do editor: estado, gravação, perfis, páginas, desfazer/refazer e menus.
+//! Barra do topo do editor (marca, perfil, estado, desfazer/refazer, menus) e abas de página.
 use super::{settings, theme, widgets, App};
 use crate::editor::theme::Palette;
 use crate::editor::tokens::text::TITLE;
@@ -44,63 +44,76 @@ fn menu_field(
 }
 
 impl App {
-    /// Uma linha só: marca, estado e páginas à esquerda (quebram se faltar espaço); desfazer,
-    /// refazer e menus à direita. Antes eram duas linhas e um rodapé, tirando altura das teclas.
+    /// Barra fina: marca e perfil à esquerda; estado, desfazer/refazer, menus e preferências à
+    /// direita. As páginas ficam no palco, coladas ao aparelho (ver `page_tabs`).
     pub(crate) fn top_bar(
         &mut self,
         ctx: &egui::Context,
         g: &mut runtime::Shared,
-        (pal, accent): (&Palette, Color32),
+        (pal, _accent): (&Palette, Color32),
         undo: &mut bool,
         redo: &mut bool,
     ) {
         let frame = Frame::none()
             .fill(pal.panel)
-            .inner_margin(Margin::symmetric(18.0, 10.0));
+            .stroke(egui::Stroke::new(1.0_f32, pal.line))
+            .inner_margin(Margin::symmetric(16.0, 8.0));
         egui::TopBottomPanel::top("top")
             .frame(frame)
             .show(ctx, |ui| {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    self.manage_menu(ui, g, pal);
-                    if ui.button(t("Preferências")).clicked() {
+                    if widgets::icon_button(ui, "settings", "Preferências", true, pal).clicked() {
                         self.open_settings();
                     }
+                    self.manage_menu(ui, g, pal);
                     ui.add_space(WORDMARK_GAP);
-                    self.undo_redo(ui, undo, redo);
-                    let left = Layout::left_to_right(Align::Center).with_main_wrap(true);
+                    self.undo_redo(ui, undo, redo, pal);
+                    ui.add_space(WORDMARK_GAP);
+                    self.save_chip(ui, pal);
+                    self.connection_chip(ui, g, pal);
+                    let left = Layout::left_to_right(Align::Center);
                     ui.with_layout(left, |ui| {
                         ui.label(
                             RichText::new(t("AKP153E"))
-                                .font(theme::display_font(TITLE))
+                                .font(theme::display_font(TITLE - 3.0))
                                 .strong(),
                         );
-                        ui.add_space(WORDMARK_GAP);
-                        self.connection_chip(ui, g, pal);
-                        self.save_chip(ui, pal);
-                        ui.add_space(WORDMARK_GAP);
-                        self.profile_and_pages(ui, g, pal, accent);
+                        ui.add_space(WORDMARK_GAP * 2.0);
+                        ui.label(RichText::new(t("Perfil")).color(pal.muted));
+                        self.profile_combo(ui, g);
                     });
                 });
             });
     }
 
-    /// Botões em ordem visual Desfazer, Refazer (o layout à direita os desenha ao contrário).
-    fn undo_redo(&self, ui: &mut egui::Ui, undo: &mut bool, redo: &mut bool) {
-        *redo |= ui
-            .add_enabled(self.history.can_redo(), egui::Button::new(t("Refazer")))
-            .on_hover_text(t("Ctrl+Shift+Z"))
-            .clicked();
-        *undo |= ui
-            .add_enabled(self.history.can_undo(), egui::Button::new(t("Desfazer")))
-            .on_hover_text(t("Ctrl+Z"))
-            .clicked();
+    /// Ícones em ordem visual Desfazer, Refazer (o layout à direita os desenha ao contrário).
+    fn undo_redo(&self, ui: &mut egui::Ui, undo: &mut bool, redo: &mut bool, pal: &Palette) {
+        *redo |= widgets::icon_button(
+            ui,
+            "redo",
+            "Refazer (Ctrl+Shift+Z)",
+            self.history.can_redo(),
+            pal,
+        )
+        .clicked();
+        *undo |= widgets::icon_button(
+            ui,
+            "undo",
+            "Desfazer (Ctrl+Z)",
+            self.history.can_undo(),
+            pal,
+        )
+        .clicked();
     }
 
     /// Estado da gravação, ao lado do estado da conexão.
     fn save_chip(&self, ui: &mut egui::Ui, pal: &Palette) {
         if let Some(err) = &self.save_error {
-            widgets::status_chip(ui, "Falha ao salvar", pal.bad)
-                .on_hover_text(format!("{err}\n{}", t("Nova tentativa em instantes.")));
+            widgets::status_chip(ui, "Falha ao salvar", pal.bad).on_hover_text(format!(
+                "{err}
+{}",
+                t("Nova tentativa em instantes.")
+            ));
         } else if self.dirty {
             widgets::status_chip(ui, "Salvando…", pal.muted);
         } else {
@@ -142,13 +155,7 @@ impl App {
         });
     }
 
-    pub(crate) fn profile_and_pages(
-        &mut self,
-        ui: &mut egui::Ui,
-        g: &mut runtime::Shared,
-        pal: &Palette,
-        accent: Color32,
-    ) {
+    fn profile_combo(&mut self, ui: &mut egui::Ui, g: &mut runtime::Shared) {
         let mut prof = g.cfg.active_profile;
         let combo = egui::ComboBox::from_id_salt("prof")
             .selected_text(display_name(&g.cfg.profiles[prof].name))
@@ -163,32 +170,39 @@ impl App {
             self.selected = 0;
             self.touch_nav();
         }
-        let pages = g.cfg.profiles[prof].pages.len();
-        for i in 0..pages {
-            if self.rename.as_ref().is_some_and(|r| r.page == i) {
-                self.rename_editor(ui, g, prof);
-                continue;
+    }
+
+    /// Abas de página em controle segmentado, acima do aparelho. Duplo clique renomeia;
+    /// clique direito abre mover/excluir.
+    pub(crate) fn page_tabs(&mut self, ui: &mut egui::Ui, g: &mut runtime::Shared, pal: &Palette) {
+        let prof = g.cfg.active_profile;
+        widgets::segmented(ui, pal, |ui| {
+            let pages = g.cfg.profiles[prof].pages.len();
+            for i in 0..pages {
+                if self.rename.as_ref().is_some_and(|r| r.page == i) {
+                    self.rename_editor(ui, g, prof);
+                    continue;
+                }
+                let name = display_name(&g.cfg.profiles[prof].pages[i].name);
+                let active = g.cfg.profiles[prof].active_page == i;
+                let resp = widgets::segment(ui, &name, active, 0.0, pal);
+                if resp.clicked() {
+                    g.cfg.profiles[prof].active_page = i;
+                    self.selected = 0;
+                    self.touch_nav();
+                }
+                if resp.double_clicked() {
+                    self.rename = Some(Rename::new(i, &name));
+                }
+                resp.on_hover_text(t("Duplo clique renomeia · clique direito abre o menu"))
+                    .context_menu(|ui| self.page_menu(ui, g, prof, i, &name, pal));
             }
-            let name = display_name(&g.cfg.profiles[prof].pages[i].name);
-            let active = g.cfg.profiles[prof].active_page == i;
-            let resp = widgets::pill(ui, &name, active, accent, pal);
-            if resp.clicked() {
-                g.cfg.profiles[prof].active_page = i;
-                self.selected = 0;
-                self.touch_nav();
+            let add = widgets::icon_button(ui, "plus", "Nova página", true, pal);
+            if add.clicked() {
+                g.cfg.profiles[prof].add_page(&tf("Página {}", &[&(pages + 1)]));
+                self.touch();
             }
-            if resp.double_clicked() {
-                self.rename = Some(Rename::new(i, &name));
-            }
-            resp.on_hover_text(t("Duplo clique renomeia · clique direito abre o menu"))
-                .context_menu(|ui| self.page_menu(ui, g, prof, i, &name, pal));
-        }
-        let add = widgets::pill(ui, "+", false, accent, pal);
-        widgets::name(&add, "Nova página");
-        if add.on_hover_text(t("Nova página")).clicked() {
-            g.cfg.profiles[prof].add_page(&tf("Página {}", &[&(pages + 1)]));
-            self.touch();
-        }
+        });
     }
 
     /// Campo no lugar da pílula: Enter ou perder o foco confirma, Esc cancela.
