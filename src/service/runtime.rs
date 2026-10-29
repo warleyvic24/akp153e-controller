@@ -541,6 +541,61 @@ mod tests {
         assert_eq!(sh.cfg.profiles[0].active_page, 0);
     }
 
+    #[tokio::test]
+    async fn next_and_previous_page_wrap_around() {
+        let (tx, rx) = channel();
+        let exec = Executor::new(tokio::runtime::Handle::current());
+        let mut sh = two_page_state(ButtonAction::NextPage, Some(ButtonAction::PreviousPage));
+        trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);
+        assert_eq!(sh.cfg.profiles[0].active_page, 1);
+        trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);
+        assert_eq!(
+            sh.cfg.profiles[0].active_page, 0,
+            "depois da última volta à primeira"
+        );
+        trigger(&mut sh, &tx, &exec, 0, Duration::from_secs(5));
+        assert_eq!(
+            sh.cfg.profiles[0].active_page, 1,
+            "antes da primeira vai à última"
+        );
+        assert_eq!(
+            rx.try_iter().count(),
+            45,
+            "cada troca redesenha as 15 teclas"
+        );
+    }
+
+    #[tokio::test]
+    async fn next_page_does_nothing_in_a_single_page_profile() {
+        let (tx, rx) = channel();
+        let exec = Executor::new(tokio::runtime::Handle::current());
+        let mut sh = two_page_state(ButtonAction::NextPage, None);
+        sh.cfg.profiles[0].pages.truncate(1);
+        trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);
+        assert_eq!(sh.cfg.profiles[0].active_page, 0);
+        assert_eq!(rx.try_iter().count(), 0);
+    }
+
+    #[tokio::test]
+    async fn second_tap_of_a_two_state_key_runs_its_toggled_action() {
+        let (tx, _rx) = channel();
+        let exec = Executor::new(tokio::runtime::Handle::current());
+        let mut sh = two_page_state(ButtonAction::None, None);
+        let key = &mut sh.cfg.page_mut().buttons[0];
+        key.toggled_appearance = Some(ButtonConfig::blank().appearance);
+        key.toggled_action = Some(ButtonAction::SwitchPage { page: 2 });
+        trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);
+        assert_eq!(
+            sh.cfg.profiles[0].active_page, 0,
+            "o primeiro toque usa a ação normal"
+        );
+        trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);
+        assert_eq!(
+            sh.cfg.profiles[0].active_page, 1,
+            "o segundo usa a do estado ligado"
+        );
+    }
+
     fn mixer_state(opener: usize) -> SharedState {
         let state = Arc::new(Mutex::new(two_page_state(ButtonAction::None, None)));
         lock(&state).mixer = Some(MixerView::new(opener));

@@ -120,6 +120,43 @@ fn adopting_the_disk_navigation_follows_ids_not_positions() {
 }
 
 #[test]
+fn new_actions_are_saved_with_kebab_case_tags_and_load_back() {
+    let action = ButtonAction::MultiAction {
+        steps: vec![
+            ButtonAction::TypeText { text: "oi".into() },
+            ButtonAction::Delay { ms: 250 },
+            ButtonAction::NextPage,
+            ButtonAction::PreviousPage,
+        ],
+    };
+    let json = serde_json::to_string(&action).unwrap();
+    for tag in [
+        "multi-action",
+        "type-text",
+        "delay",
+        "next-page",
+        "previous-page",
+    ] {
+        assert!(
+            json.contains(&format!(r#""type":"{tag}""#)),
+            "{tag} em {json}"
+        );
+    }
+    assert_eq!(serde_json::from_str::<ButtonAction>(&json).unwrap(), action);
+}
+
+#[test]
+fn a_config_written_before_the_new_actions_still_loads() {
+    let old = r#"{"type":"hotkey","keys":["ctrl","c"]}"#;
+    assert_eq!(
+        serde_json::from_str::<ButtonAction>(old).unwrap(),
+        ButtonAction::Hotkey {
+            keys: vec!["ctrl".into(), "c".into()]
+        }
+    );
+}
+
+#[test]
 fn backup_names_carry_a_timestamp_and_keep_the_config_directory() {
     let path = std::env::temp_dir().join("x").join("config.json");
     let path = path.as_path();

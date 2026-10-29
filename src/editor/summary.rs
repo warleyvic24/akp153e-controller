@@ -144,6 +144,28 @@ mod tests {
     }
 
     #[test]
+    fn typed_text_is_shortened_and_kept_on_one_line() {
+        let long = "uma senha muito longa\nem duas linhas";
+        let text = summary(ButtonAction::TypeText { text: long.into() }).unwrap();
+        assert!(!text.contains('\n'), "{text:?}");
+        assert!(text.ends_with('…'), "{text:?}");
+        assert!(!text.contains("duas linhas"), "{text:?}");
+        let short = summary(ButtonAction::TypeText { text: "oi".into() }).unwrap();
+        assert!(short.ends_with("oi") && !short.contains('…'), "{short}");
+    }
+
+    #[test]
+    fn multi_action_and_delay_say_what_they_do() {
+        let steps = vec![ButtonAction::NextPage, ButtonAction::Delay { ms: 10 }];
+        let multi = summary(ButtonAction::MultiAction { steps }).unwrap();
+        assert!(multi.contains('2'), "{multi}");
+        let delay = summary(ButtonAction::Delay { ms: 750 }).unwrap();
+        assert!(delay.contains("750"), "{delay}");
+        assert!(summary(ButtonAction::NextPage).is_some());
+        assert!(summary(ButtonAction::PreviousPage).is_some());
+    }
+
+    #[test]
     fn navigation_names_the_target() {
         let cfg = AppConfig::default();
         let page = &cfg.profiles[0].pages[0];
