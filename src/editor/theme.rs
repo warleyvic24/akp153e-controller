@@ -55,12 +55,60 @@ pub fn palette(theme: Theme) -> Palette {
 
 /// Preenche `control`, a borda dos controles, derivada de `line` até dar 3:1 sobre as superfícies.
 pub fn with_control(mut p: Palette) -> Palette {
-    p.control = ensure_contrast(
+    let surfaces = [p.raise, p.panel];
+    let sequential = ensure_contrast(
         ensure_contrast(p.line, p.raise, COMPONENT_MIN_CONTRAST),
         p.panel,
         COMPONENT_MIN_CONTRAST,
     );
+    // A correção em sequência pode deixar uma das superfícies por um triz abaixo do mínimo; nesse
+    // caso se refaz de uma vez só para as duas.
+    p.control = if surfaces
+        .iter()
+        .all(|s| contrast(sequential, *s) >= COMPONENT_MIN_CONTRAST)
+    {
+        sequential
+    } else {
+        ensure_contrast_on(p.line, &surfaces, COMPONENT_MIN_CONTRAST)
+    };
     p
+}
+
+/// `c`, clareada ou escurecida só o necessário para ter o contraste `min` sobre todas as
+/// superfícies ao mesmo tempo (corrigir uma de cada vez pode desfazer a anterior). Se nem preto
+/// nem branco chegam lá, devolve o que mais se aproxima.
+pub fn ensure_contrast_on(c: Color32, surfaces: &[Color32], min: f32) -> Color32 {
+    const STEPS: u8 = 40;
+    let worst = |x: Color32| {
+        surfaces
+            .iter()
+            .map(|s| contrast(x, *s))
+            .fold(f32::MAX, f32::min)
+    };
+    if worst(c) >= min {
+        return c;
+    }
+    let distance = |x: Color32| {
+        [(x.r(), c.r()), (x.g(), c.g()), (x.b(), c.b())]
+            .iter()
+            .map(|(a, b)| (i32::from(*a) - i32::from(*b)).pow(2))
+            .sum::<i32>()
+    };
+    [Color32::WHITE, Color32::BLACK]
+        .into_iter()
+        .filter_map(|target| {
+            (1..=STEPS)
+                .map(|i| mix(c, target, f32::from(i) / f32::from(STEPS)))
+                .find(|x| worst(*x) >= min)
+        })
+        .min_by_key(|x| distance(*x))
+        .unwrap_or_else(|| {
+            if worst(Color32::WHITE) >= worst(Color32::BLACK) {
+                Color32::WHITE
+            } else {
+                Color32::BLACK
+            }
+        })
 }
 
 /// O tema é escuro? Nos temas fixos é óbvio; o do Omarchy decide pelo fundo (sem Omarchy, escuro).

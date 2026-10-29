@@ -1,7 +1,9 @@
 //! Tema do Omarchy: lê o `colors.toml` do tema ativo e o converte numa paleta da interface.
 //! A paleta sai sempre dentro dos contrastes WCAG do projeto, qualquer que seja o tema (escuro,
 //! claro ou com cores fracas): o que falta de contraste é corrigido, não repassado.
-use super::theme::{contrast, mix, readable_on, with_control, Palette, DEVICE_FG};
+use super::theme::{
+    contrast, ensure_contrast_on, mix, readable_on, with_control, Palette, DEVICE_FG,
+};
 use crate::editor::tokens::TEXT_MIN_CONTRAST;
 use crate::platform::omarchy as source;
 use eframe::egui::Color32;
@@ -107,7 +109,7 @@ pub fn from_colors(colors: &Colors) -> Option<OmarchyTheme> {
         (panel, panel)
     };
     let surfaces = [panel, raise, bg];
-    let readable = |c: Color32| readable_on_all(c, &surfaces);
+    let readable = |c: Color32| ensure_contrast_on(c, &surfaces, TEXT_MIN_CONTRAST);
     let muted =
         get(&["dark_foreground", "muted"]).unwrap_or_else(|| mix(panel, foreground, MUTED_TINT));
     let device = if dark {
@@ -145,42 +147,6 @@ fn text_is_possible(surfaces: &[Color32]) -> bool {
             .iter()
             .all(|s| contrast(*text, *s) >= TEXT_MIN_CONTRAST)
     })
-}
-
-/// `c`, clareada ou escurecida só o necessário para ter o contraste mínimo sobre todas as
-/// superfícies ao mesmo tempo (corrigir uma de cada vez desfaria a anterior).
-fn readable_on_all(c: Color32, surfaces: &[Color32]) -> Color32 {
-    const STEPS: u8 = 40;
-    let worst = |x: Color32| {
-        surfaces
-            .iter()
-            .map(|s| contrast(x, *s))
-            .fold(f32::MAX, f32::min)
-    };
-    if worst(c) >= TEXT_MIN_CONTRAST {
-        return c;
-    }
-    let distance = |x: Color32| {
-        [(x.r(), c.r()), (x.g(), c.g()), (x.b(), c.b())]
-            .iter()
-            .map(|(a, b)| (i32::from(*a) - i32::from(*b)).pow(2))
-            .sum::<i32>()
-    };
-    [Color32::WHITE, Color32::BLACK]
-        .into_iter()
-        .filter_map(|target| {
-            (1..=STEPS)
-                .map(|i| mix(c, target, f32::from(i) / f32::from(STEPS)))
-                .find(|x| worst(*x) >= TEXT_MIN_CONTRAST)
-        })
-        .min_by_key(|x| distance(*x))
-        .unwrap_or_else(|| {
-            if worst(Color32::WHITE) >= worst(Color32::BLACK) {
-                Color32::WHITE
-            } else {
-                Color32::BLACK
-            }
-        })
 }
 
 struct Cache {
