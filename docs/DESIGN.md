@@ -68,6 +68,10 @@ espaçamento artificial entre letras (só o logotipo "AKP153E" o tem).
 - **Preferências** (`editor/settings.rs`): tema, destaque, iniciar com o Windows, brilho do aparelho
   (5 a 100 %, vai ao aparelho pelo `reload` que o salvamento já envia), reconectar, pasta de logs.
 - O chip de conexão abre um menu com Reconectar e a pasta de logs.
+- **Janela estreita** (`editor/layout.rs`): abaixo de biblioteca + inspetor + palco mínimo (984 pt), por
+  exemplo numa faixa de um gerenciador lado a lado, a biblioteca sai e o botão "Ações" da barra a abre no
+  lugar do inspetor (escolhida a ação, o inspetor volta). O inspetor encolhe até 260 pt; abaixo de 860 pt a
+  barra esconde o logotipo e o rótulo "Perfil"; dicas de atalho que não cabem ficam de fora.
 
 ## Idiomas (`src/strings.rs`)
 

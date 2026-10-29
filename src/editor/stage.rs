@@ -12,6 +12,8 @@ use eframe::egui::{
 
 const STAGE_MARGIN: f32 = 16.0;
 const STAGE_FOOTER_HEIGHT: f32 = 30.0;
+/// Moldura da tecla de atalho, espaços entre as peças e folga do texto monoespaçado.
+const HINT_CHROME: f32 = 48.0;
 const PAGE_TABS_HEIGHT: f32 = 40.0;
 // Título e três passos de uma linha, com margens; medido na tela (o antigo 120 cortava o fim).
 const GUIDE_HEIGHT: f32 = 170.0;
@@ -119,6 +121,19 @@ fn shortcut_hints(ui: &mut Ui, pal: &Palette) {
         ("Arraste", "trocar teclas"),
     ];
     for (key, what) in hints {
+        // Palco estreito: as dicas que não cabem ficam de fora em vez de sair cortadas.
+        let font = egui::FontId::proportional(text::CAPTION);
+        let need = ui.fonts(|f| {
+            let w = |s: &str| {
+                f.layout_no_wrap(s.to_string(), font.clone(), Color32::WHITE)
+                    .size()
+                    .x
+            };
+            w(t(key)) + w(t(what))
+        }) + HINT_CHROME;
+        if ui.available_width() < need {
+            break;
+        }
         widgets::kbd(ui, t(key), pal);
         ui.label(RichText::new(t(what)).size(text::CAPTION).color(pal.muted));
         ui.add_space(space::SM);

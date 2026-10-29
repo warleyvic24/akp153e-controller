@@ -4,6 +4,7 @@ mod bars;
 mod checks;
 mod history;
 mod inspector;
+mod layout;
 mod library;
 mod library_panel;
 pub(crate) mod omarchy;
@@ -60,6 +61,8 @@ pub(crate) struct App {
     settings_open: bool,
     autostart: bool,
     rename: Option<bars::Rename>,
+    /// Modo compacto (janela estreita): a biblioteca aberta no lugar do inspetor.
+    library_open: bool,
 }
 
 impl App {
@@ -88,6 +91,7 @@ impl App {
             settings_open: false,
             autostart: false,
             rename: None,
+            library_open: false,
         }
     }
 
@@ -363,9 +367,15 @@ impl eframe::App for App {
         let (mut want_undo, mut want_redo) = self.read_undo_keys(ctx);
         self.key_shortcuts(ctx, g);
 
-        self.top_bar(ctx, g, (&pal, accent), &mut want_undo, &mut want_redo);
-        self.library(ctx, g, &pal, accent);
-        self.inspector(ctx, g, &pal, accent);
+        let panels = layout::panels(ctx.screen_rect().width(), self.library_open);
+        let undo_redo = (&mut want_undo, &mut want_redo);
+        self.top_bar(ctx, g, (&pal, accent), undo_redo, panels);
+        if panels.library {
+            self.library(ctx, g, &pal, accent);
+        }
+        if panels.inspector {
+            self.inspector(ctx, g, &pal, accent, panels.inspector_width);
+        }
         self.stage(ctx, g, &pal, accent);
         widgets::focus_ring(ctx);
         self.app_picker(ctx, g);
@@ -589,10 +599,12 @@ mod tests {
                     theme::accent_color(&g.cfg.ui),
                 );
                 let (mut undo, mut redo) = (false, false);
+                // Barra do modo compacto (com o botão "Ações"), mas os dois painéis desenhados.
+                let compact = layout::panels(layout::INSPECTOR_WIDTH, false);
                 let out = ctx.run(egui::RawInput::default(), |ctx| {
-                    app.top_bar(ctx, g, (&pal, accent), &mut undo, &mut redo);
+                    app.top_bar(ctx, g, (&pal, accent), (&mut undo, &mut redo), compact);
                     app.library(ctx, g, &pal, accent);
-                    app.inspector(ctx, g, &pal, accent);
+                    app.inspector(ctx, g, &pal, accent, layout::INSPECTOR_WIDTH);
                     app.stage(ctx, g, &pal, accent);
                     app.settings_window(ctx, g, &pal);
                 });

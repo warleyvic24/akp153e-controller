@@ -13,6 +13,9 @@ use usb::UsbCmd;
 const WINDOW_ICON_PX: u32 = 64;
 const ACTION_CLI_GRACE: Duration = Duration::from_millis(1500);
 const LOG_MAX_BYTES: u64 = 1 << 20;
+/// Menor janela: o layout compacto (`editor::layout`) cabe nela. Um gerenciador lado a lado pode
+/// dar ainda menos, mas o tamanho pedido não deve ser maior que a faixa que a janela costuma ganhar.
+const MIN_WINDOW: [f32; 2] = [640.0, 480.0];
 
 pub(crate) fn init_logging() {
     let file = AppConfig::path()
@@ -100,7 +103,7 @@ pub(crate) fn run_editor() -> eframe::Result {
                 height: WINDOW_ICON_PX,
             })
             .with_inner_size([1180.0, 780.0])
-            .with_min_inner_size([980.0, 640.0])
+            .with_min_inner_size(MIN_WINDOW)
             .with_title(shell::WINDOW_TITLE)
             // Wayland (Hyprland): o app_id permite regras de janela e casa com o `.desktop`.
             .with_app_id(shell::APP_ID),

@@ -13,7 +13,6 @@ use eframe::egui::{
     self, pos2, vec2, Color32, Frame, Margin, RichText, Rounding, Sense, Stroke, Ui,
 };
 
-const PANEL_WIDTH: f32 = 264.0;
 const PANEL_MARGIN: f32 = 12.0;
 const ROW_HEIGHT: f32 = 36.0;
 const ROW_GAP: f32 = 2.0;
@@ -116,7 +115,7 @@ impl App {
             .inner_margin(Margin::same(PANEL_MARGIN));
         let mut picked = Picked::default();
         egui::SidePanel::left("library")
-            .exact_width(PANEL_WIDTH)
+            .exact_width(super::layout::LIBRARY_WIDTH)
             .resizable(false)
             .frame(frame)
             .show(ctx, |ui| {
@@ -142,6 +141,11 @@ impl App {
         }
         if picked.custom {
             self.apply_custom_action(g);
+        }
+        // No modo compacto a biblioteca ocupa o lugar do inspetor: escolhida a ação, ele volta
+        // para mostrar o resultado.
+        if picked.preset.is_some() || picked.custom {
+            self.library_open = false;
         }
     }
 

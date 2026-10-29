@@ -11,7 +11,6 @@ use crate::strings::{t, tf};
 use eframe::egui::{self, vec2, Color32, Frame, Margin, RichText, Rounding, Sense, Stroke};
 use std::time::Duration;
 
-const INSPECTOR_WIDTH: f32 = 340.0;
 const APP_ROW_HEIGHT: f32 = 36.0;
 const APP_LIST_MAX_HEIGHT: f32 = 320.0;
 const APP_BADGE: f32 = 24.0;
@@ -348,13 +347,14 @@ impl App {
         g: &mut runtime::Shared,
         pal: &Palette,
         accent: Color32,
+        width: f32,
     ) {
         let frame = Frame::none()
             .fill(pal.panel)
             .stroke(Stroke::new(1.0_f32, pal.line))
             .inner_margin(Margin::same(INSPECTOR_MARGIN));
         egui::SidePanel::right("insp")
-            .exact_width(INSPECTOR_WIDTH)
+            .exact_width(width)
             .resizable(false)
             .frame(frame)
             .show(ctx, |ui| {

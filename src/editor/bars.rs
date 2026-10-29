@@ -50,9 +50,9 @@ impl App {
         &mut self,
         ctx: &egui::Context,
         g: &mut runtime::Shared,
-        (pal, _accent): (&Palette, Color32),
-        undo: &mut bool,
-        redo: &mut bool,
+        (pal, accent): (&Palette, Color32),
+        (undo, redo): (&mut bool, &mut bool),
+        panels: super::layout::Panels,
     ) {
         let frame = Frame::none()
             .fill(pal.panel)
@@ -73,13 +73,21 @@ impl App {
                     self.connection_chip(ui, g, pal);
                     let left = Layout::left_to_right(Align::Center);
                     ui.with_layout(left, |ui| {
-                        ui.label(
-                            RichText::new(t("AKP153E"))
-                                .font(theme::display_font(TITLE - 3.0))
-                                .strong(),
-                        );
-                        ui.add_space(WORDMARK_GAP * 2.0);
-                        ui.label(RichText::new(t("Perfil")).color(pal.muted));
+                        // Janela estreita: o botão "Ações" abre a biblioteca no lugar do inspetor.
+                        if panels.compact
+                            && widgets::pill(ui, "Ações", self.library_open, accent, pal).clicked()
+                        {
+                            self.library_open = !self.library_open;
+                        }
+                        if panels.full_top_bar {
+                            ui.label(
+                                RichText::new(t("AKP153E"))
+                                    .font(theme::display_font(TITLE - 3.0))
+                                    .strong(),
+                            );
+                            ui.add_space(WORDMARK_GAP * 2.0);
+                            ui.label(RichText::new(t("Perfil")).color(pal.muted));
+                        }
                         self.profile_combo(ui, g);
                     });
                 });
