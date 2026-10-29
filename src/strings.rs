@@ -212,7 +212,6 @@ const EN: &[(&str, &str)] = &[
     ("Multi-ação: {} passos", "Multi-action: {} steps"),
     ("Vai para a próxima página", "Goes to the next page"),
     ("Volta à página anterior", "Goes back one page"),
-    ("Texto", "Text"),
     ("Multi", "Multi"),
     ("Pág. +", "Page +"),
     ("Pág. −", "Page −"),

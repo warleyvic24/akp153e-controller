@@ -107,9 +107,9 @@ fn strip_field_codes(exec: &str) -> String {
             out.push(c);
             continue;
         }
-        match chars.next() {
-            Some('%') => out.push('%'),
-            _ => {}
+        // `%%` é um % literal; qualquer outro `%x` é código de campo e some.
+        if chars.next() == Some('%') {
+            out.push('%');
         }
     }
     out.split_whitespace().collect::<Vec<_>>().join(" ")
