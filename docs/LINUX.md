@@ -55,6 +55,11 @@ Depois reconecte o aparelho (a regra udev vale para o usuário logado).
 - **Iniciar com a sessão:** o Hyprland não executa o autostart XDG por conta própria. Acrescente em
   `~/.config/hypr/autostart.conf`:
   `exec-once = uwsm app -- akp153e --background`
+- **Cores do Omarchy:** em Preferências > Tema, a opção "Omarchy" (que já vem escolhida na primeira
+  abertura dentro do Omarchy) usa as cores, o destaque e o modo claro/escuro do tema ativo, lidos de
+  `~/.local/state/omarchy/current/theme/colors.toml`. Ao trocar o tema no Omarchy, o editor acompanha
+  em até 2 segundos, sem reabrir. O contraste do texto e dos controles é corrigido se o tema for fraco
+  (a regra WCAG do projeto vale para qualquer tema). As fontes de texto e monoespaçada vêm do `fc-match`.
 - **Janela do editor:** o `app_id` é `akp153e`. Para ela abrir flutuando, em `~/.config/hypr/windows.conf`:
   `windowrule = float, class:^(akp153e)$`
 - **Bandeja:** o Waybar mostra o ícone pelo StatusNotifierItem. No Omarchy a bandeja pode ficar
