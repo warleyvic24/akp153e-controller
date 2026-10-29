@@ -438,6 +438,11 @@ mod tests {
                 );
                 assert!(rules.contains(&line), "falta na regra udev: {line}");
             }
+            // O dispositivo USB (não o hidraw) é quem tem `power/control`.
+            let usb = format!(
+                "env{{devtype}}==\"usb_device\", attr{{idvendor}}==\"{vid:04x}\", attr{{idproduct}}==\"{pid:04x}\", attr{{power/control}}=\"on\""
+            );
+            assert!(rules.contains(&usb), "sem autosuspend desligado: {usb}");
         }
     }
 

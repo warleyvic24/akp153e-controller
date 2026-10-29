@@ -85,6 +85,17 @@ Depois reconecte o aparelho (a regra udev vale para o usuário logado).
   `loginctl lock-session`, em vez dos atalhos com a tecla Windows.
 - Atalhos de teclado usam o `enigo`; no Wayland alguns compositores bloqueiam teclas simuladas.
 
+## Quando o aparelho cai do USB
+
+O serviço reconecta e redesenha as teclas sozinho quando o aparelho volta. A regra udev já desliga a
+suspensão automática do USB para ele (`power/control` = `on`); confira com
+`cat /sys/bus/usb/devices/*/power/control` na entrada do `0300:3010`.
+
+Se ele não volta e o `journalctl -k` mostra `error -110` ou `device not accepting address ... error
+-62`, o computador nem consegue falar com ele: é o aparelho travado ou a ligação (cabo, porta, hub ou
+energia), antes de qualquer programa. Desconecte, espere uns segundos e ligue numa porta de trás,
+direto, de preferência com outro cabo USB-C de dados.
+
 ## Provar no aparelho
 
 1. `akp153e --probe` e abra `akp153e_probe.txt`: o aparelho deve aparecer em "Interfaces HID".
