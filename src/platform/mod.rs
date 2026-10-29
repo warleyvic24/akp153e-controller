@@ -73,19 +73,18 @@ pub(crate) fn spawn_detached(cmd: &mut Command) -> std::io::Result<u32> {
     Ok(pid)
 }
 
-#[cfg(test)]
+// Só há testes do Linux aqui; no Windows o módulo inteiro some (senão o `use` fica sem uso).
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
 
     /// Lê o estado ("Z" = zumbi) de um processo em /proc.
-    #[cfg(target_os = "linux")]
     fn proc_state(pid: u32) -> Option<char> {
         let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
         // O nome vai entre parênteses e pode ter espaços; o estado vem logo depois do ")".
         stat.rsplit_once(')')?.1.trim_start().chars().next()
     }
 
-    #[cfg(target_os = "linux")]
     #[test]
     fn a_replaced_binary_is_found_at_its_original_path() {
         let deleted = std::path::PathBuf::from("/usr/bin/akp153e (deleted)");
@@ -97,7 +96,6 @@ mod tests {
         assert_eq!(strip_deleted(normal.clone()), normal);
     }
 
-    #[cfg(target_os = "linux")]
     #[test]
     fn a_detached_child_that_exits_is_reaped() {
         let pid = spawn_detached(&mut Command::new("true")).expect("true");
