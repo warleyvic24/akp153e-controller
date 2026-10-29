@@ -61,23 +61,50 @@ pub fn show_window() {
     // Não há API de janelas portável entre X11 e Wayland. No Hyprland (Omarchy) o `hyprctl` foca
     // a janela pelo título; nos demais, o `wmctrl` (X11). Sem nenhum dos dois o editor fica onde
     // está (não é erro).
-    let focus = hyprland_focus_args();
-    let _ = match focus {
-        Some(args) => Command::new("hyprctl").args(args).status(),
-        None => Command::new("wmctrl").args(["-a", WINDOW_TITLE]).status(),
-    };
+    if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some() {
+        // O Hyprland com config em Lua (0.56+) recusa a sintaxe antiga com código de saída
+        // diferente de zero; então tenta a antiga e, se falhar, a nova.
+        let focused = hyprctl_dispatch(&hyprland_legacy_focus());
+        if !focused {
+            hyprctl_dispatch(&hyprland_lua_focus());
+        }
+    } else {
+        let _ = Command::new("wmctrl").args(["-a", WINDOW_TITLE]).status();
+    }
 }
 
-/// Argumentos do `hyprctl` para focar o editor, se a sessão for do Hyprland.
+/// Roda `hyprctl dispatch <args>` sem sujar o log; `true` se o hyprctl aceitou.
 #[cfg(not(windows))]
-fn hyprland_focus_args() -> Option<[String; 3]> {
-    std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE")?;
-    // O seletor `title:` do Hyprland é uma regex; o título inteiro, ancorado.
-    Some([
-        "dispatch".to_string(),
-        "focuswindow".to_string(),
-        format!("title:^{WINDOW_TITLE}$"),
-    ])
+fn hyprctl_dispatch(args: &[String]) -> bool {
+    use std::process::Stdio;
+    Command::new("hyprctl")
+        .arg("dispatch")
+        .args(args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+/// Seletor do Hyprland: regex do título inteiro, ancorado.
+#[cfg(not(windows))]
+fn hyprland_title_selector() -> String {
+    format!("title:^{WINDOW_TITLE}$")
+}
+
+/// Foco na sintaxe do Hyprland com config hyprlang (até 0.55).
+#[cfg(not(windows))]
+fn hyprland_legacy_focus() -> [String; 2] {
+    ["focuswindow".to_string(), hyprland_title_selector()]
+}
+
+/// Foco na sintaxe do Hyprland com config em Lua (0.56+).
+#[cfg(not(windows))]
+fn hyprland_lua_focus() -> [String; 1] {
+    [format!(
+        "hl.dsp.focus({{window = \"{}\"}})",
+        hyprland_title_selector()
+    )]
 }
 
 /// Bloqueia rodando o laço de eventos do GTK (necessário para o ícone da bandeja). Sem uso de CPU.
@@ -327,6 +354,19 @@ mod tests {
             "{entry}"
         );
         assert!(entry.starts_with("[Desktop Entry]"));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn hyprland_focus_has_both_syntaxes() {
+        assert_eq!(
+            hyprland_legacy_focus(),
+            ["focuswindow", "title:^Controle AKP153E$"]
+        );
+        assert_eq!(
+            hyprland_lua_focus(),
+            [r#"hl.dsp.focus({window = "title:^Controle AKP153E$"})"#]
+        );
     }
 
     #[test]
