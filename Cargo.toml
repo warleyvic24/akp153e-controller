@@ -36,6 +36,9 @@ windows = { version = "0.58", features = [
 # A bandeja do Linux (tray-icon) precisa do laço de eventos do GTK na mesma thread.
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
+# Sem `wayland` o enigo só fala com o X11 (XWayland) e as teclas simuladas não chegam aos apps
+# nativos do Wayland, como no Hyprland do Omarchy. O protocolo de teclado virtual resolve.
+enigo = { version = "0.6", features = ["wayland"] }
 
 [profile.release]
 opt-level = 3

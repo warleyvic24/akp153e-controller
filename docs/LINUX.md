@@ -41,6 +41,29 @@ akp153e --autostart on   # inicia com a sessão (~/.config/autostart)
 
 A configuração fica em `~/.config/AJazz/AKP153E/config.json`.
 
+## Omarchy (Arch Linux + Hyprland)
+
+Omarchy usa Wayland (Hyprland), PipeWire e Waybar. O que muda:
+
+```
+sudo pacman -S --needed base-devel cargo gtk3 libayatana-appindicator libxkbcommon libpulse ttf-dejavu
+cd packaging/arch && makepkg -si      # compila, instala o binário, a regra udev e o atalho
+```
+
+Depois reconecte o aparelho (a regra udev vale para o usuário logado).
+
+- **Iniciar com a sessão:** o Hyprland não executa o autostart XDG por conta própria. Acrescente em
+  `~/.config/hypr/autostart.conf`:
+  `exec-once = uwsm app -- akp153e --background`
+- **Janela do editor:** o `app_id` é `akp153e`. Para ela abrir flutuando, em `~/.config/hypr/windows.conf`:
+  `windowrule = float, class:^(akp153e)$`
+- **Bandeja:** o Waybar mostra o ícone pelo StatusNotifierItem. No Omarchy a bandeja pode ficar
+  recolhida atrás do ícone de expandir.
+- **Trazer o editor para a frente:** feito pelo `hyprctl` (já instalado com o Hyprland).
+- **Atalhos de teclado:** a build do Linux usa o protocolo de teclado virtual do Wayland, que o Hyprland
+  aceita, para as teclas chegarem também aos apps nativos do Wayland. Isso ainda não foi provado.
+- **Mixer:** o `pactl` vem do `libpulse`; o `pipewire-pulse` do Omarchy atende os mesmos comandos.
+
 ## Diferenças em relação ao Windows
 
 - Os ícones dos apps não são extraídos (o mixer mostra o nome).

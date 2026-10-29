@@ -6,3 +6,4 @@ Exec=akp153e --editor
 Terminal=false
 Categories=Utility;Settings;
 StartupNotify=false
+StartupWMClass=akp153e

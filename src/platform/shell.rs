@@ -9,6 +9,8 @@ use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuIt
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
 pub const WINDOW_TITLE: &str = "Controle AKP153E";
+/// Identificador da janela no Wayland (`app_id`); igual ao nome do `.desktop` e do binário.
+pub const APP_ID: &str = "akp153e";
 const SERVICE_ADDR: &str = "127.0.0.1:47153";
 const EDITOR_ADDR: &str = "127.0.0.1:47154";
 const IPC_TIMEOUT: Duration = Duration::from_millis(400);
@@ -51,9 +53,26 @@ mod ffi {
 /// Traz a janela do editor (já aberta) para a frente.
 #[cfg(not(windows))]
 pub fn show_window() {
-    // Sem API de janelas portável entre X11 e Wayland: usa o `wmctrl` se existir; senão o editor
-    // fica onde está (não é erro).
-    let _ = Command::new("wmctrl").args(["-a", WINDOW_TITLE]).status();
+    // Não há API de janelas portável entre X11 e Wayland. No Hyprland (Omarchy) o `hyprctl` foca
+    // a janela pelo título; nos demais, o `wmctrl` (X11). Sem nenhum dos dois o editor fica onde
+    // está (não é erro).
+    let focus = hyprland_focus_args();
+    let _ = match focus {
+        Some(args) => Command::new("hyprctl").args(args).status(),
+        None => Command::new("wmctrl").args(["-a", WINDOW_TITLE]).status(),
+    };
+}
+
+/// Argumentos do `hyprctl` para focar o editor, se a sessão for do Hyprland.
+#[cfg(not(windows))]
+fn hyprland_focus_args() -> Option<[String; 3]> {
+    std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE")?;
+    // O seletor `title:` do Hyprland é uma regex; o título inteiro, ancorado.
+    Some([
+        "dispatch".to_string(),
+        "focuswindow".to_string(),
+        format!("title:^{WINDOW_TITLE}$"),
+    ])
 }
 
 /// Bloqueia rodando o laço de eventos do GTK (necessário para o ícone da bandeja). Sem uso de CPU.

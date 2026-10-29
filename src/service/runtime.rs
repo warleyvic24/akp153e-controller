@@ -546,6 +546,11 @@ mod tests {
         let (tx, rx) = channel();
         let exec = Executor::new(tokio::runtime::Handle::current());
         let mut sh = two_page_state(ButtonAction::NextPage, Some(ButtonAction::PreviousPage));
+        // A tecla age na página atual, então as duas páginas precisam ter a mesma ação.
+        for page in &mut sh.cfg.profiles[0].pages {
+            page.buttons[0].action = ButtonAction::NextPage;
+            page.buttons[0].long_press_action = Some(ButtonAction::PreviousPage);
+        }
         trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);
         assert_eq!(sh.cfg.profiles[0].active_page, 1);
         trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);

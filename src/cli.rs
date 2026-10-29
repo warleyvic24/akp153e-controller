@@ -95,7 +95,9 @@ pub(crate) fn run_editor() -> eframe::Result {
             })
             .with_inner_size([1180.0, 780.0])
             .with_min_inner_size([980.0, 640.0])
-            .with_title(shell::WINDOW_TITLE),
+            .with_title(shell::WINDOW_TITLE)
+            // Wayland (Hyprland): o app_id permite regras de janela e casa com o `.desktop`.
+            .with_app_id(shell::APP_ID),
         ..Default::default()
     };
     let r = eframe::run_native(
