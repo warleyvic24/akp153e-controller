@@ -72,14 +72,20 @@ pub(crate) fn run_editor() -> eframe::Result {
         .build()
         .expect("tokio");
     let exec = Executor::new(rt.handle().clone());
+    let first_run = !AppConfig::path().is_some_and(|p| p.exists());
     #[allow(unused_mut)]
     let mut cfg = AppConfig::load();
+    // Primeira vez dentro do Omarchy: a interface já nasce com as cores do tema dele.
+    if first_run && crate::editor::omarchy::current().is_some() {
+        cfg.ui.theme = Theme::Omarchy;
+    }
     // Só em debug: `AKP153E_PREVIEW_THEME=light` mostra o tema sem mexer no arquivo (nada é gravado
     // enquanto o usuário não editar algo). Serve para conferir o visual nos dois temas.
     #[cfg(debug_assertions)]
     match std::env::var("AKP153E_PREVIEW_THEME").as_deref() {
         Ok("light") => cfg.ui.theme = Theme::Light,
         Ok("dark") => cfg.ui.theme = Theme::Dark,
+        Ok("omarchy") => cfg.ui.theme = Theme::Omarchy,
         _ => {}
     }
     let sh = runtime::new_state(cfg, usb::ICON_SIZE as u32);

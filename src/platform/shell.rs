@@ -9,6 +9,11 @@ use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuIt
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
 pub const WINDOW_TITLE: &str = "Controle AKP153E";
+/// Texto da opção "iniciar com o sistema" (passa por `strings::t`).
+#[cfg(windows)]
+pub const AUTOSTART_LABEL: &str = "Iniciar com o Windows";
+#[cfg(not(windows))]
+pub const AUTOSTART_LABEL: &str = "Iniciar com o sistema";
 /// Identificador da janela no Wayland (`app_id`); igual ao nome do `.desktop` e do binário.
 pub const APP_ID: &str = "akp153e";
 const SERVICE_ADDR: &str = "127.0.0.1:47153";
@@ -260,13 +265,9 @@ pub fn create_tray() -> Option<TrayIcon> {
         return None;
     }
     let open = MenuItem::with_id("open", crate::strings::t("Abrir editor"), true, None);
-    #[cfg(windows)]
-    let autostart_label = "Iniciar com o Windows";
-    #[cfg(not(windows))]
-    let autostart_label = "Iniciar com o sistema";
     let auto = CheckMenuItem::with_id(
         "autostart",
-        crate::strings::t(autostart_label),
+        crate::strings::t(AUTOSTART_LABEL),
         true,
         autostart_enabled(),
         None,

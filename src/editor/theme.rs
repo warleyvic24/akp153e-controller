@@ -1,5 +1,6 @@
 //! Aparência da interface: paleta escura/clara, cor de destaque do usuário, fontes do Windows e estilo dos widgets.
 use crate::config::schema::{Theme, UiSettings};
+use crate::editor::omarchy;
 #[cfg(test)]
 use crate::editor::tokens::TEXT_MIN_CONTRAST;
 use crate::editor::tokens::{radius, space, text, COMPONENT_MIN_CONTRAST};
@@ -21,13 +22,10 @@ pub const ACCENTS: [(&str, [u8; 3]); 6] = [
 const HOVER_TINT: f32 = 0.16;
 const SHADOW_OFFSET_Y: f32 = 8.0;
 const CONTRAST_STEPS: u8 = 20;
-const DEVICE_FG: [u8; 3] = [176, 184, 210];
+pub const DEVICE_FG: [u8; 3] = [176, 184, 210];
 const RAIL_TINT: f32 = 0.2;
-const FONT_FILES: [(&str, &str); 3] = [
-    ("ui", r"C:\Windows\Fonts\segoeui.ttf"),
-    ("mono", r"C:\Windows\Fonts\consola.ttf"),
-    ("display", r"C:\Windows\Fonts\bahnschrift.ttf"),
-];
+/// Base do hover quando o tema vem do Omarchy: um passo da superfície rumo ao texto.
+const OMARCHY_HOVER_BASE_TINT: f32 = 0.1;
 pub const DISPLAY_FAMILY: &str = "display";
 
 /// Superfícies e textos de um tema (o aparelho e as teclas ficam escuros nos dois).
@@ -52,7 +50,11 @@ pub struct Palette {
 }
 
 pub fn palette(theme: Theme) -> Palette {
-    let mut p = base_palette(theme);
+    with_control(base_palette(theme))
+}
+
+/// Preenche `control`, a borda dos controles, derivada de `line` até dar 3:1 sobre as superfícies.
+pub fn with_control(mut p: Palette) -> Palette {
     p.control = ensure_contrast(
         ensure_contrast(p.line, p.raise, COMPONENT_MIN_CONTRAST),
         p.panel,
@@ -61,10 +63,23 @@ pub fn palette(theme: Theme) -> Palette {
     p
 }
 
+/// O tema é escuro? Nos temas fixos é óbvio; o do Omarchy decide pelo fundo (sem Omarchy, escuro).
+pub fn is_dark(theme: Theme) -> bool {
+    match theme {
+        Theme::Dark => true,
+        Theme::Light => false,
+        Theme::Omarchy => omarchy::current().is_none_or(|t| t.dark),
+    }
+}
+
 fn base_palette(theme: Theme) -> Palette {
     let c = |r, g, b| Color32::from_rgb(r, g, b);
     let device_fg = c(DEVICE_FG[0], DEVICE_FG[1], DEVICE_FG[2]);
     match theme {
+        Theme::Omarchy => match omarchy::current() {
+            Some(t) => t.palette,
+            None => base_palette(Theme::Dark),
+        },
         Theme::Dark => Palette {
             bg: c(7, 8, 16),
             panel: c(13, 15, 28),
@@ -100,7 +115,13 @@ fn base_palette(theme: Theme) -> Palette {
     }
 }
 
+/// A cor de destaque: a escolhida pelo usuário, ou a do tema quando ele vem do Omarchy.
 pub fn accent_color(ui: &UiSettings) -> Color32 {
+    if ui.theme == Theme::Omarchy {
+        if let Some(t) = omarchy::current() {
+            return t.accent;
+        }
+    }
     Color32::from_rgb(ui.accent[0], ui.accent[1], ui.accent[2])
 }
 
@@ -169,15 +190,54 @@ pub fn display_font(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name(DISPLAY_FAMILY.into()))
 }
 
-/// Carrega Segoe UI, Consolas e Bahnschrift do Windows; o que faltar cai nas fontes padrão do egui.
+/// Fontes do Windows: Segoe UI, Consolas e Bahnschrift.
+#[cfg(windows)]
+fn system_fonts() -> Vec<(&'static str, std::path::PathBuf)> {
+    [
+        ("ui", r"C:\Windows\Fonts\segoeui.ttf"),
+        ("mono", r"C:\Windows\Fonts\consola.ttf"),
+        ("display", r"C:\Windows\Fonts\bahnschrift.ttf"),
+    ]
+    .map(|(name, path)| (name, path.into()))
+    .into()
+}
+
+/// Fontes do Linux: o `fc-match` diz qual arquivo o sistema usa para sans-serif e monospace (no
+/// Omarchy, as fontes que o usuário escolheu). Sem fonte de títulos, eles usam a de texto.
+#[cfg(not(windows))]
+fn system_fonts() -> Vec<(&'static str, std::path::PathBuf)> {
+    [("ui", "sans-serif"), ("mono", "monospace")]
+        .into_iter()
+        .filter_map(|(name, family)| Some((name, fc_match_file(family)?)))
+        .collect()
+}
+
+/// Arquivo `.ttf` ou `.otf` da fonte da família; coleções (`.ttc`) e erros dão `None`.
+#[cfg(not(windows))]
+fn fc_match_file(family: &str) -> Option<std::path::PathBuf> {
+    let out = std::process::Command::new("fc-match")
+        .args(["-f", "%{file}", family])
+        .output()
+        .ok()?;
+    let path = std::path::PathBuf::from(String::from_utf8_lossy(&out.stdout).trim());
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    (ext == "ttf" || ext == "otf").then_some(path)
+}
+
+/// Carrega as fontes do sistema; o que faltar cai nas fontes padrão do egui.
 pub fn install_fonts(ctx: &Context) {
     let mut fonts = FontDefinitions::default();
-    for (name, path) in FONT_FILES {
-        if let Ok(bytes) = std::fs::read(path) {
-            fonts
-                .font_data
-                .insert(name.into(), FontData::from_owned(bytes));
-        }
+    for (name, path) in system_fonts() {
+        // Só entra fonte que o leitor de fontes aceita: uma inválida derrubaria a interface.
+        let Some(bytes) = std::fs::read(path)
+            .ok()
+            .filter(|b| ab_glyph::FontArc::try_from_vec(b.clone()).is_ok())
+        else {
+            continue;
+        };
+        fonts
+            .font_data
+            .insert(name.into(), FontData::from_owned(bytes));
     }
     let has = |n: &str| fonts.font_data.contains_key(n);
     let (ui, mono, display) = (has("ui"), has("mono"), has("display"));
@@ -214,7 +274,8 @@ pub fn install_fonts(ctx: &Context) {
 
 pub fn apply(ctx: &Context, ui: &UiSettings) {
     let (p, accent) = (palette(ui.theme), accent_color(ui));
-    let mut v = if ui.theme == Theme::Dark {
+    let dark = is_dark(ui.theme);
+    let mut v = if dark {
         Visuals::dark()
     } else {
         Visuals::light()
@@ -231,16 +292,16 @@ pub fn apply(ctx: &Context, ui: &UiSettings) {
         offset: vec2(0.0, SHADOW_OFFSET_Y),
         blur: 24.0,
         spread: 0.0,
-        color: Color32::from_black_alpha(if ui.theme == Theme::Dark { 150 } else { 45 }),
+        color: Color32::from_black_alpha(if dark { 150 } else { 45 }),
     };
     v.window_shadow = shadow;
     v.popup_shadow = shadow;
     v.menu_rounding = egui::Rounding::same(radius::CARD);
     let round = egui::Rounding::same(radius::CONTROL);
-    let base = if ui.theme == Theme::Dark {
-        Color32::from_rgb(32, 37, 58)
-    } else {
-        Color32::from_rgb(232, 237, 245)
+    let base = match ui.theme {
+        Theme::Omarchy => mix(p.raise, p.fg, OMARCHY_HOVER_BASE_TINT),
+        _ if dark => Color32::from_rgb(32, 37, 58),
+        _ => Color32::from_rgb(232, 237, 245),
     };
     let hover_fill = mix(base, accent, HOVER_TINT);
     for (w, fill) in [

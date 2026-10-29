@@ -6,6 +6,7 @@ mod history;
 mod inspector;
 mod library;
 mod library_panel;
+pub(crate) mod omarchy;
 mod panes;
 mod picker;
 mod settings;
@@ -344,6 +345,10 @@ impl eframe::App for App {
         let g: &mut runtime::Shared = &mut guard;
         self.autosave(&g.cfg);
         ctx.request_repaint_after(REPAINT_EVERY);
+        // O Omarchy trocou de tema: força reaplicar as cores sem esperar o usuário mexer em nada.
+        if omarchy::refresh() {
+            self.applied_ui = None;
+        }
         if self.applied_ui.as_ref() != Some(&g.cfg.ui) {
             theme::apply(ctx, &g.cfg.ui);
             strings::set_language(g.cfg.ui.language);

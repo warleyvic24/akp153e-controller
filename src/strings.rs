@@ -225,6 +225,11 @@ const EN: &[(&str, &str)] = &[
     ("Pausa (ms)", "Pause (ms)"),
     ("Editar", "Edit"),
     ("Iniciar com o sistema", "Start with the system"),
+    ("Omarchy", "Omarchy"),
+    (
+        "A cor de destaque segue o tema do Omarchy",
+        "The accent color follows the Omarchy theme",
+    ),
     ("Atalho: {}", "Shortcut: {}"),
     ("Abre: {}", "Opens: {}"),
     ("Web: {} {}", "Web: {} {}"),

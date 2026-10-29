@@ -199,6 +199,8 @@ pub enum Theme {
     #[default]
     Dark,
     Light,
+    /// Segue o tema ativo do Omarchy (cores, destaque e modo); sem Omarchy, equivale ao escuro.
+    Omarchy,
 }
 
 /// Idioma da interface.

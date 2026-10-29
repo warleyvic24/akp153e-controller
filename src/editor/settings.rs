@@ -1,6 +1,7 @@
 //! Janela de Preferências: tema, destaque, início com o Windows, brilho do aparelho e diagnóstico.
 use super::{widgets, App};
 use crate::config::schema::{AppConfig, Language, Theme};
+use crate::editor::omarchy;
 use crate::editor::theme::{self, Palette};
 use crate::editor::tokens::{text, TARGET_MIN};
 use crate::platform::shell;
@@ -14,12 +15,17 @@ const BRIGHTNESS_MIN: u8 = 5;
 const BRIGHTNESS_MAX: u8 = crate::usb::MAX_BRIGHTNESS;
 const SLIDER_VALUE_RESERVED: f32 = 72.0;
 
-/// Abre a pasta onde ficam config e logs no Explorer.
+/// Abre a pasta onde ficam config e logs no gerenciador de arquivos (Explorer ou `xdg-open`).
 pub(crate) fn open_log_folder() {
+    let opener = if cfg!(windows) {
+        "explorer"
+    } else {
+        "xdg-open"
+    };
     let dir = AppConfig::path().and_then(|p| p.parent().map(std::path::Path::to_path_buf));
     match dir {
         Some(dir) => {
-            if let Err(e) = std::process::Command::new("explorer").arg(&dir).spawn() {
+            if let Err(e) = std::process::Command::new(opener).arg(&dir).spawn() {
                 log::warn!("abrir pasta de logs: {e}");
             }
         }
@@ -64,8 +70,16 @@ impl App {
         let accent = theme::accent_color(&g.cfg.ui);
         widgets::section(ui, "Tema", pal);
         ui.horizontal(|ui| {
-            for (value, name) in [(Theme::Dark, "Escuro"), (Theme::Light, "Claro")] {
+            for (value, name) in [
+                (Theme::Dark, "Escuro"),
+                (Theme::Light, "Claro"),
+                (Theme::Omarchy, "Omarchy"),
+            ] {
                 let on = g.cfg.ui.theme == value;
+                // A opção só aparece onde há um tema do Omarchy (ou se já estiver escolhida).
+                if value == Theme::Omarchy && !on && omarchy::current().is_none() {
+                    continue;
+                }
                 if widgets::pill(ui, name, on, accent, pal).clicked() && !on {
                     g.cfg.ui.theme = value;
                     self.dirty = true;
@@ -73,6 +87,13 @@ impl App {
             }
         });
         widgets::section(ui, "Cor de destaque", pal);
+        if g.cfg.ui.theme == Theme::Omarchy && omarchy::current().is_some() {
+            ui.label(widgets::hint(
+                t("A cor de destaque segue o tema do Omarchy"),
+                pal,
+            ));
+            return;
+        }
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = SWATCH_GAP;
             if ui.color_edit_button_srgb(&mut g.cfg.ui.accent).changed() {
@@ -111,7 +132,7 @@ impl App {
     fn startup_section(&mut self, ui: &mut egui::Ui, pal: &Palette) {
         widgets::section(ui, "Inicialização", pal);
         let before = self.autostart;
-        ui.checkbox(&mut self.autostart, t("Iniciar com o Windows"));
+        ui.checkbox(&mut self.autostart, t(shell::AUTOSTART_LABEL));
         if self.autostart != before {
             let on = self.autostart;
             // O registro pode demorar: fora da thread da interface, como faz a bandeja.

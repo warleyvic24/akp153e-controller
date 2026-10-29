@@ -16,6 +16,7 @@ pub(crate) mod audio;
 pub(crate) mod audio;
 
 mod audio_model;
+pub(crate) mod omarchy;
 pub(crate) mod shell;
 
 /// No Windows, impede que um programa de console abra uma janela própria (o serviço não tem
