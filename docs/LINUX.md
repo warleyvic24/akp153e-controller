@@ -52,6 +52,10 @@ sudo pacman -S --needed base-devel cargo gtk3 libayatana-appindicator libxkbcomm
 cd packaging/arch && makepkg -si      # compila, instala o binário, a regra udev e o atalho
 ```
 
+Para atualizar depois de mudar o código, `packaging/arch/atualizar.sh` pede a senha do sudo uma vez,
+no começo, e sozinho compila, instala e reinicia o serviço e o editor (o `makepkg -si` pede a senha
+só depois de minutos de compilação, e o sudo desiste se ninguém responder).
+
 Depois reconecte o aparelho (a regra udev vale para o usuário logado).
 
 - **Iniciar com a sessão:** no Omarchy basta Preferências > "Iniciar com o sistema" (ou
