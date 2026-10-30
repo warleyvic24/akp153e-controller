@@ -55,6 +55,7 @@ espaçamento artificial entre letras (só o logotipo "AKP153E" o tem).
 | `hint` | placeholder com cor própria; sem isso o tema o pinta como valor digitado |
 | `paint_key` | tecla do aparelho; selecionada = brilho do destaque + traço de 2,5 px. Vazia em repouso: só o "+" apagado (≥ 3:1 sobre o preto, teste em `theme.rs`); cantos e "+" no destaque ao passar o mouse ou selecionar |
 | botão "Testar" | única ação sólida da tela (cor de destaque + texto preto ou branco por contraste). Sem o que testar fica neutro (fundo de campo, borda, texto apagado), não um destaque esmaecido |
+| ícone de app ou site na tecla | se o contraste médio com o fundo da tecla ficar abaixo de 2:1 (o logo escuro do GitHub na tecla preta), ganha uma placa arredondada clara ou escura (`renderer::plate_for`) |
 | linha da biblioteca | sem alça de arrastar em repouso; ao passar o mouse, o selo "+ Tecla N" e o cursor de arrastar |
 
 ## Retorno, orientação e preferências
@@ -73,6 +74,13 @@ espaçamento artificial entre letras (só o logotipo "AKP153E" o tem).
   exemplo numa faixa de um gerenciador lado a lado, a biblioteca sai e o botão "Ações" da barra a abre no
   lugar do inspetor (escolhida a ação, o inspetor volta). O inspetor encolhe até 260 pt; abaixo de 860 pt a
   barra esconde o logotipo e o rótulo "Perfil"; dicas de atalho que não cabem ficam de fora.
+
+## Ícones de sites
+
+Tecla "Abrir site" com o globo padrão troca o globo pelo ícone do site (`editor/favicon.rs`) quando a URL
+fica parada por 1,5 s: lê o `<head>` do próprio site (nenhum serviço de terceiros), prefere o maior ícone
+declarado ou SVG, depois `/apple-touch-icon.png` e `/favicon.ico`. Um ícone escolhido pelo usuário não é
+trocado.
 
 ## Texto
 

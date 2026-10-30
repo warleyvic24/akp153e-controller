@@ -120,6 +120,7 @@ fn app_list(
 impl App {
     pub(crate) fn app_picker(&mut self, ctx: &egui::Context, g: &mut runtime::Shared) {
         self.picker.poll();
+        self.favicons.poll(&g.cfg, &self.picker.jobs.tx);
         self.apply_finished_icons(g);
         if !self.picker.open {
             return;

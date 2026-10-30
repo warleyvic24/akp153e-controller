@@ -14,11 +14,13 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 enigo = "0.6"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking"] }
 directories = "6"
 log = "0.4"
 env_logger = "0.11"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "ico"] }
+# Ícones em SVG (temas de ícones do Linux e favicons de sites) viram PNG para a tecla.
+resvg = "0.45"
 ab_glyph = "0.2"
 tray-icon = "0.26"
 rfd = "0.17"

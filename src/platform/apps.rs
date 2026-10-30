@@ -1,10 +1,8 @@
 //! Detecção de programas instalados (atalhos do Menu Iniciar) e extração do ícone do executável.
 //! Usa o PowerShell do Windows; caminhos vão por variável de ambiente, nunca dentro do script.
-use crate::config::schema::AppConfig;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use super::{icon_dir, icon_file_name};
 use std::os::windows::process::CommandExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
@@ -170,17 +168,6 @@ pub fn parse_apps(json: &str) -> Vec<InstalledApp> {
         })
         .filter(|a| !a.name.is_empty() && !a.target.is_empty())
         .collect()
-}
-
-fn icon_dir() -> Option<PathBuf> {
-    AppConfig::path().and_then(|p| p.parent().map(|d| d.join("icons")))
-}
-
-/// Nome do PNG do ícone: derivado do caminho do programa.
-pub fn icon_file_name(target: &str) -> String {
-    let mut hasher = DefaultHasher::new();
-    target.to_lowercase().hash(&mut hasher);
-    format!("{:016x}.png", hasher.finish())
 }
 
 /// Extrai o ícone do executável para um PNG ao lado da configuração e devolve o caminho.

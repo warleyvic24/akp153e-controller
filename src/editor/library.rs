@@ -65,15 +65,16 @@ fn lock_screen() -> ButtonAction {
     };
 }
 
-/// Pelo Explorer, não pelo `cmd /C start`: o `cmd` trata `&` da URL como separador de comandos.
-/// No Linux, pelo `xdg-open`, que abre no navegador padrão.
+/// Programa que abre uma URL no navegador padrão. No Windows, o Explorer, não o `cmd /C start`:
+/// o `cmd` trata `&` da URL como separador de comandos. No Linux, o `xdg-open`.
+#[cfg(windows)]
+pub(crate) const URL_OPENER: &str = "explorer";
+#[cfg(not(windows))]
+pub(crate) const URL_OPENER: &str = "xdg-open";
+
 fn open_url(url: &str) -> ButtonAction {
-    #[cfg(windows)]
-    let opener = "explorer";
-    #[cfg(not(windows))]
-    let opener = "xdg-open";
     ButtonAction::LaunchApp {
-        path: opener.into(),
+        path: URL_OPENER.into(),
         args: vec![url.into()],
     }
 }

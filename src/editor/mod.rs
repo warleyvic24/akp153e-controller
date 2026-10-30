@@ -2,6 +2,7 @@
 mod action_ui;
 mod bars;
 mod checks;
+mod favicon;
 mod history;
 mod inspector;
 mod layout;
@@ -57,6 +58,8 @@ pub(crate) struct App {
     recording: Option<&'static str>,
     key_tex: KeyTextures,
     picker: AppPicker,
+    /// Busca dos ícones dos sites das teclas "Abrir site".
+    favicons: favicon::Favicons,
     toasts: toast::Toasts,
     settings_open: bool,
     autostart: bool,
@@ -87,6 +90,7 @@ impl App {
             recording: None,
             key_tex: KeyTextures::default(),
             picker: AppPicker::default(),
+            favicons: favicon::Favicons::default(),
             toasts: toast::Toasts::default(),
             settings_open: false,
             autostart: false,

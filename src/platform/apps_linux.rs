@@ -1,5 +1,5 @@
 //! Programas instalados no Linux: lê os atalhos `.desktop` (a mesma lista do menu de aplicativos).
-//! Ícones não são extraídos; a tecla mostra o nome do app.
+//! O ícone vem do `Icon=` do atalho, procurado no tema de ícones (`icon_theme`).
 use std::path::PathBuf;
 
 /// Programa detectado. `target` é o comando do atalho (programa e argumentos).
@@ -9,6 +9,8 @@ pub struct InstalledApp {
     pub target: String,
     /// Só existe no Windows (apps da Loja); aqui é sempre `false`.
     pub uwp: bool,
+    /// `Icon=` do atalho: nome no tema de ícones ou caminho absoluto.
+    pub icon: Option<String>,
 }
 
 impl InstalledApp {
@@ -17,6 +19,7 @@ impl InstalledApp {
             name: name.to_string(),
             target: path.to_string(),
             uwp: false,
+            icon: None,
         }
     }
 
@@ -87,7 +90,7 @@ fn desktop_dirs() -> Vec<PathBuf> {
 /// Lê um arquivo `.desktop`. `None` para o que não é um programa visível no menu.
 pub fn parse_desktop(text: &str) -> Option<InstalledApp> {
     let mut in_entry = false;
-    let (mut name, mut exec) = (None, None);
+    let (mut name, mut exec, mut icon) = (None, None, None);
     let (mut is_app, mut hidden) = (false, false);
     for line in text.lines().map(str::trim) {
         if line.starts_with('[') {
@@ -104,13 +107,16 @@ pub fn parse_desktop(text: &str) -> Option<InstalledApp> {
             "Type" => is_app = value.trim() == "Application",
             "Name" => name = Some(value.trim().to_string()),
             "Exec" => exec = Some(strip_field_codes(&unescape_value(value.trim()))),
+            "Icon" => icon = Some(value.trim().to_string()).filter(|i| !i.is_empty()),
             "NoDisplay" | "Hidden" => hidden |= value.trim() == "true",
             _ => {}
         }
     }
     let (name, exec) = (name?, exec?);
-    (is_app && !hidden && !name.is_empty() && !exec.is_empty())
-        .then(|| InstalledApp::exe(&name, &exec))
+    (is_app && !hidden && !name.is_empty() && !exec.is_empty()).then(|| InstalledApp {
+        icon,
+        ..InstalledApp::exe(&name, &exec)
+    })
 }
 
 /// Desfaz os escapes de valor do formato `.desktop` (`\s`, `\n`, `\t`, `\r`, `\\`). É a primeira
@@ -196,9 +202,33 @@ fn split_words(command: &str) -> Vec<String> {
     words
 }
 
-/// No Linux os ícones dos apps não são extraídos.
-pub fn extract_icon(_app: &InstalledApp) -> Option<String> {
-    None
+/// Acha o ícone do app no tema de ícones, guarda como PNG ao lado da configuração e devolve o
+/// caminho. Sem `Icon=` (programa escolhido à mão, app do mixer), tenta o nome do programa, que
+/// costuma ser o nome do ícone (`firefox`, `spotify`).
+pub fn extract_icon(app: &InstalledApp) -> Option<String> {
+    let name = app.icon.clone().or_else(|| {
+        let (program, _) = app.launch();
+        let file = std::path::Path::new(&program)
+            .file_name()?
+            .to_str()?
+            .to_string();
+        Some(file)
+    })?;
+    let file = super::icon_theme::find(&name)?;
+    let cached = super::icon_dir()?.join(super::icon_file_name(&file.display().to_string()));
+    if cached.is_file() {
+        return Some(cached.display().to_string());
+    }
+    let bytes = std::fs::read(&file).ok()?;
+    let saved = super::save_icon(&file.display().to_string(), &bytes);
+    if saved.is_none() {
+        log::warn!(
+            "ícone de {} não pôde ser lido: {}",
+            app.name,
+            file.display()
+        );
+    }
+    saved
 }
 
 #[cfg(test)]
@@ -211,6 +241,28 @@ mod tests {
     fn reads_name_and_command_without_field_codes() {
         let app = parse_desktop(FIREFOX).unwrap();
         assert_eq!(app, InstalledApp::exe("Firefox", "firefox"));
+    }
+
+    /// Usa o tema de ícones de verdade (a pasta de ícones dos testes é temporária):
+    /// `cargo test extracts_real_icons -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn extracts_real_icons() {
+        for app in scan().iter().filter(|a| a.icon.is_some()).take(40) {
+            println!("{} -> {:?}", app.name, extract_icon(app));
+        }
+        let by_program = InstalledApp::exe("btop", "btop");
+        println!("btop (só o programa) -> {:?}", extract_icon(&by_program));
+    }
+
+    #[test]
+    fn reads_the_icon_name() {
+        let text =
+            "[Desktop Entry]\nType=Application\nName=Chrome\nExec=chrome\nIcon=google-chrome\n";
+        assert_eq!(
+            parse_desktop(text).unwrap().icon.as_deref(),
+            Some("google-chrome")
+        );
     }
 
     #[test]

@@ -16,7 +16,84 @@ pub(crate) mod audio;
 pub(crate) mod audio;
 
 mod audio_model;
+#[cfg(not(windows))]
+mod icon_theme;
 pub(crate) mod omarchy;
+
+/// Lado do PNG guardado para ícones de apps e sites (a tecla tem 100 px; sobra para o mixer).
+pub(crate) const ICON_PX: u32 = 256;
+
+/// Pasta dos ícones extraídos, ao lado da configuração.
+pub(crate) fn icon_dir() -> Option<std::path::PathBuf> {
+    crate::config::schema::AppConfig::path().and_then(|p| p.parent().map(|d| d.join("icons")))
+}
+
+/// Nome do PNG de um ícone: derivado da origem (caminho do programa, nome do ícone ou site).
+pub fn icon_file_name(source: &str) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    source.to_lowercase().hash(&mut hasher);
+    format!("{:016x}.png", hasher.finish())
+}
+
+/// Converte um ícone (PNG, ICO, JPEG ou SVG) num PNG quadrado de `ICON_PX`, centralizado e com
+/// fundo transparente. `None` se os bytes não forem uma imagem que dê para ler.
+pub(crate) fn icon_image(bytes: &[u8]) -> Option<image::RgbaImage> {
+    let picture = if looks_like_svg(bytes) {
+        svg_image(bytes)?
+    } else {
+        image::load_from_memory(bytes).ok()?.to_rgba8()
+    };
+    let fitted = image::DynamicImage::ImageRgba8(picture)
+        .resize(ICON_PX, ICON_PX, image::imageops::FilterType::Lanczos3)
+        .to_rgba8();
+    let mut square = image::RgbaImage::new(ICON_PX, ICON_PX);
+    let x = i64::from((ICON_PX - fitted.width()) / 2);
+    let y = i64::from((ICON_PX - fitted.height()) / 2);
+    image::imageops::overlay(&mut square, &fitted, x, y);
+    Some(square)
+}
+
+fn looks_like_svg(bytes: &[u8]) -> bool {
+    let head = String::from_utf8_lossy(&bytes[..bytes.len().min(512)]).to_lowercase();
+    head.contains("<svg")
+}
+
+/// Desenha o SVG em `ICON_PX`, mantendo a proporção.
+fn svg_image(bytes: &[u8]) -> Option<image::RgbaImage> {
+    let tree = resvg::usvg::Tree::from_data(bytes, &resvg::usvg::Options::default()).ok()?;
+    let size = tree.size();
+    let scale = ICON_PX as f32 / size.width().max(size.height());
+    let (w, h) = (
+        (size.width() * scale).ceil().max(1.0) as u32,
+        (size.height() * scale).ceil().max(1.0) as u32,
+    );
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(w, h)?;
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::from_scale(scale, scale),
+        &mut pixmap.as_mut(),
+    );
+    // O tiny-skia guarda cores pré-multiplicadas; o PNG quer as normais.
+    let pixels = pixmap
+        .pixels()
+        .iter()
+        .flat_map(|p| {
+            let c = p.demultiply();
+            [c.red(), c.green(), c.blue(), c.alpha()]
+        })
+        .collect();
+    image::RgbaImage::from_raw(w, h, pixels)
+}
+
+/// Guarda o ícone de `source` como PNG na pasta de ícones e devolve o caminho.
+pub(crate) fn save_icon(source: &str, bytes: &[u8]) -> Option<String> {
+    let dir = icon_dir()?;
+    std::fs::create_dir_all(&dir).ok()?;
+    let out = dir.join(icon_file_name(source));
+    icon_image(bytes)?.save(&out).ok()?;
+    Some(out.display().to_string())
+}
 pub(crate) mod shell;
 
 /// No Windows, impede que um programa de console abra uma janela própria (o serviço não tem

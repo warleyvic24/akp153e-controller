@@ -281,6 +281,14 @@ pub fn render_rgba(button: &ButtonConfig, width: u32, height: u32) -> RgbaImage 
                     .to_rgba8();
                 let x = (width.saturating_sub(icon.width()) / 2) as i64;
                 let y = (box_h.saturating_sub(icon.height()) / 2) as i64;
+                if let Some(plate) = plate_for(&icon, bg) {
+                    let pad = (icon.width().max(icon.height()) as f32 * PLATE_PAD) as i64;
+                    let (w, h) = (
+                        icon.width() as i64 + 2 * pad,
+                        icon.height() as i64 + 2 * pad,
+                    );
+                    fill_rounded(&mut img, (x - pad, y - pad, w, h), plate);
+                }
                 imageops::overlay(&mut img, &icon, x, y);
                 has_icon = true;
             }
@@ -291,6 +299,74 @@ pub fn render_rgba(button: &ButtonConfig, width: u32, height: u32) -> RgbaImage 
         draw_text(&mut img, &ap.text, ap.font_size, ap.text_color, has_icon);
     }
     img
+}
+
+/// Contraste mínimo entre o ícone e o fundo da tecla; abaixo disto o ícone ganha uma placa.
+const ICON_MIN_CONTRAST: f32 = 2.0;
+/// Folga da placa em volta do ícone, em fração do lado do ícone.
+const PLATE_PAD: f32 = 0.1;
+/// Raio dos cantos da placa, em fração do lado dela.
+const PLATE_RADIUS: f32 = 0.22;
+/// Pixels com menos opacidade que isto não contam para a cor do ícone.
+const OPAQUE_ALPHA: u8 = 128;
+
+/// Luminância relativa (WCAG) de uma cor sRGB.
+fn luminance(r: u8, g: u8, b: u8) -> f32 {
+    let channel = |c: u8| {
+        let c = c as f32 / 255.0;
+        if c <= 0.039_28 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+}
+
+fn contrast(a: f32, b: f32) -> f32 {
+    (a.max(b) + 0.05) / (a.min(b) + 0.05)
+}
+
+/// Um ícone de app ou site que some no fundo da tecla (o logo escuro do GitHub na tecla preta)
+/// ganha uma placa: clara se o ícone for escuro, escura se for claro. `None` se já se destaca.
+fn plate_for(icon: &RgbaImage, bg: RGBAColor) -> Option<RGBAColor> {
+    let opaque: Vec<f32> = icon
+        .pixels()
+        .filter(|p| p.0[3] >= OPAQUE_ALPHA)
+        .map(|p| luminance(p.0[0], p.0[1], p.0[2]))
+        .collect();
+    if opaque.is_empty() {
+        return None;
+    }
+    let icon_lum = opaque.iter().sum::<f32>() / opaque.len() as f32;
+    if contrast(icon_lum, luminance(bg.r, bg.g, bg.b)) >= ICON_MIN_CONTRAST {
+        return None;
+    }
+    let (white, black) = (contrast(icon_lum, 1.0), contrast(icon_lum, 0.0));
+    let shade = if white >= black { 255 } else { 0 };
+    Some(RGBAColor {
+        r: shade,
+        g: shade,
+        b: shade,
+        a: 255,
+    })
+}
+
+/// Retângulo de cantos arredondados (x, y, largura, altura), cortado nas bordas da imagem.
+fn fill_rounded(img: &mut RgbaImage, (x, y, w, h): (i64, i64, i64, i64), color: RGBAColor) {
+    let r = (w.min(h) as f32 * PLATE_RADIUS).max(1.0);
+    for py in y.max(0)..(y + h).min(img.height() as i64) {
+        for px in x.max(0)..(x + w).min(img.width() as i64) {
+            // Distância até o retângulo encolhido pelo raio: dentro dele, ou a até `r` dele.
+            let dx = (x as f32 + r - (px as f32 + 0.5)).max(px as f32 + 0.5 - (x + w) as f32 + r);
+            let dy = (y as f32 + r - (py as f32 + 0.5)).max(py as f32 + 0.5 - (y + h) as f32 + r);
+            let outside = dx.max(0.0).hypot(dy.max(0.0));
+            let coverage = (r - outside + 0.5).clamp(0.0, 1.0);
+            if coverage > 0.0 {
+                blend(img.get_pixel_mut(px as u32, py as u32), color, coverage);
+            }
+        }
+    }
 }
 
 /// Gera o JPEG enviado ao display: rotação e espelhamento exigidos pelo hardware (rot90 + espelho H/V).
@@ -352,6 +428,52 @@ pub fn encode_frame(img: &RgbaImage) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn solid(r: u8, g: u8, b: u8) -> RgbaImage {
+        RgbaImage::from_pixel(10, 10, Rgba([r, g, b, 255]))
+    }
+
+    const BLACK: RGBAColor = RGBAColor {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 255,
+    };
+
+    #[test]
+    fn a_dark_icon_on_a_black_key_gets_a_light_plate() {
+        let github_dark = solid(0x24, 0x29, 0x2f);
+        assert_eq!(plate_for(&github_dark, BLACK).map(|c| c.r), Some(255));
+        let youtube_red = solid(0xff, 0x00, 0x33);
+        assert!(plate_for(&youtube_red, BLACK).is_none());
+        let white_bg = RGBAColor {
+            r: 255,
+            g: 255,
+            b: 255,
+            a: 255,
+        };
+        assert_eq!(
+            plate_for(&solid(250, 250, 250), white_bg).map(|c| c.r),
+            Some(0)
+        );
+        let invisible = RgbaImage::from_pixel(4, 4, Rgba([0, 0, 0, 0]));
+        assert!(plate_for(&invisible, BLACK).is_none());
+    }
+
+    #[test]
+    fn the_plate_is_rounded_and_clipped_to_the_image() {
+        let mut img = solid(0, 0, 0);
+        let white = RGBAColor {
+            r: 255,
+            g: 255,
+            b: 255,
+            a: 255,
+        };
+        fill_rounded(&mut img, (-2, 1, 10, 8), white);
+        assert_eq!(img.get_pixel(4, 4).0[0], 255, "o meio fica cheio");
+        assert_eq!(img.get_pixel(0, 0).0[0], 0, "fora da placa");
+        assert!(img.get_pixel(7, 1).0[0] < 255, "o canto é arredondado");
+    }
 
     #[test]
     fn frame_is_a_valid_jpeg_under_64k() {

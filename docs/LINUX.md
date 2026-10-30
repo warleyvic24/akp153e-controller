@@ -81,7 +81,9 @@ Depois reconecte o aparelho (a regra udev vale para o usuário logado).
 
 ## Diferenças em relação ao Windows
 
-- Os ícones dos apps não são extraídos (o mixer mostra o nome).
+- Os ícones dos apps vêm do `Icon=` do atalho `.desktop`, procurado no tema de ícones (`hicolor` primeiro,
+  PNG grande ou SVG; `platform/icon_theme.rs`). Sem `Icon=` (programa escolhido à mão, app do mixer), o
+  nome do programa serve de nome do ícone.
 - "Escolher app instalado" lê os atalhos `.desktop`.
 - As ações Calculadora, Bloco de notas, Explorador e Área de trabalho da biblioteca não existem;
   para programas, use "Aplicativo...".
