@@ -9,8 +9,10 @@ cd "$(dirname "$0")"
 echo "Senha do sudo (só agora; o resto roda sozinho):"
 sudo -v
 
-# Renova o sudo a cada minuto enquanto o script roda.
-(while sudo -n -v 2>/dev/null; do sleep 60; done) &
+# Renova o sudo enquanto este script existir. Pedaços curtos: se o script cair de qualquer jeito, o
+# laço percebe e sai sozinho, e o `sleep` que estiver rodando no fim acaba em até 10 s.
+main=$$
+(while kill -0 "$main" 2>/dev/null && sudo -n -v 2>/dev/null; do sleep 10; done) &
 keep_alive=$!
 trap 'kill "$keep_alive" 2>/dev/null || true' EXIT INT TERM
 
