@@ -24,6 +24,9 @@ const KEY_HOVER_STROKE: f32 = 1.5;
 const PROBLEM_BADGE_RADIUS: f32 = 8.0;
 const PROBLEM_BADGE_INSET: f32 = 4.0;
 const EMPTY_RIM_ALPHA: u8 = 14;
+const EMPTY_CORNERS_HOT: f32 = 0.9;
+/// Brilho do "+" de uma tecla vazia em repouso (contraste ainda acima de 3:1 sobre o preto).
+pub(crate) const EMPTY_PLUS_IDLE: f32 = 0.55;
 const EMPTY_HINT_OFFSET: f32 = 20.0;
 const SHINE_ALPHA: u8 = 5; // pré-multiplicado: soma poucos níveis de cor (from_white_alpha clareia demais)
 const MIN_LABEL_WIDTH: f32 = 60.0;
@@ -164,13 +167,15 @@ fn paint_empty_key(
     p.rect_filled(rect, round, pal.keyoff);
     let rim = Stroke::new(1.0_f32, Color32::from_white_alpha(EMPTY_RIM_ALPHA));
     p.rect_stroke(rect, round, rim);
-    let corners = if hovered { 0.9 } else { 0.28 };
-    hud_corners(p, rect, accent.gamma_multiply(corners));
-    // O "+" é a única pista de que a tecla aceita uma ação: precisa de contraste, não de brilho.
+    // Com 15 teclas vazias, cantos e "+" acesos em todas viram ruído: em repouso só o "+",
+    // mais baixo (ainda acima de 3:1 sobre o preto); os cantos aparecem ao passar o mouse.
+    if hovered || selected {
+        hud_corners(p, rect, accent.gamma_multiply(EMPTY_CORNERS_HOT));
+    }
     let plus = if hovered || selected {
         accent
     } else {
-        pal.device_fg
+        pal.device_fg.gamma_multiply(EMPTY_PLUS_IDLE)
     };
     let plus_font = FontId::monospace(text::DISPLAY);
     p.text(rect.center(), Align2::CENTER_CENTER, "+", plus_font, plus);

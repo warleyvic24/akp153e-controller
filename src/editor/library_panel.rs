@@ -93,10 +93,9 @@ fn library_row(
         );
         painter.rect_filled(chip, Rounding::same(6.0), accent.gamma_multiply(APPLY_TINT));
         painter.galley(chip.min + APPLY_PAD, galley, ink);
-    } else {
-        let at = pos2(rect.right() - space::SM - BADGE_ICON / 2.0, rect.center().y);
-        widgets::paint_icon(painter, at, BADGE_ICON, "grip", pal.muted);
     }
+    // Sem alça em repouso: repetida em 25 linhas ela só faz ruído. Ao passar o mouse o cursor
+    // de arrastar e o selo "+ Tecla N" já dizem o que a linha aceita.
     resp.on_hover_cursor(egui::CursorIcon::Grab)
 }
 

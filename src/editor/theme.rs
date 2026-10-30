@@ -473,6 +473,16 @@ mod tests {
                 ratio >= TEXT_MIN_CONTRAST,
                 "símbolos na tecla ({t:?}): {ratio:.2}:1"
             );
+            // O "+" apagado de uma tecla vazia em repouso (sobre o preto, o premultiplicado é a cor).
+            let idle = p
+                .device_fg
+                .gamma_multiply(crate::editor::widgets::EMPTY_PLUS_IDLE);
+            let idle = Color32::from_rgb(idle.r(), idle.g(), idle.b());
+            let ratio = contrast(idle, p.keyoff);
+            assert!(
+                ratio >= COMPONENT_MIN_CONTRAST,
+                "\"+\" em repouso ({t:?}): {ratio:.2}:1"
+            );
         }
     }
 

@@ -160,7 +160,7 @@ fn empty_guide(ui: &mut Ui, pal: &Palette, accent: Color32, width: f32) {
                     );
                     let steps = [
                         "Clique numa tecla do aparelho",
-                        "Escolha uma ação na biblioteca à esquerda, ou arraste-a até a tecla",
+                        "Escolha uma ação em Ações, ou arraste-a até a tecla",
                         "Ajuste texto, cor e ícone no painel à direita",
                     ];
                     for (n, step) in steps.iter().enumerate() {

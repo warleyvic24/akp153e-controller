@@ -53,8 +53,9 @@ espaçamento artificial entre letras (só o logotipo "AKP153E" o tem).
 | `swatch` | amostra de cor ≥ 24 px, anel afastado quando escolhida |
 | `section` | rótulo de seção, fonte display 12 px em caixa alta |
 | `hint` | placeholder com cor própria; sem isso o tema o pinta como valor digitado |
-| `paint_key` | tecla do aparelho; selecionada = brilho do destaque + traço de 2,5 px |
-| botão "Testar" | única ação sólida da tela (cor de destaque + texto preto ou branco por contraste) |
+| `paint_key` | tecla do aparelho; selecionada = brilho do destaque + traço de 2,5 px. Vazia em repouso: só o "+" apagado (≥ 3:1 sobre o preto, teste em `theme.rs`); cantos e "+" no destaque ao passar o mouse ou selecionar |
+| botão "Testar" | única ação sólida da tela (cor de destaque + texto preto ou branco por contraste). Sem o que testar fica neutro (fundo de campo, borda, texto apagado), não um destaque esmaecido |
+| linha da biblioteca | sem alça de arrastar em repouso; ao passar o mouse, o selo "+ Tecla N" e o cursor de arrastar |
 
 ## Retorno, orientação e preferências
 
@@ -72,6 +73,13 @@ espaçamento artificial entre letras (só o logotipo "AKP153E" o tem).
   exemplo numa faixa de um gerenciador lado a lado, a biblioteca sai e o botão "Ações" da barra a abre no
   lugar do inspetor (escolhida a ação, o inspetor volta). O inspetor encolhe até 260 pt; abaixo de 860 pt a
   barra esconde o logotipo e o rótulo "Perfil"; dicas de atalho que não cabem ficam de fora.
+
+## Texto
+
+- "Tecla", nunca "botão", para as 15 teclas do aparelho ("botão" é controle da interface).
+- Dicas apontam para o que está na tela pelo nome visível ("Ações", "Aparência"), não por posição
+  ("à esquerda") nem por jargão ("bandeja"): no modo compacto a posição muda.
+- Ausência ("Sem nome") vai apagada, como placeholder, não com o peso de um conteúdo.
 
 ## Idiomas (`src/strings.rs`)
 

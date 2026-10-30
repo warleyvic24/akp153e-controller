@@ -23,16 +23,16 @@ pub(crate) const TAB_ACTION: usize = 0;
 const TAB_LOOK: usize = 1;
 const TEST_HEIGHT: f32 = 34.0;
 
-/// Título do inspetor: o rótulo; sem ele, o nome do programa que a tecla abre.
-fn key_title(b: &ButtonConfig) -> String {
+/// Título do inspetor: o rótulo; sem ele, o nome do programa que a tecla abre. `None` quando a
+/// tecla não tem nenhum dos dois (o cabeçalho mostra um marcador apagado, não um nome).
+fn key_title(b: &ButtonConfig) -> Option<String> {
     if !b.appearance.text.is_empty() {
-        return b.appearance.text.clone();
+        return Some(b.appearance.text.clone());
     }
     match &b.action {
         ButtonAction::LaunchApp { path, .. } => summary::program_name(path),
         _ => None,
     }
-    .unwrap_or_else(|| t("Sem nome").to_string())
 }
 
 /// Linha da lista de apps: inicial colorida, nome e o caminho ao passar o mouse.
@@ -245,12 +245,19 @@ impl App {
                 if widgets::icon_button(ui, "copy", "Copiar (Ctrl+C)", true, pal).clicked() {
                     self.copy_key(ui.ctx(), g, sel);
                 }
+                // Sem o que testar, o botão perde o preenchimento: um primário apagado ainda
+                // parece clicável. Neutro com borda deixa claro que está desligado.
+                let (fill, ink, stroke) = if untestable.is_none() {
+                    (accent, theme::readable_on(accent), Stroke::NONE)
+                } else {
+                    (pal.field, pal.muted, Stroke::new(1.0_f32, pal.control))
+                };
                 let label = RichText::new(format!("▶  {}", t("Testar")))
                     .strong()
-                    .color(theme::readable_on(accent));
+                    .color(ink);
                 let test = egui::Button::new(label)
-                    .fill(accent)
-                    .stroke(Stroke::NONE)
+                    .fill(fill)
+                    .stroke(stroke)
                     .min_size(vec2(ui.available_width(), TEST_HEIGHT));
                 let test = ui.add_enabled(untestable.is_none(), test);
                 let test = match untestable {
@@ -417,13 +424,17 @@ impl App {
             let view = key_view(b, sel + 1, tex, false);
             widgets::paint_key(ui.painter(), rect, &view, false, false, pal, accent);
             ui.vertical(|ui| {
-                let number = RichText::new(tf("BOTÃO {}", &[&(sel + 1)]))
+                let number = RichText::new(tf("TECLA {}", &[&(sel + 1)]))
                     .monospace()
                     .size(tokens::text::CAPTION)
                     .color(pal.muted);
                 ui.label(number);
                 let title = theme::display_font(tokens::text::TITLE);
-                ui.label(RichText::new(key_title(b)).font(title));
+                // Sem nome é ausência, não conteúdo: apagado, para não competir com o que importa.
+                match key_title(b) {
+                    Some(name) => ui.label(RichText::new(name).font(title)),
+                    None => ui.label(RichText::new(t("Sem nome")).font(title).color(pal.muted)),
+                };
                 if let Some(summary) = summary::action_summary(&b.action, targets) {
                     ui.label(
                         RichText::new(summary)
@@ -434,7 +445,7 @@ impl App {
             });
         });
         if is_blank(b) {
-            let hint = t("Escolha uma ação na bandeja ou comece pelo rótulo.");
+            let hint = t("Escolha uma ação em Ações ou dê um nome em Aparência.");
             let hint = RichText::new(hint)
                 .size(tokens::text::CAPTION)
                 .color(pal.muted);
