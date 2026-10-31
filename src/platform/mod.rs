@@ -19,6 +19,7 @@ mod audio_model;
 pub(crate) mod focus;
 #[cfg(not(windows))]
 mod icon_theme;
+pub(crate) mod live;
 pub(crate) mod omarchy;
 
 /// Lado do PNG guardado para ícones de apps e sites (a tecla tem 100 px; sobra para o mixer).

@@ -41,6 +41,22 @@ pub fn set_session_mute(ids: &[u32], muted: bool) -> AudioResult<()> {
     Ok(())
 }
 
+/// Volume geral (0 a 1) e mudo da saída padrão.
+pub fn master_volume() -> Option<(f32, bool)> {
+    let volume = pactl(&["get-sink-volume", "@DEFAULT_SINK@"]).ok()?;
+    let muted = pactl(&["get-sink-mute", "@DEFAULT_SINK@"]).ok()?;
+    Some((
+        f32::from(first_percent(&volume)?) / 100.0,
+        muted.contains("yes"),
+    ))
+}
+
+/// Primeira porcentagem do texto do `pactl` ("front-left: 26214 /  40% / ...") -> 40.
+fn first_percent(text: &str) -> Option<u16> {
+    text.split_whitespace()
+        .find_map(|w| w.strip_suffix('%')?.parse().ok())
+}
+
 /// Um `pactl` travado (servidor de som parado) não pode prender o mixer.
 const PACTL_TIMEOUT: Duration = Duration::from_secs(3);
 const WAIT_STEP: Duration = Duration::from_millis(20);
@@ -154,6 +170,15 @@ mod tests {
         assert!(!sessions[0].muted && sessions[0].active);
         assert_eq!(sessions[1].exe_path.as_deref(), Some("Spotify"));
         assert!(sessions[1].muted && !sessions[1].active);
+    }
+
+    #[test]
+    fn the_master_volume_percent_is_read() {
+        let out =
+            "Volume: front-left: 26214 /  40% / -23.88 dB,   front-right: 26214 /  40% / -23.88 dB";
+        assert_eq!(first_percent(out), Some(40));
+        assert_eq!(first_percent("Volume: 150% / 3 dB"), Some(150));
+        assert_eq!(first_percent("lixo"), None);
     }
 
     #[test]

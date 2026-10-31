@@ -2,6 +2,7 @@
 //! Cada chamada consulta o sistema de novo: as sessões mudam quando um app abre, fecha ou para de tocar.
 use windows::core::{Interface, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, BOOL, MAX_PATH, S_OK};
+use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::Media::Audio::{
     eConsole, eRender, AudioSessionStateActive, AudioSessionStateExpired, IAudioSessionControl2,
     IAudioSessionEnumerator, IAudioSessionManager2, IMMDevice, IMMDeviceEnumerator,
@@ -38,6 +39,18 @@ fn default_device() -> AudioResult<IMMDevice> {
         let enumerator: IMMDeviceEnumerator =
             CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
         enumerator.GetDefaultAudioEndpoint(eRender, eConsole)
+    }
+}
+
+/// Volume geral (0 a 1) e mudo do dispositivo de saída padrão.
+pub fn master_volume() -> Option<(f32, bool)> {
+    let device = default_device().ok()?;
+    // SAFETY: interfaces do Core Audio, contadas por referência; só leitura.
+    unsafe {
+        let endpoint: IAudioEndpointVolume = device.Activate(CLSCTX_ALL, None).ok()?;
+        let level = endpoint.GetMasterVolumeLevelScalar().ok()?;
+        let muted = endpoint.GetMute().ok()?.as_bool();
+        Some((level, muted))
     }
 }
 
