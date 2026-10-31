@@ -232,4 +232,49 @@ mod tests {
                 .unwrap();
         }
     }
+
+    /// Como o aparelho deve ficar com uma config: as 15 teclas e a tela lateral em "nome da página",
+    /// e ao lado a tecla 1 apertada. `AKP_PREVIEW_CONFIG=config.json AKP_PREVIEW_OUT=x.png
+    /// cargo test device_preview -- --ignored`.
+    #[test]
+    #[ignore = "gera uma imagem para mostrar"]
+    fn device_preview() {
+        use crate::config::schema::AppConfig;
+        use crate::graphics::renderer::{render_pressed_rgba, render_rgba};
+        let text = std::fs::read_to_string(std::env::var("AKP_PREVIEW_CONFIG").unwrap()).unwrap();
+        let cfg = serde_json::from_str::<AppConfig>(&text)
+            .unwrap()
+            .sanitized();
+        let (key, gap, pad) = (100u32, 14u32, 24u32);
+        let (w, h) = (
+            2 * pad + 5 * (key + gap) + WIDTH,
+            2 * pad + 3 * key + 2 * gap,
+        );
+        let mut img = RgbaImage::from_pixel(w + key + 3 * pad, h, Rgba([28, 30, 38, 255]));
+        let page = cfg.page();
+        for (i, b) in page.buttons.iter().enumerate() {
+            let x = pad + (i as u32 % 5) * (key + gap);
+            let y = pad + (i as u32 / 5) * (key + gap);
+            imageops::overlay(&mut img, &render_rgba(b, key, key), x.into(), y.into());
+        }
+        let profile = &cfg.profiles[cfg.active_profile];
+        let side_info = SideInfo {
+            profile: profile.name.clone(),
+            page: page.name.clone(),
+            page_index: profile.active_page,
+            page_count: profile.pages.len(),
+            accent: crate::config::schema::RGBAColor {
+                r: 0,
+                g: 229,
+                b: 255,
+                a: 255,
+            },
+        };
+        let strip = render(&SideScreen::PageName, &side_info).unwrap();
+        let strip = imageops::resize(&strip, WIDTH, h - 2 * pad, imageops::FilterType::Triangle);
+        imageops::overlay(&mut img, &strip, (pad + 5 * (key + gap)).into(), pad.into());
+        let pressed = render_pressed_rgba(&page.buttons[0], key, key);
+        imageops::overlay(&mut img, &pressed, (w + 2 * pad).into(), pad.into());
+        img.save(std::env::var("AKP_PREVIEW_OUT").unwrap()).unwrap();
+    }
 }
