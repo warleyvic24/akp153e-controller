@@ -68,6 +68,15 @@ pub(crate) fn run_action_cli(json: Option<&String>) {
     std::thread::sleep(ACTION_CLI_GRACE); // dá tempo de a tarefa assíncrona terminar
 }
 
+/// `--selftest`: pede ao serviço o autoteste guiado no aparelho e diz o que fazer.
+pub(crate) fn selftest_cli() {
+    let reply = shell::send("selftest");
+    println!("{}", crate::editor::selftest_reply_text(reply.as_deref()));
+    if reply.as_deref() != Some("ok") {
+        std::process::exit(1);
+    }
+}
+
 /// Editor: janela comum, sem hardware próprio; conversa com o serviço pela rede local.
 pub(crate) fn run_editor() -> eframe::Result {
     // Só em debug, com `KEYFORGE_CONFIG_DIR`: um segundo editor sobre a cópia da config pode abrir ao

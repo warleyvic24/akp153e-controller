@@ -5,7 +5,7 @@ Um executável, dois modos:
 
 - **Serviço** (`keyforge.exe --background`, bandeja, sem janela): dono do USB/HID, das ações e do desenho das teclas.
 - **Editor** (`keyforge.exe --editor`, janela egui): edita `%APPDATA%\Keyforge\config.json` (Linux: `~/.config/Keyforge/config.json`) e avisa o serviço por TCP em `127.0.0.1:47153` (`reload`, `status`, `reconnect`, `show`, `calib`, `pattern`, `apps`, `obs-info`, `obs-run`). Trava do editor: porta 47154.
-- Outros: `--probe` (grava `keyforge_probe.txt`), `--run-action <json>`, `--autostart on|off`.
+- Outros: `--selftest` (autoteste guiado no aparelho, `service/selftest.rs`; resultado em `selftest.txt`), `--probe` (grava `keyforge_probe.txt`), `--run-action <json>`, `--autostart on|off`.
 - Esconder uma janela eframe gasta 100% de CPU; por isso são dois processos.
 
 ## Comandos

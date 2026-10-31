@@ -34,6 +34,10 @@ fn main() -> eframe::Result {
         shell::set_autostart(value_of("--autostart").is_some_and(|v| v == "on"));
         return Ok(());
     }
+    if has("--selftest") {
+        cli::selftest_cli();
+        return Ok(());
+    }
     if has("--run-action") {
         cli::run_action_cli(value_of("--run-action"));
         return Ok(());

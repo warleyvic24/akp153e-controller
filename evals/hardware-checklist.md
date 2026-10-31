@@ -2,6 +2,8 @@
 
 O que os testes automáticos não provam. Faça com o serviço rodando (`keyforge.exe --background`) e o aparelho conectado; anote o resultado e a data em cada item.
 
+**Atalho:** `keyforge --selftest` (ou Preferências > Diagnóstico > Testar aparelho) cobre os itens 2, 3, 4 (a parte da soltura), 8 em parte, 9 e 16 em parte: o aparelho pede cada tecla, uma pressão longa e responde SIM/NÃO sobre o brilho e a lateral. O resultado fica em `selftest.txt`, na pasta da config.
+
 Preparação: abra o editor, ponha uma ação visível em cada botão testado (por exemplo "Mudo" na tecla 1).
 
 | # | O que verificar | Como | Esperado | Resultado |

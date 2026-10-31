@@ -4,6 +4,7 @@ mod auto_profile;
 pub(crate) mod mixer_runtime;
 mod obs_runtime;
 pub(crate) mod runtime;
+mod selftest;
 mod sleep;
 
 use crate::config::schema::AppConfig;
@@ -262,6 +263,11 @@ fn handle(
         "apps" => {
             let recent = runtime::lock(state).recent_apps.join("\t");
             let _ = writeln!(conn, "{recent}");
+        }
+        // Autoteste guiado no aparelho; responde "ok" ou o motivo de não começar.
+        "selftest" => {
+            let reply = selftest::start(state, tx);
+            let _ = writeln!(conn, "{reply}");
         }
         "status" => {
             let sh = runtime::lock(state);

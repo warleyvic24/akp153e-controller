@@ -16,6 +16,23 @@ const BRIGHTNESS_MAX: u8 = crate::usb::MAX_BRIGHTNESS;
 const SLIDER_VALUE_RESERVED: f32 = 72.0;
 
 /// Abre a pasta onde ficam config e logs no gerenciador de arquivos (Explorer ou `xdg-open`).
+const SELFTEST_HINT: &str = "O aparelho pede cada tecla, uma pressão longa e duas respostas SIM/NÃO. Nenhuma ação roda; ao fim, a página volta e o resultado fica em selftest.txt, na pasta da config.";
+
+/// O que dizer depois de pedir o autoteste ao serviço (editor e `--selftest`).
+pub(crate) fn selftest_reply_text(reply: Option<&str>) -> String {
+    t(match reply {
+        Some("ok") => "Autoteste no aparelho: aperte a tecla azul de cada vez.",
+        Some("sem-aparelho") => "Autoteste: o aparelho não está conectado.",
+        Some("em-andamento") => "Autoteste já em andamento no aparelho.",
+        Some("aparelho-pequeno") => {
+            "Autoteste: este aparelho tem teclas de menos para as respostas SIM/NÃO."
+        }
+        Some(_) => "Autoteste: o serviço não entendeu o pedido (versão antiga?).",
+        None => "Autoteste: o serviço em segundo plano não está rodando.",
+    })
+    .to_string()
+}
+
 pub(crate) fn open_log_folder() {
     let opener = if cfg!(windows) {
         "explorer"
@@ -184,7 +201,7 @@ impl App {
         ui.label(RichText::new(hint).size(text::CAPTION).color(pal.muted));
     }
 
-    fn about_section(&self, ui: &mut egui::Ui, pal: &Palette) {
+    fn about_section(&mut self, ui: &mut egui::Ui, pal: &Palette) {
         widgets::section(ui, "Diagnóstico", pal);
         ui.label(tf("Versão {}", &[&env!("CARGO_PKG_VERSION")]));
         ui.horizontal(|ui| {
@@ -195,5 +212,14 @@ impl App {
                 open_log_folder();
             }
         });
+        if ui
+            .button(t("Testar aparelho"))
+            .on_hover_text(t(SELFTEST_HINT))
+            .clicked()
+        {
+            let reply = shell::send("selftest");
+            self.toasts
+                .push(selftest_reply_text(reply.as_deref()), None);
+        }
     }
 }

@@ -130,6 +130,10 @@ impl Snapshot {
     }
 
     pub fn render(&self, tx: &Sender<UsbCmd>) {
+        // O autoteste está na tela; ele devolve a página inteira ao terminar.
+        if super::selftest::running() {
+            return;
+        }
         for (index, frame) in &self.frames {
             let index = *index;
             let data = match frame {
@@ -723,6 +727,10 @@ pub fn spawn(state: SharedState, tx: Sender<UsbCmd>, rx: Receiver<UsbEvent>, exe
                     };
                     if swallowed {
                         // O toque que acordou a tela não age; também não deixa aperto pendente.
+                        down[index] = None;
+                        continue;
+                    }
+                    if super::selftest::on_key(&state, &tx, index, pressed) {
                         down[index] = None;
                         continue;
                     }
