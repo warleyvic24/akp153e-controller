@@ -45,5 +45,5 @@ jobs:
         run: cargo build --release
       - uses: actions/upload-artifact@v4
         with:
-          name: akp153e-linux
-          path: target/release/akp153e
+          name: keyforge-linux
+          path: target/release/keyforge

@@ -403,7 +403,7 @@ fn run_connection(
     }
 }
 
-/// Diagnóstico para validar o protocolo no hardware real. Imprime e grava `akp153e_probe.txt`
+/// Diagnóstico para validar o protocolo no hardware real. Imprime e grava `keyforge_probe.txt`
 /// (necessário porque a build de release não tem console).
 pub fn probe() {
     let mut rep = String::new();
@@ -413,7 +413,7 @@ pub fn probe() {
         rep.push('\n');
     };
     run_probe(&mut say);
-    if let Err(e) = std::fs::write("akp153e_probe.txt", rep) {
+    if let Err(e) = std::fs::write("keyforge_probe.txt", rep) {
         eprintln!("não gravou relatório: {e}");
     }
 }
@@ -503,7 +503,7 @@ mod tests {
 
     #[test]
     fn the_linux_udev_rule_covers_every_known_device() {
-        let rules = include_str!("../../packaging/linux/70-akp153e.rules").to_lowercase();
+        let rules = include_str!("../../packaging/linux/70-keyforge.rules").to_lowercase();
         for (vid, pid) in IDS {
             for subsystem in ["hidraw", "usb"] {
                 let line = format!(

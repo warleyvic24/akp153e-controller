@@ -1,6 +1,6 @@
 [package]
-name = "akp153e"
-description = "Unofficial open-source controller software for the AJAZZ AKP153E stream controller"
+name = "keyforge"
+description = "Keyforge: open-source software for stream controllers (AJAZZ AKP153E and others)"
 license = "MIT"
 repository = "https://github.com/warleyvic24/akp153e-controller"
 version = "0.1.0"

@@ -1,5 +1,5 @@
 {
-  "name": "akp153e",
+  "name": "keyforge",
   "private": true,
   "description": "Pontos de entrada de teste do projeto Rust (sem dependências Node).",
   "scripts": {

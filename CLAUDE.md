@@ -1,11 +1,11 @@
-# AJAZZ AKP153E (Rust)
+# Keyforge (Rust)
 
-Substituto do aplicativo oficial do AJAZZ AKP153E (stream controller com 15 teclas LCD). Rust + egui/eframe, Windows e Linux. O Linux (`platform/*_linux.rs`, `shell.rs` com `cfg`) é compilado pelo CI (`.github/workflows/ci.yml`) e foi rodado no Omarchy (Hyprland 0.56, config em Lua) em 2026-10-29: instalação, dependências e o que foi provado em `docs/LINUX.md`; precisa de regra udev (`packaging/linux/`) para o HID, `pactl` para o mixer e GTK/appindicator para a bandeja.
+Keyforge (antes "AKP153E Open Controller"): controlador livre de stream controllers; hoje o AJAZZ AKP153E (15 teclas LCD), com o plano de suportar outros em `docs/PLANO-APARELHOS.md`. Binário `keyforge`; config em `~/.config/Keyforge` (copiada uma vez da antiga `AJazz/AKP153E`, que fica como cópia). Rust + egui/eframe, Windows e Linux. O Linux (`platform/*_linux.rs`, `shell.rs` com `cfg`) é compilado pelo CI (`.github/workflows/ci.yml`) e foi rodado no Omarchy (Hyprland 0.56, config em Lua) em 2026-10-29: instalação, dependências e o que foi provado em `docs/LINUX.md`; precisa de regra udev (`packaging/linux/`) para o HID, `pactl` para o mixer e GTK/appindicator para a bandeja.
 Um executável, dois modos:
 
-- **Serviço** (`akp153e.exe --background`, bandeja, sem janela): dono do USB/HID, das ações e do desenho das teclas.
-- **Editor** (`akp153e.exe --editor`, janela egui): edita `%APPDATA%\AJazz\AKP153E\config.json` (Linux: `~/.config/AJazz/AKP153E/config.json`) e avisa o serviço por TCP em `127.0.0.1:47153` (`reload`, `status`, `reconnect`, `show`, `calib`, `pattern`, `apps`, `obs-info`, `obs-run`). Trava do editor: porta 47154.
-- Outros: `--probe` (grava `akp153e_probe.txt`), `--run-action <json>`, `--autostart on|off`.
+- **Serviço** (`keyforge.exe --background`, bandeja, sem janela): dono do USB/HID, das ações e do desenho das teclas.
+- **Editor** (`keyforge.exe --editor`, janela egui): edita `%APPDATA%\Keyforge\config.json` (Linux: `~/.config/Keyforge/config.json`) e avisa o serviço por TCP em `127.0.0.1:47153` (`reload`, `status`, `reconnect`, `show`, `calib`, `pattern`, `apps`, `obs-info`, `obs-run`). Trava do editor: porta 47154.
+- Outros: `--probe` (grava `keyforge_probe.txt`), `--run-action <json>`, `--autostart on|off`.
 - Esconder uma janela eframe gasta 100% de CPU; por isso são dois processos.
 
 ## Comandos
@@ -14,7 +14,7 @@ Um executável, dois modos:
 cargo test                      # rápido; não toca na config real (ver abaixo)
 cargo clippy --all-targets      # deve ficar sem avisos
 cargo fmt                       # obrigatório antes de concluir
-cargo build --release           # -> target\release\akp153e.exe
+cargo build --release           # -> target\release\keyforge.exe
 ```
 
 ## Armadilhas
@@ -43,7 +43,7 @@ cargo build --release           # -> target\release\akp153e.exe
   - `config/` (`schema.rs`, exportar/importar perfil `profile_io.rs`), `engine/` (ações), `graphics/` (desenho das teclas, teclas vivas `live_art.rs`, ícones, biblioteca Lucide `icon_library.rs` sobre `assets/lucide-icons.tsv`, ícone do app), `usb/` (protocolo), `strings.rs` (texto novo = `t`/`tf` + entrada em `EN`).
 - Unsafe só em `platform/` (`shell.rs`, `audio.rs`, `focus.rs`, `live.rs` no Windows), sempre com `// SAFETY:`.
 - Testes que leem o código usam `test_support::sources_without_tests()`, que percorre todas as subpastas.
-- Interface: siga `docs/DESIGN.md` (tokens em `editor/tokens.rs`, cores em `theme::Palette`, texto mínimo 12 px, alvo mínimo 24 px, contraste imposto por testes em `editor/theme.rs`). Confira nos dois temas e, para testar clicando sem risco, use em debug `AKP153E_PREVIEW_THEME=light|dark` e `AKP153E_CONFIG_DIR=<pasta com cópia do config.json>` (com ele um segundo editor abre ao lado do real) e `AKP153E_PREVIEW_UI=key=5,tab=1,settings,picker,library` para abrir já numa tela. O OBS se testa de verdade com `AKP_OBS_PORT=.. AKP_OBS_PASSWORD=.. cargo test real_obs -- --ignored`.
+- Interface: siga `docs/DESIGN.md` (tokens em `editor/tokens.rs`, cores em `theme::Palette`, texto mínimo 12 px, alvo mínimo 24 px, contraste imposto por testes em `editor/theme.rs`). Confira nos dois temas e, para testar clicando sem risco, use em debug `KEYFORGE_PREVIEW_THEME=light|dark` e `KEYFORGE_CONFIG_DIR=<pasta com cópia do config.json>` (com ele um segundo editor abre ao lado do real) e `KEYFORGE_PREVIEW_UI=key=5,tab=1,settings,picker,library` para abrir já numa tela. O OBS se testa de verdade com `AKP_OBS_PORT=.. AKP_OBS_PASSWORD=.. cargo test real_obs -- --ignored`.
 
 ## Hardware
 

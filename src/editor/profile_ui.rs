@@ -129,7 +129,7 @@ impl App {
             let profile = &g.cfg.profiles[prof];
             let file = rfd::FileDialog::new()
                 .set_file_name(format!("{}.{}", profile.name, profile_io::EXTENSION))
-                .add_filter(t("Perfil do AKP153E"), &["json"])
+                .add_filter(t("Perfil do Keyforge"), &["json"])
                 .save_file();
             if let Some(path) = file {
                 let msg = match std::fs::write(&path, profile_io::export(profile)) {
@@ -142,7 +142,7 @@ impl App {
         if ui.button(t("Importar perfil…")).clicked() {
             ui.close_menu();
             let file = rfd::FileDialog::new()
-                .add_filter(t("Perfil do AKP153E"), &["json"])
+                .add_filter(t("Perfil do Keyforge"), &["json"])
                 .pick_file();
             if let Some(path) = file {
                 self.import_profile(g, &path);

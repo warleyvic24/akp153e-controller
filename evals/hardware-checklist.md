@@ -1,12 +1,12 @@
 # Verificação no aparelho
 
-O que os testes automáticos não provam. Faça com o serviço rodando (`akp153e.exe --background`) e o aparelho conectado; anote o resultado e a data em cada item.
+O que os testes automáticos não provam. Faça com o serviço rodando (`keyforge.exe --background`) e o aparelho conectado; anote o resultado e a data em cada item.
 
 Preparação: abra o editor, ponha uma ação visível em cada botão testado (por exemplo "Mudo" na tecla 1).
 
 | # | O que verificar | Como | Esperado | Resultado |
 |---|---|---|---|---|
-| 1 | Imagem em todas as 15 teclas | `akp153e.exe --probe`, depois olhe o aparelho | Cada tecla mostra a imagem configurada, sem corte nas bordas | não verificado |
+| 1 | Imagem em todas as 15 teclas | `keyforge.exe --probe`, depois olhe o aparelho | Cada tecla mostra a imagem configurada, sem corte nas bordas | não verificado |
 | 2 | Aperto chega ao programa | Aperte uma tecla com a ação "Mudo" | O volume muda uma vez | não verificado |
 | 3 | Soltura chega ao programa | Segure a tecla por 2 s e solte | Nada acontece antes de soltar; a ação roda ao soltar | não verificado |
 | 4 | Pressão longa | Configure "Ao segurar" em outra ação; segure por mais que o limite (500 ms) | Roda a ação longa, não a curta | não verificado |
@@ -40,4 +40,4 @@ Preparação: abra o editor, ponha uma ação visível em cada botão testado (p
 - Não implementado, porque falta: o formato do `LOG` no protocolo v3 (pacote de 1024) do `0300:3010`; se a imagem é JPEG ou RGB cru (o cabeçalho v1 `LOG 00 12 C3 C0 01` anuncia 854×480×3 bytes, mas o código a marca como JPEG); e um comando confirmado que restaure o logo original. Um envio errado pode deixar um logo de inicialização corrompido.
 - Como o app oficial mostra CPU/memória ao vivo na lateral não está em nenhuma documentação pública.
 
-Para registrar um resultado, troque "não verificado" por `ok AAAA-MM-DD` ou descreva o defeito. Um defeito vira uma issue (modelo "Defeito") com a saída de `akp153e.exe --probe`.
+Para registrar um resultado, troque "não verificado" por `ok AAAA-MM-DD` ou descreva o defeito. Um defeito vira uma issue (modelo "Defeito") com a saída de `keyforge.exe --probe`.

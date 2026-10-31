@@ -138,7 +138,7 @@ fn decode_entities(s: &str) -> String {
 pub fn fetch(site: &Url) -> Option<String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(TIMEOUT)
-        .user_agent(concat!("akp153e/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("keyforge/", env!("CARGO_PKG_VERSION")))
         .build()
         .ok()?;
     let get = |url: &Url, limit: u64| -> Option<(Url, Vec<u8>)> {

@@ -81,7 +81,7 @@ impl App {
                         }
                         if panels.full_top_bar {
                             ui.label(
-                                RichText::new(t("AKP153E"))
+                                RichText::new("Keyforge")
                                     .font(theme::display_font(TITLE - 3.0))
                                     .strong(),
                             );

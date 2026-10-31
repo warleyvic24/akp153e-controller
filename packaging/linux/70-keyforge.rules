@@ -1,4 +1,4 @@
-# Permite que o usuário logado acesse o AJAZZ AKP153E sem ser root.
+# Keyforge: permite que o usuário logado acesse os aparelhos suportados sem ser root.
 # O número precisa ser menor que 73: o `uaccess` só vale se a marca chegar antes do 73-seat-late.rules do systemd.
 # Instalar em /etc/udev/rules.d/ e recarregar: sudo udevadm control --reload && sudo udevadm trigger
 # power/control="on" desliga a suspensão automática do USB só para o aparelho: suspenso, ele

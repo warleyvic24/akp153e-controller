@@ -1,9 +1,13 @@
 # Maintainer: warleyvic24
 # Compila o repositório local (esta pasta fica em packaging/arch). Uso: cd packaging/arch && makepkg -si
-pkgname=akp153e
+pkgname=keyforge
 pkgver=0.1.0
 pkgrel=1
-pkgdesc="Software livre e não oficial para o stream controller AJAZZ AKP153E"
+pkgdesc="Keyforge: software livre para stream controllers (AJAZZ AKP153E e outros)"
+# O pacote antigo tinha outro nome: este o substitui (binário, atalho e regra udev).
+replaces=('akp153e')
+conflicts=('akp153e')
+provides=('akp153e')
 arch=('x86_64')
 license=('MIT')
 depends=('gtk3' 'libayatana-appindicator' 'systemd-libs' 'libxkbcommon' 'libpulse' 'ttf-dejavu')
@@ -12,6 +16,7 @@ optdepends=('hyprland: foco do editor pelo hyprctl'
             'wmctrl: foco do editor no X11'
             'xorg-xprop: perfil automático no X11')
 options=('!lto')
+install=keyforge.install
 
 _root="$startdir/../.."
 
@@ -22,7 +27,7 @@ build() {
 
 package() {
   cd "$_root"
-  install -Dm755 "$srcdir/target/release/akp153e" "$pkgdir/usr/bin/akp153e"
-  install -Dm644 packaging/linux/70-akp153e.rules "$pkgdir/usr/lib/udev/rules.d/70-akp153e.rules"
-  install -Dm644 packaging/linux/akp153e.desktop "$pkgdir/usr/share/applications/akp153e.desktop"
+  install -Dm755 "$srcdir/target/release/keyforge" "$pkgdir/usr/bin/keyforge"
+  install -Dm644 packaging/linux/70-keyforge.rules "$pkgdir/usr/lib/udev/rules.d/70-keyforge.rules"
+  install -Dm644 packaging/linux/keyforge.desktop "$pkgdir/usr/share/applications/keyforge.desktop"
 }

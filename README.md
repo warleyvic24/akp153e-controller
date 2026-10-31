@@ -1,8 +1,8 @@
-# AKP153E Open Controller
+# Keyforge
 
 [Português](README.pt-BR.md) · [![CI](https://github.com/warleyvic24/akp153e-controller/actions/workflows/ci.yml/badge.svg)](https://github.com/warleyvic24/akp153e-controller/actions/workflows/ci.yml) · [MIT License](LICENSE)
 
-Unofficial, open-source controller software for Windows and Linux for the AJAZZ AKP153E stream controller (15 LCD keys), written in Rust with egui/eframe. It replaces the manufacturer's app and contains no code, firmware or assets from it.
+Keyforge is open-source software for Windows and Linux that drives stream controllers. Today it supports the AJAZZ AKP153E (15 LCD keys) and its close Mirabox/AJAZZ relatives; more devices are planned ([docs/PLANO-APARELHOS.md](docs/PLANO-APARELHOS.md)). Formerly "AKP153E Open Controller", written in Rust with egui/eframe. It replaces the manufacturer's app and contains no code, firmware or assets from it.
 
 > **Status: early (v0.1).** Key drawing, the editor, app/webhook/shortcut actions, autostart and the tray icon are verified on a real device. Physical key press/release and long press are **not verified yet**; the side panel is a display without buttons on the AKP153E and is not used — see [`evals/hardware-checklist.md`](evals/hardware-checklist.md). This project is not affiliated with AJAZZ.
 
@@ -26,10 +26,10 @@ One executable, two modes:
 
 | Mode | Command | Role |
 |------|---------|------|
-| Service | `akp153e --background` | Tray icon, no window. Owns USB/HID, actions and key drawing. |
-| Editor | `akp153e --editor` | egui window. Edits `config.json` (`%APPDATA%\AJazz\AKP153E` on Windows, `~/.config/AJazz/AKP153E` on Linux) and tells the service to reload over `127.0.0.1:47153`. |
+| Service | `keyforge --background` | Tray icon, no window. Owns USB/HID, actions and key drawing. |
+| Editor | `keyforge --editor` | egui window. Edits `config.json` (`%APPDATA%\Keyforge` on Windows, `~/.config/Keyforge` on Linux) and tells the service to reload over `127.0.0.1:47153`. |
 
-Other flags: `--probe` (writes `akp153e_probe.txt`), `--run-action <json>`, `--autostart on|off`.
+Other flags: `--probe` (writes `keyforge_probe.txt`), `--run-action <json>`, `--autostart on|off`.
 
 The device enumerates as HID `0300:3010` and is handled as protocol v3. The protocol follows publicly available documentation; this project did no reverse engineering of the official app.
 
@@ -41,7 +41,7 @@ Requires a recent stable Rust toolchain (1.89 or newer) and:
 - **Linux:** GTK 3, libayatana-appindicator, libudev, libxkbcommon and `pactl`; a udev rule gives your user access to the device. Packages, install script and what was tested (Omarchy / Hyprland) are in [`docs/LINUX.md`](docs/LINUX.md). On Arch: `cd packaging/arch && makepkg -si`.
 
 ```
-cargo build --release   # target/release/akp153e (akp153e.exe on Windows)
+cargo build --release   # target/release/keyforge (keyforge.exe on Windows)
 cargo test
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check

@@ -8,23 +8,28 @@ use std::time::Duration;
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
-pub const WINDOW_TITLE: &str = "Controle AKP153E";
+pub const WINDOW_TITLE: &str = "Keyforge";
 /// Texto da opção "iniciar com o sistema" (passa por `strings::t`).
 #[cfg(windows)]
 pub const AUTOSTART_LABEL: &str = "Iniciar com o Windows";
 #[cfg(not(windows))]
 pub const AUTOSTART_LABEL: &str = "Iniciar com o sistema";
 /// Identificador da janela no Wayland (`app_id`); igual ao nome do `.desktop` e do binário.
-pub const APP_ID: &str = "akp153e";
+pub const APP_ID: &str = "keyforge";
 const SERVICE_ADDR: &str = "127.0.0.1:47153";
 const EDITOR_ADDR: &str = "127.0.0.1:47154";
 const IPC_TIMEOUT: Duration = Duration::from_millis(400);
 #[cfg(windows)]
 const AUTOSTART_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 #[cfg(windows)]
-const AUTOSTART_VALUE: &str = "AKP153E";
+const AUTOSTART_VALUE: &str = "Keyforge";
+/// Nome do início automático antes de o programa se chamar Keyforge.
+#[cfg(windows)]
+const LEGACY_AUTOSTART_VALUE: &str = "AKP153E";
 #[cfg(not(windows))]
-const AUTOSTART_FILE: &str = "akp153e.desktop";
+const AUTOSTART_FILE: &str = "keyforge.desktop";
+#[cfg(not(windows))]
+const LEGACY_AUTOSTART_FILE: &str = "akp153e.desktop";
 const TRAY_ICON_PX: u32 = 32;
 #[cfg(windows)]
 const SW_SHOW: i32 = 5;
@@ -208,10 +213,30 @@ fn reg(args: &[&str]) -> std::io::Result<std::process::ExitStatus> {
 /// Atalho de início automático do Linux (padrão XDG: `~/.config/autostart`).
 #[cfg(not(windows))]
 fn autostart_path() -> Option<std::path::PathBuf> {
+    autostart_dir().map(|d| d.join(AUTOSTART_FILE))
+}
+
+#[cfg(not(windows))]
+fn autostart_dir() -> Option<std::path::PathBuf> {
     let config = std::env::var_os("XDG_CONFIG_HOME")
         .map(std::path::PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| std::path::Path::new(&h).join(".config")))?;
-    Some(config.join("autostart").join(AUTOSTART_FILE))
+    Some(config.join("autostart"))
+}
+
+/// Quem ligou o início automático antes da troca de nome continua com ele ligado: a entrada antiga
+/// (que aponta para o binário antigo) sai e a nova entra no lugar.
+#[cfg(not(windows))]
+pub fn migrate_autostart() {
+    let Some(legacy) = autostart_dir().map(|d| d.join(LEGACY_AUTOSTART_FILE)) else {
+        return;
+    };
+    if legacy.is_file() {
+        set_autostart(true);
+        if let Err(e) = std::fs::remove_file(&legacy) {
+            log::warn!("início automático antigo não removido: {e}");
+        }
+    }
 }
 
 /// Texto do atalho `.desktop`; aspas no caminho do programa para suportar espaços.
@@ -230,7 +255,7 @@ fn autostart_entry(exe: &std::path::Path) -> String {
         .collect();
     let path = quoted.replace('\\', "\\\\");
     format!(
-        "[Desktop Entry]\nType=Application\nName=AKP153E\nExec=\"{path}\" --background\nX-GNOME-Autostart-enabled=true\n"
+        "[Desktop Entry]\nType=Application\nName=Keyforge\nExec=\"{path}\" --background\nX-GNOME-Autostart-enabled=true\n"
     )
 }
 
@@ -260,6 +285,17 @@ pub fn set_autostart(on: bool) {
     };
     if let Err(e) = result {
         log::error!("não foi possível alterar o início automático: {e}");
+    }
+}
+
+/// Ver a versão do Linux: troca o valor antigo do registro pelo novo.
+#[cfg(windows)]
+pub fn migrate_autostart() {
+    let legacy =
+        reg(&["query", AUTOSTART_KEY, "/v", LEGACY_AUTOSTART_VALUE]).is_ok_and(|s| s.success());
+    if legacy {
+        set_autostart(true);
+        let _ = reg(&["delete", AUTOSTART_KEY, "/v", LEGACY_AUTOSTART_VALUE, "/f"]);
     }
 }
 
@@ -365,15 +401,15 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn autostart_entry_quotes_the_program_path() {
-        let entry = autostart_entry(std::path::Path::new("/opt/meu app/akp153e"));
+        let entry = autostart_entry(std::path::Path::new("/opt/meu app/keyforge"));
         assert!(
-            entry.contains("Exec=\"/opt/meu app/akp153e\" --background"),
+            entry.contains("Exec=\"/opt/meu app/keyforge\" --background"),
             "{entry}"
         );
         assert!(entry.starts_with("[Desktop Entry]"));
-        let odd = autostart_entry(std::path::Path::new("/opt/a$b`c\"d/akp153e"));
+        let odd = autostart_entry(std::path::Path::new("/opt/a$b`c\"d/keyforge"));
         assert!(
-            odd.contains(r#"Exec="/opt/a\\$b\\`c\\"d/akp153e" --background"#),
+            odd.contains(r#"Exec="/opt/a\\$b\\`c\\"d/keyforge" --background"#),
             "{odd}"
         );
     }
@@ -381,13 +417,10 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn hyprland_focus_has_both_syntaxes() {
-        assert_eq!(
-            hyprland_legacy_focus(),
-            ["focuswindow", "title:^Controle AKP153E$"]
-        );
+        assert_eq!(hyprland_legacy_focus(), ["focuswindow", "title:^Keyforge$"]);
         assert_eq!(
             hyprland_lua_focus(),
-            [r#"hl.dsp.focus({window = "title:^Controle AKP153E$"})"#]
+            [r#"hl.dsp.focus({window = "title:^Keyforge$"})"#]
         );
     }
 

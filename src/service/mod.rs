@@ -115,6 +115,7 @@ pub fn run(open_editor: bool) {
     let (event_tx, event_rx) = channel();
     let (cmd_tx, cmd_rx) = channel();
     // O brilho precisa estar definido antes da thread USB inicializar o aparelho.
+    shell::migrate_autostart();
     let cfg = AppConfig::load();
     usb::set_brightness(cfg.ui.brightness);
     crate::strings::set_language(cfg.ui.language);

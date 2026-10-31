@@ -18,8 +18,10 @@ const LOG_MAX_BYTES: u64 = 1 << 20;
 const MIN_WINDOW: [f32; 2] = [640.0, 480.0];
 
 pub(crate) fn init_logging() {
+    // Antes de criar o log: ele cria a pasta nova, e a cópia da antiga só acontece se ela não existe.
+    let migrated = AppConfig::migrate_legacy_dir();
     let file = AppConfig::path()
-        .and_then(|p| p.parent().map(|d| d.join("akp153e.log")))
+        .and_then(|p| p.parent().map(|d| d.join("keyforge.log")))
         .and_then(|p| {
             if std::fs::metadata(&p)
                 .map(|m| m.len() > LOG_MAX_BYTES)
@@ -35,12 +37,15 @@ pub(crate) fn init_logging() {
                 .ok()
         });
     let mut builder = env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("warn,akp153e=info"),
+        env_logger::Env::default().default_filter_or("warn,keyforge=info"),
     );
     if let Some(f) = file {
         builder.target(env_logger::Target::Pipe(Box::new(f)));
     }
     builder.init();
+    if let Some(note) = migrated {
+        log::warn!("{note}");
+    }
 }
 /// Executa uma ação (JSON) e sai; serve para testes e automação. Código de saída 2 se o JSON for inválido.
 pub(crate) fn run_action_cli(json: Option<&String>) {
@@ -65,9 +70,10 @@ pub(crate) fn run_action_cli(json: Option<&String>) {
 
 /// Editor: janela comum, sem hardware próprio; conversa com o serviço pela rede local.
 pub(crate) fn run_editor() -> eframe::Result {
-    // Só em debug, com `AKP153E_CONFIG_DIR`: um segundo editor sobre a cópia da config pode abrir ao
+    // Só em debug, com `KEYFORGE_CONFIG_DIR`: um segundo editor sobre a cópia da config pode abrir ao
     // lado do editor real (para conferir a interface), porque não grava no mesmo arquivo.
-    let preview_copy = cfg!(debug_assertions) && std::env::var_os("AKP153E_CONFIG_DIR").is_some();
+    let preview_copy =
+        cfg!(debug_assertions) && crate::config::schema::dev_var("CONFIG_DIR").is_some();
     let editor_lock = shell::acquire_editor_lock();
     if editor_lock.is_none() && !preview_copy {
         shell::show_window();
@@ -86,13 +92,16 @@ pub(crate) fn run_editor() -> eframe::Result {
     if first_run && crate::editor::omarchy::current().is_some() {
         cfg.ui.theme = Theme::Omarchy;
     }
-    // Só em debug: `AKP153E_PREVIEW_THEME=light` mostra o tema sem mexer no arquivo (nada é gravado
+    // Só em debug: `KEYFORGE_PREVIEW_THEME=light` mostra o tema sem mexer no arquivo (nada é gravado
     // enquanto o usuário não editar algo). Serve para conferir o visual nos dois temas.
     #[cfg(debug_assertions)]
-    match std::env::var("AKP153E_PREVIEW_THEME").as_deref() {
-        Ok("light") => cfg.ui.theme = Theme::Light,
-        Ok("dark") => cfg.ui.theme = Theme::Dark,
-        Ok("omarchy") => cfg.ui.theme = Theme::Omarchy,
+    match crate::config::schema::dev_var("PREVIEW_THEME")
+        .and_then(|v| v.into_string().ok())
+        .as_deref()
+    {
+        Some("light") => cfg.ui.theme = Theme::Light,
+        Some("dark") => cfg.ui.theme = Theme::Dark,
+        Some("omarchy") => cfg.ui.theme = Theme::Omarchy,
         _ => {}
     }
     let sh = runtime::new_state(cfg, usb::ICON_SIZE as u32);
@@ -115,7 +124,7 @@ pub(crate) fn run_editor() -> eframe::Result {
         ..Default::default()
     };
     let r = eframe::run_native(
-        "AKP153E",
+        "Keyforge",
         opts,
         Box::new(move |cc| {
             theme::install_fonts(&cc.egui_ctx);

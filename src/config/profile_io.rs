@@ -1,14 +1,16 @@
 //! Exportar e importar um perfil (cópia de segurança, levar para outro PC, compartilhar). O arquivo
-//! `.akp153e.json` leva o perfil e as imagens das teclas dentro dele (em hexadecimal), porque os
+//! `.keyforge.json` leva o perfil e as imagens das teclas dentro dele (em hexadecimal), porque os
 //! caminhos das imagens só valem no PC de origem. Ao importar, as imagens vão para a pasta de ícones.
 use super::schema::{AppConfig, ButtonAction, ButtonAppearance, Profile};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-const FORMAT: &str = "akp153e-profile";
+const FORMAT: &str = "keyforge-profile";
+/// Formato dos perfis exportados antes da troca de nome; continuam sendo aceitos.
+const LEGACY_FORMAT: &str = "akp153e-profile";
 const VERSION: u32 = 1;
 /// Extensão sugerida no diálogo de salvar.
-pub const EXTENSION: &str = "akp153e.json";
+pub const EXTENSION: &str = "keyforge.json";
 /// Maior imagem levada no arquivo; acima disso a tecla vai sem ela (um ícone não precisa disso).
 const MAX_IMAGE_BYTES: u64 = 2 * 1024 * 1024;
 /// Maior arquivo aceito na importação.
@@ -78,8 +80,8 @@ pub fn import(
     icon_dir: &std::path::Path,
 ) -> Result<usize, String> {
     let bundle: Bundle = serde_json::from_str(text).map_err(|e| e.to_string())?;
-    if bundle.format != FORMAT || bundle.version > VERSION {
-        return Err("não é um perfil do AKP153E (ou é de uma versão mais nova)".into());
+    if ![FORMAT, LEGACY_FORMAT].contains(&bundle.format.as_str()) || bundle.version > VERSION {
+        return Err("não é um perfil do Keyforge (ou é de uma versão mais nova)".into());
     }
     let mut profile = bundle.profile;
     let mut saved: BTreeMap<String, Option<String>> = BTreeMap::new();

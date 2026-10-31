@@ -2,9 +2,11 @@
 // PreToolUse (Bash/PowerShell/Write/Edit): bloqueia o que grava ou apaga o config.json REAL do usuário.
 // Já aconteceu de testes e scripts sobrescreverem esse arquivo. Ler é permitido. Se a entrada não puder
 // ser entendida, o hook deixa passar (falha aberta) para nunca travar o trabalho por engano.
-const PATH = String.raw`AKP153E[\\/]+config\.json`;
-// Write/Edit recebem o caminho inteiro: exige a pasta `AJazz` para não pegar cópias de teste.
-const REAL_FILE = /AJazz[\\/]+AKP153E[\\/]+config\.json$/i;
+// Pasta antiga (AJazz/AKP153E) e a nova (Keyforge): as duas guardam uma config real.
+const DIR = String.raw`(?:AKP153E|Keyforge)`;
+const PATH = String.raw`${DIR}[\\/]+config\.json`;
+// Write/Edit recebem o caminho inteiro: exige a pasta de config do sistema para não pegar cópias de teste.
+const REAL_FILE = /(AJazz[\\/]+AKP153E|(\.config|Roaming)[\\/]+Keyforge)[\\/]+config\.json$/i;
 const WRITES_TO_CONFIG = new RegExp(
   [
     String.raw`(Set-Content|Add-Content|Out-File|Remove-Item|Move-Item|Rename-Item|Clear-Content|Copy-Item)\b[^|;]*${PATH}`,
@@ -16,7 +18,7 @@ const WRITES_TO_CONFIG = new RegExp(
     String.raw`\btee\b[^|;]*${PATH}`,
     String.raw`>{1,2}\s*["']?[^|;&]*${PATH}`,
     // Entrando na pasta e gravando pelo nome curto: `cd .../AKP153E && rm config.json`.
-    String.raw`AKP153E[\\/]*["']?\s*(&&|;)[^|]*(\b(rm|del|erase|mv|cp|install|truncate|tee|Set-Content|Out-File|Remove-Item)\b[^|;&]*|\bsed\s+-i\b[^|;&]*|>{1,2}\s*["']?)\bconfig\.json`,
+    String.raw`${DIR}[\\/]*["']?\s*(&&|;)[^|]*(\b(rm|del|erase|mv|cp|install|truncate|tee|Set-Content|Out-File|Remove-Item)\b[^|;&]*|\bsed\s+-i\b[^|;&]*|>{1,2}\s*["']?)\bconfig\.json`,
     // Linhas de Python/Node que gravam ou apagam o arquivo.
     String.raw`\bopen\(\s*[rRbBuU]?["'][^"']*${PATH}["']\s*,\s*["'][^"']*[wax+]`,
     String.raw`(writeFileSync|writeFile|appendFileSync|appendFile|unlinkSync|unlink|rmSync|copyFileSync|renameSync|os\.remove|os\.unlink|os\.replace|os\.rename|shutil\.\w+)\s*\(\s*[^)]*${PATH}`,
@@ -32,7 +34,7 @@ function decide(input) {
     return {
       block: true,
       message:
-        'Bloqueado: isto grava ou apaga o config.json real do usuário (%APPDATA%\\AJazz\\AKP153E ou ~/.config/AJazz/AKP153E). ' +
+        'Bloqueado: isto grava ou apaga o config.json real do usuário (%APPDATA%\\Keyforge, ~/.config/Keyforge ou a pasta antiga AJazz/AKP153E). ' +
         'Use o editor do programa ou peça confirmação ao usuário.',
     };
   }

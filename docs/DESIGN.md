@@ -1,9 +1,9 @@
-# Design system — AKP153E
+# Design system — Keyforge
 
 Regras para a interface do editor (egui). O código das escalas está em `src/editor/tokens.rs`, as cores em
 `src/editor/theme.rs` (`Palette`) e as peças reutilizáveis em `src/editor/widgets.rs`. O que não está num teste é
 convenção: confira com os olhos nos dois temas antes de concluir. Só em build debug:
-`AKP153E_PREVIEW_THEME=light|dark` força o tema sem gravar, e `AKP153E_CONFIG_DIR=<pasta>` aponta o
+`KEYFORGE_PREVIEW_THEME=light|dark` força o tema sem gravar, e `KEYFORGE_CONFIG_DIR=<pasta>` aponta o
 editor para uma cópia da config (com `config.json` dentro), para testar clicando, editando e
 excluindo sem tocar no arquivo real. O release não tem nenhum dos dois desvios.
 
@@ -29,7 +29,7 @@ excluindo sem tocar no arquivo real. O release não tem nenhum dos dois desvios.
 
 Tipografia: **Bahnschrift** (display, títulos e rótulos de seção), **Segoe UI** (corpo),
 **Consolas** (valores, estados e números). Rótulos em caixa alta usam a fonte display, sem
-espaçamento artificial entre letras (só o logotipo "AKP153E" o tem).
+espaçamento artificial entre letras (só o logotipo "Keyforge" o tem).
 
 ## Cores (`theme::Palette`)
 
@@ -159,10 +159,8 @@ o NVDA ou o Narrador.
 
 ## Lacunas conhecidas
 
-- Só português e inglês. O logotipo "AKP153E" e o título da janela não são traduzidos. Os nomes padrão `Default` e `Page 1`
+- Só português e inglês. O logotipo "Keyforge" e o título da janela não são traduzidos. Os nomes padrão `Default` e `Page 1`
   vêm do esquema da config (`schema.rs`) e continuam em inglês para não mexer em configs existentes.
 - Ninguém ouviu a interface num leitor de tela de verdade; só a árvore de acessibilidade foi
   verificada. A caixa numérica embutida dos sliders continua sem nome (é interna do egui).
-- O nome da janela e da bandeja é "Controle AKP153E" (`shell::WINDOW_TITLE`), descritivo, sem a marca
-  do fabricante. Um nome e uma marca próprios continuam sendo decisão de produto. A pasta de config
-  `AJazz\AKP153E` e o texto do `CLAUDE.md` ainda citam o fabricante.
+- O nome da janela e da bandeja é "Keyforge" (`shell::WINDOW_TITLE`), sem a marca de nenhum fabricante.

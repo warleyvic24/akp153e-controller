@@ -534,26 +534,79 @@ impl Default for AppConfig {
     }
 }
 
+/// Nome da pasta da config (`~/.config/Keyforge`, `%APPDATA%\\Keyforge`).
+pub const APP_DIR: &str = "Keyforge";
+
+/// Variável de ambiente de desenvolvimento: `KEYFORGE_<nome>`, ou o nome antigo `AKP153E_<nome>`.
+pub fn dev_var(name: &str) -> Option<std::ffi::OsString> {
+    std::env::var_os(format!("KEYFORGE_{name}"))
+        .or_else(|| std::env::var_os(format!("AKP153E_{name}")))
+}
+
+fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
+}
+
 impl AppConfig {
     pub fn path() -> Option<PathBuf> {
         // Os testes criam `App`s que gravam ao serem descartados: nunca no arquivo real do usuário.
         if cfg!(test) {
-            let dir = std::env::temp_dir().join(format!("akp153e-test-{}", std::process::id()));
+            let dir = std::env::temp_dir().join(format!("keyforge-test-{}", std::process::id()));
             return Some(dir.join("config.json"));
         }
         // Só em debug: permite testar a interface (inclusive editando e excluindo) numa cópia da
         // config, sem tocar no arquivo real. O release não tem este desvio.
         #[cfg(debug_assertions)]
-        if let Some(dir) = std::env::var_os("AKP153E_CONFIG_DIR") {
+        if let Some(dir) = dev_var("CONFIG_DIR") {
             return Some(PathBuf::from(dir).join("config.json"));
         }
-        directories::BaseDirs::new().map(|d| {
-            d.config_dir()
-                .join("AJazz")
-                .join("AKP153E")
-                .join("config.json")
-        })
+        directories::BaseDirs::new().map(|d| d.config_dir().join(APP_DIR).join("config.json"))
     }
+
+    /// Pasta de antes da troca de nome (AKP153E -> Keyforge). Nunca é apagada: fica de cópia de segurança.
+    fn legacy_dir() -> Option<PathBuf> {
+        directories::BaseDirs::new().map(|d| d.config_dir().join("AJazz").join("AKP153E"))
+    }
+
+    /// Na primeira abertura com o nome novo, copia a pasta antiga (config, ícones) para a nova.
+    /// Só copia se a nova ainda não existe: nunca escreve por cima de uma config do Keyforge.
+    /// Roda antes do log existir (o arquivo de log fica na pasta nova): devolve o que registrar.
+    pub fn migrate_legacy_dir() -> Option<String> {
+        if cfg!(test) || (cfg!(debug_assertions) && dev_var("CONFIG_DIR").is_some()) {
+            return None;
+        }
+        let old = Self::legacy_dir()?;
+        let new = Self::path()?.parent()?.to_path_buf();
+        migrate_dir(&old, &new)
+    }
+}
+
+/// Copia `old` para `new` se `new` não existe e `old` tem uma config; devolve o que registrar.
+pub(super) fn migrate_dir(old: &std::path::Path, new: &std::path::Path) -> Option<String> {
+    if new.exists() || !old.join("config.json").is_file() {
+        return None;
+    }
+    Some(match copy_dir(old, new) {
+        Ok(()) => format!("config copiada de {} para {}", old.display(), new.display()),
+        Err(e) => {
+            // Pasta pela metade: melhor nenhuma (a próxima abertura tenta de novo).
+            let _ = std::fs::remove_dir_all(new);
+            format!("não foi possível copiar a config antiga: {e}")
+        }
+    })
+}
+
+impl AppConfig {
     /// A config do disco, ou `None` se faltar, não puder ser lida agora ou for inválida.
     /// Quem vai regravar o arquivo usa esta: `load()` cai na config padrão e a gravaria por cima.
     pub fn load_existing() -> Option<Self> {

@@ -370,3 +370,29 @@ fn legacy_gray_background_is_migrated_to_black_and_other_colors_are_kept() {
     );
     assert_eq!(cfg.page().buttons[1].appearance.background, red);
 }
+
+#[test]
+fn the_old_folder_is_copied_once_and_never_over_a_new_one() {
+    let root = std::env::temp_dir().join(format!("keyforge-migrate-{}", std::process::id()));
+    let (old, new) = (root.join("AJazz/AKP153E"), root.join("Keyforge"));
+    std::fs::create_dir_all(old.join("icons")).unwrap();
+    std::fs::write(old.join("config.json"), "{\"antiga\":1}").unwrap();
+    std::fs::write(old.join("icons/a.png"), "png").unwrap();
+    assert!(super::migrate_dir(&old, &new).is_some());
+    assert_eq!(
+        std::fs::read_to_string(new.join("icons/a.png")).unwrap(),
+        "png"
+    );
+    assert!(
+        old.join("config.json").is_file(),
+        "a antiga fica como cópia"
+    );
+    // Já existe a nova: nada é copiado por cima.
+    std::fs::write(new.join("config.json"), "{\"nova\":1}").unwrap();
+    assert!(super::migrate_dir(&old, &new).is_none());
+    assert_eq!(
+        std::fs::read_to_string(new.join("config.json")).unwrap(),
+        "{\"nova\":1}"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}

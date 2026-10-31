@@ -102,7 +102,6 @@ pub fn tf(pt: &str, args: &[&dyn Display]) -> String {
 const EN: &[(&str, &str)] = &[
     ("(escolha)", "(choose)"),
     ("(vazio)", "(empty)"),
-    ("AKP153E", "AKP153E"),
     ("Abrir editor", "Open editor"),
     ("Abrir pasta de logs", "Open logs folder"),
     ("Abrir site", "Open website"),
@@ -436,7 +435,7 @@ const EN: &[(&str, &str)] = &[
     ("Apps usados há pouco (clique para incluir):", "Recently focused apps (click to add):"),
     ("Exportar perfil…", "Export profile…"),
     ("Importar perfil…", "Import profile…"),
-    ("Perfil do AKP153E", "AKP153E profile"),
+    ("Perfil do Keyforge", "Keyforge profile"),
     ("Perfil exportado: {}", "Profile exported: {}"),
     ("Não foi possível exportar: {}", "Could not export: {}"),
     ("Não foi possível importar: {}", "Could not import: {}"),

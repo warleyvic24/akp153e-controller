@@ -39,6 +39,18 @@ test('bloqueia Write/Edit no config real e permite em cópias', () => {
   assert.equal(edit('/home/u/Documents/AKP153E/akp153e-controller/src/config/mod.rs'), false);
 });
 
+test('a pasta nova (Keyforge) também é protegida', () => {
+  const NEW = '~/.config/Keyforge/config.json';
+  const edit = (file_path) => decide({ tool_input: { file_path } }).block;
+  assert.equal(blocked(`rm ${NEW}`), true);
+  assert.equal(blocked(`echo x > ${NEW}`), true);
+  assert.equal(blocked('cd ~/.config/Keyforge && rm config.json'), true);
+  assert.equal(edit('/home/u/.config/Keyforge/config.json'), true);
+  assert.equal(edit(String.raw`C:\Users\x\AppData\Roaming\Keyforge\config.json`), true);
+  assert.equal(edit('/tmp/keyforge-test-42/config.json'), false);
+  assert.equal(blocked(`cat ${NEW}`), false);
+});
+
 test('permite ler o config real', () => {
   assert.equal(blocked('cp ~/.config/AJazz/AKP153E/config.json /tmp/copia.json'), false);
   assert.equal(blocked('cd ~/.config/AJazz/AKP153E && cat config.json'), false);

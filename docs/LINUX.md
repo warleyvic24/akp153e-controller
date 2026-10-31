@@ -1,4 +1,4 @@
-# AKP153E no Linux
+# Keyforge no Linux
 
 O Linux é compilado e testado pelo CI (Ubuntu). No aparelho (Omarchy, 2026-10-29) já foram provados:
 o acesso USB pela regra udev, a imagem numa tecla e o aperto e a soltura de uma tecla. Falta o resto
@@ -32,16 +32,16 @@ packaging/linux/install.sh
 ```
 
 O script copia o programa para `~/.local/bin`, cria o atalho no menu e instala a regra
-`70-akp153e.rules` em `/etc/udev/rules.d/` (pede `sudo`). Depois, desconecte e reconecte o aparelho.
+`70-keyforge.rules` em `/etc/udev/rules.d/` (pede `sudo`). Depois, desconecte e reconecte o aparelho.
 
 ```
-akp153e                  # inicia o serviço (se parado) e abre o editor: é o que o atalho do menu usa
-akp153e --background     # só o serviço (bandeja, aparelho)
-akp153e --editor         # só o editor; sem o serviço ele mostra "Serviço parado" e o botão para iniciá-lo
-akp153e --autostart on   # inicia com a sessão (~/.config/autostart)
+keyforge                 # inicia o serviço (se parado) e abre o editor: é o que o atalho do menu usa
+keyforge --background     # só o serviço (bandeja, aparelho)
+keyforge --editor         # só o editor; sem o serviço ele mostra "Serviço parado" e o botão para iniciá-lo
+keyforge --autostart on   # inicia com a sessão (~/.config/autostart)
 ```
 
-A configuração fica em `~/.config/AJazz/AKP153E/config.json`.
+A configuração fica em `~/.config/Keyforge/config.json`.
 
 ## Omarchy (Arch Linux + Hyprland)
 
@@ -59,18 +59,18 @@ só depois de minutos de compilação, e o sudo desiste se ninguém responder).
 Depois reconecte o aparelho (a regra udev vale para o usuário logado).
 
 - **Iniciar com a sessão:** no Omarchy basta Preferências > "Iniciar com o sistema" (ou
-  `akp153e --autostart on`): a sessão roda pelo `uwsm`, que executa o autostart XDG
+  `keyforge --autostart on`): a sessão roda pelo `uwsm`, que executa o autostart XDG
   (`~/.config/autostart`). Confira com `systemctl --user is-active xdg-desktop-autostart.target`.
   Num Hyprland sem `uwsm`, que ignora o autostart XDG, use na config em Lua
-  `o.launch_on_start("akp153e --background")` ou, na antiga, `exec-once = akp153e --background`.
+  `o.launch_on_start("keyforge --background")` ou, na antiga, `exec-once = keyforge --background`.
 - **Cores do Omarchy:** em Preferências > Tema, a opção "Omarchy" (que já vem escolhida na primeira
   abertura dentro do Omarchy) usa as cores, o destaque e o modo claro/escuro do tema ativo, lidos de
   `~/.local/state/omarchy/current/theme/colors.toml`. Ao trocar o tema no Omarchy, o editor acompanha
   em até 2 segundos, sem reabrir. O contraste do texto e dos controles é corrigido se o tema for fraco
   (a regra WCAG do projeto vale para qualquer tema). As fontes de texto e monoespaçada vêm do `fc-match`.
-- **Janela do editor:** o `app_id` é `akp153e`. Para ela abrir flutuando, na config em Lua:
-  `o.window("^(akp153e)$", { tag = "+floating-window" })`
-  Na config antiga (`windows.conf`): `windowrule = float, class:^(akp153e)$`
+- **Janela do editor:** o `app_id` é `keyforge`. Para ela abrir flutuando, na config em Lua:
+  `o.window("^(keyforge)$", { tag = "+floating-window" })`
+  Na config antiga (`windows.conf`): `windowrule = float, class:^(keyforge)$`
 - **Bandeja:** o Waybar mostra o ícone pelo StatusNotifierItem. No Omarchy a bandeja pode ficar
   recolhida atrás do ícone de expandir.
 - **Trazer o editor para a frente:** feito pelo `hyprctl` (já instalado com o Hyprland), na sintaxe
@@ -104,12 +104,12 @@ direto, de preferência com outro cabo USB-C de dados.
 
 ## Provar no aparelho
 
-1. `akp153e --probe` e abra `akp153e_probe.txt`: o aparelho deve aparecer em "Interfaces HID".
+1. `keyforge --probe` e abra `keyforge_probe.txt`: o aparelho deve aparecer em "Interfaces HID".
    Se aparecer com "Permission denied", a regra udev não valeu: confira `getfacl /dev/hidrawN` (deve
    listar o seu usuário). A regra precisa ter número menor que 73 (por isso `70-`); com `99-` a
    marca `uaccess` chega depois do `73-seat-late.rules` do systemd e não dá acesso.
    **ok 2026-10-29**: acesso, imagem na tecla 1 e aperto/soltura da tecla 1.
-2. `akp153e --background`: as teclas devem desenhar.
+2. `keyforge --background`: as teclas devem desenhar.
 3. Aperte uma tecla com ação de atalho ou de app. Rode o `--probe` e aperte as 15 teclas: cada uma
    deve aparecer como `IN[...] 41 43 4B ...`. Em 2026-10-29 só a tecla 1 apareceu, e numa segunda
    rodada o aparelho caiu do USB 8 vezes enquanto as teclas eram apertadas (`dmesg`: `USB disconnect`)

@@ -46,14 +46,14 @@ fn main() {
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
-    let path = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR")).join("akp153e.ico");
-    fs::write(&path, ico()).expect("gravar akp153e.ico");
+    let path = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR")).join("keyforge.ico");
+    fs::write(&path, ico()).expect("gravar keyforge.ico");
     let mut res = winresource::WindowsResource::new();
     res.set_icon(path.to_str().expect("caminho UTF-8"));
-    res.set("ProductName", "AKP153E Open Controller");
+    res.set("ProductName", "Keyforge");
     res.set(
         "FileDescription",
-        "Unofficial controller for the AKP153E stream controller",
+        "Keyforge: software for stream controllers",
     );
     res.compile().expect("embutir recursos do Windows");
 }

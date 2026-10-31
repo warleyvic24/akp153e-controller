@@ -1,0 +1,9 @@
+# Troca de nome (akp153e -> keyforge): um serviço antigo ainda rodando seguraria o USB e a porta de
+# controle, e o novo só mandaria "mostrar" para ele. Encerra o antigo; o novo abre pelo menu.
+post_install() {
+  pkill -x akp153e 2>/dev/null || true
+}
+
+post_upgrade() {
+  post_install
+}

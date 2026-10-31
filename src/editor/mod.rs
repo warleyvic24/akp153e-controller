@@ -120,13 +120,15 @@ impl App {
         .with_preview_state()
     }
 
-    /// Só em debug: `AKP153E_PREVIEW_UI=key=5,tab=1,settings,picker,library` abre o editor já
+    /// Só em debug: `KEYFORGE_PREVIEW_UI=key=5,tab=1,settings,picker,library` abre o editor já
     /// numa tela, para conferir (e fotografar) cada uma sem clicar. O release ignora.
     fn with_preview_state(mut self) -> Self {
         if !cfg!(debug_assertions) {
             return self;
         }
-        let Ok(spec) = std::env::var("AKP153E_PREVIEW_UI") else {
+        let Some(spec) =
+            crate::config::schema::dev_var("PREVIEW_UI").and_then(|v| v.into_string().ok())
+        else {
             return self;
         };
         for item in spec.split(',').map(str::trim) {

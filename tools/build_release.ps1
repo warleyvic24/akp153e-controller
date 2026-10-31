@@ -25,13 +25,13 @@ try {
     cargo build --release --locked
     if ($LASTEXITCODE -ne 0) { throw "cargo build falhou" }
 
-    $name = "akp153e-open-controller-v$Version-windows-x64"
+    $name = "keyforge-v$Version-windows-x64"
     $dist = Join-Path $root "dist"
     $folder = Join-Path $dist $name
     Remove-Item -Recurse -Force $folder -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force $folder | Out-Null
 
-    $exe = Join-Path $env:CARGO_TARGET_DIR "release\akp153e.exe"
+    $exe = Join-Path $env:CARGO_TARGET_DIR "release\keyforge.exe"
     # Confere que o nome de usuário não ficou gravado no executável.
     $bytes = [System.IO.File]::ReadAllBytes($exe)
     $text = [System.Text.Encoding]::ASCII.GetString($bytes)

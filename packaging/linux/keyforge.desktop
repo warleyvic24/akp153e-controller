@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Keyforge
+Comment=Controle do stream controller (AJAZZ AKP153E e outros)
+Exec=keyforge
+Terminal=false
+Categories=Utility;Settings;
+StartupNotify=false
+StartupWMClass=keyforge

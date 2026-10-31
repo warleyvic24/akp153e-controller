@@ -137,35 +137,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "akp153e"
-version = "0.1.0"
-dependencies = [
- "ab_glyph",
- "base64 0.22.1",
- "directories",
- "eframe",
- "egui",
- "enigo",
- "env_logger",
- "gtk",
- "hidapi",
- "image",
- "jiff",
- "log",
- "reqwest",
- "resvg",
- "rfd",
- "serde",
- "serde_json",
- "sha2",
- "tokio",
- "tray-icon",
- "tungstenite",
- "windows 0.58.0",
- "winresource",
-]
-
-[[package]]
 name = "android-activity"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2562,6 +2533,35 @@ checksum = "0fbe853b403ae61a04233030ae8a79d94975281ed9770a1f9e246732b534b28d"
 dependencies = [
  "bitflags 2.13.2",
  "serde",
+]
+
+[[package]]
+name = "keyforge"
+version = "0.1.0"
+dependencies = [
+ "ab_glyph",
+ "base64 0.22.1",
+ "directories",
+ "eframe",
+ "egui",
+ "enigo",
+ "env_logger",
+ "gtk",
+ "hidapi",
+ "image",
+ "jiff",
+ "log",
+ "reqwest",
+ "resvg",
+ "rfd",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tray-icon",
+ "tungstenite",
+ "windows 0.58.0",
+ "winresource",
 ]
 
 [[package]]
