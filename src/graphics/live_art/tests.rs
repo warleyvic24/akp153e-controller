@@ -147,3 +147,40 @@ fn every_monitor_mode_fits_the_device_limit() {
         assert!(encode_frame(&img).len() <= MAX_JPEG_BYTES, "{metric:?}");
     }
 }
+
+#[test]
+fn black_bars_around_a_cover_are_trimmed_but_a_dark_cover_is_kept() {
+    // 120 x 90 com faixas pretas de 15 px em cima e embaixo (a miniatura 4:3 do YouTube).
+    let img = image::RgbImage::from_fn(120, 90, |_, y| {
+        if !(15..75).contains(&y) {
+            image::Rgb([0, 0, 0])
+        } else {
+            image::Rgb([200, 80, 40])
+        }
+    });
+    let trimmed = trim_letterbox(image::DynamicImage::ImageRgb8(img));
+    assert_eq!((trimmed.width(), trimmed.height()), (120, 60));
+    let dark = image::DynamicImage::ImageRgb8(image::RgbImage::new(50, 50));
+    assert_eq!(trim_letterbox(dark).width(), 50);
+}
+
+#[test]
+fn a_long_title_splits_at_the_space_nearest_the_middle() {
+    assert_eq!(split_title("Curto"), ("Curto", None));
+    assert_eq!(
+        split_title("6 Hacks do Hermes Desktop que me Aposentaram"),
+        ("6 Hacks do Hermes Desktop", Some("que me Aposentaram"))
+    );
+}
+
+#[test]
+fn a_huge_title_is_cut_at_a_whole_word() {
+    assert_eq!(shorten("Curto", 40), "Curto");
+    assert_eq!(
+        shorten(
+            "6 Hacks do Hermes Desktop que me Aposentaram o CLAUDE CODE",
+            40
+        ),
+        "6 Hacks do Hermes Desktop que me..."
+    );
+}

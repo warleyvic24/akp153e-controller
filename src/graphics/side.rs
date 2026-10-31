@@ -57,6 +57,9 @@ pub fn render(side: &SideScreen, info: &SideInfo, live: &Live) -> Option<RgbaIma
         SideScreen::PageName => page_name(&mut img, info),
         SideScreen::Clock => clock(&mut img),
         SideScreen::System => super::live_art::side_system(&mut img, live.system, MUTED),
+        SideScreen::NowPlaying => {
+            super::live_art::side_now_playing(&mut img, live.playing.as_ref(), MUTED)
+        }
         SideScreen::Image { path } => {
             if let Ok(picture) = image::open(path) {
                 let filled = picture
@@ -166,7 +169,12 @@ mod tests {
     #[test]
     fn off_draws_nothing_and_the_other_modes_fill_the_strip() {
         assert!(render(&SideScreen::Off, &info(), &Live::default()).is_none());
-        for mode in [SideScreen::PageName, SideScreen::Clock, SideScreen::System] {
+        for mode in [
+            SideScreen::PageName,
+            SideScreen::Clock,
+            SideScreen::System,
+            SideScreen::NowPlaying,
+        ] {
             let img = render(&mode, &info(), &Live::default()).unwrap();
             assert_eq!(img.dimensions(), (WIDTH, HEIGHT));
             if font().is_some() {
@@ -228,6 +236,7 @@ mod tests {
             ("pagina", SideScreen::PageName),
             ("relogio", SideScreen::Clock),
             ("sistema", SideScreen::System),
+            ("tocando", SideScreen::NowPlaying),
         ] {
             render(&mode, &info(), &Live::default())
                 .unwrap()

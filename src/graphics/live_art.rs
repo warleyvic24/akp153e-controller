@@ -160,7 +160,11 @@ const GLYPH_MARGIN: f32 = 0.09;
 /// Play/Pause: a capa (escurecida) cobrindo a tecla, o estado no canto e título e artista embaixo.
 fn now_playing(button: &ButtonConfig, p: &NowPlaying, (w, h): (u32, u32)) -> RgbaImage {
     let ap = button.current_appearance();
-    let art = p.art.as_deref().and_then(|path| image::open(path).ok());
+    let art = p
+        .art
+        .as_deref()
+        .and_then(|path| image::open(path).ok())
+        .map(trim_letterbox);
     let mut img = match art {
         Some(art) => {
             let mut img = art
@@ -220,6 +224,61 @@ fn now_playing(button: &ButtonConfig, p: &NowPlaying, (w, h): (u32, u32)) -> Rgb
         );
     }
     img
+}
+
+/// Corta em `max` letras, terminando numa palavra inteira e com "...".
+fn shorten(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_string();
+    }
+    let cut: String = text.chars().take(max).collect();
+    let words = cut.rsplit_once(' ').map_or(cut.as_str(), |(head, _)| head);
+    format!("{}...", words.trim_end_matches([',', '.', ' ', '-']))
+}
+
+/// Parte um título longo em duas linhas, no espaço mais perto do meio.
+fn split_title(title: &str) -> (&str, Option<&str>) {
+    if title.chars().count() <= TITLE_ONE_LINE {
+        return (title, None);
+    }
+    let middle = title.len() / 2;
+    let cut = title
+        .match_indices(' ')
+        .map(|(i, _)| i)
+        .min_by_key(|i| i.abs_diff(middle));
+    match cut {
+        Some(i) => (&title[..i], Some(title[i + 1..].trim_start())),
+        None => (title, None),
+    }
+}
+
+/// Brilho médio abaixo do qual uma linha ou coluna da borda conta como tarja preta.
+const LETTERBOX_LEVEL: u32 = 18;
+
+/// Tira as tarjas pretas da borda (as miniaturas do YouTube vêm em 4:3 com faixas em cima e
+/// embaixo), para a capa ocupar o quadro em vez de mostrar as faixas.
+pub(super) fn trim_letterbox(img: image::DynamicImage) -> image::DynamicImage {
+    let rgb = img.to_rgb8();
+    let (w, h) = rgb.dimensions();
+    let dark_row = |y: u32| {
+        (0..w).map(|x| luma(rgb.get_pixel(x, y))).sum::<u32>() / w.max(1) < LETTERBOX_LEVEL
+    };
+    let dark_col = |x: u32| {
+        (0..h).map(|y| luma(rgb.get_pixel(x, y))).sum::<u32>() / h.max(1) < LETTERBOX_LEVEL
+    };
+    let top = (0..h).take_while(|&y| dark_row(y)).count() as u32;
+    let bottom = (0..h).rev().take_while(|&y| dark_row(y)).count() as u32;
+    let left = (0..w).take_while(|&x| dark_col(x)).count() as u32;
+    let right = (0..w).rev().take_while(|&x| dark_col(x)).count() as u32;
+    // Imagem toda escura (ou quase): fica como está.
+    if top + bottom >= h / 2 || left + right >= w / 2 {
+        return img;
+    }
+    img.crop_imm(left, top, w - left - right, h - top - bottom)
+}
+
+fn luma(p: &image::Rgb<u8>) -> u32 {
+    (u32::from(p[0]) * 3 + u32::from(p[1]) * 6 + u32::from(p[2])) / 10
 }
 
 /// Escurece a imagem: `amount` uniforme, mais um pouco no pé (onde vai o texto).
@@ -414,6 +473,112 @@ pub fn side_system(img: &mut RgbaImage, stats: Option<SystemStats>, muted: RGBAC
             fill,
             WHITE,
         );
+    }
+}
+
+/// Tela lateral "Tocando agora" (82 x 400): a capa nítida no alto sobre ela mesma desfocada e
+/// escura, o título e o artista ao longo da faixa (como o nome da página) e o estado no pé.
+const SIDE_ART_TOP: u32 = 8;
+const SIDE_ART_INSET: u32 = 6;
+const SIDE_BACKDROP_DIM: f32 = 0.72;
+const SIDE_BACKDROP_BLUR: f32 = 6.0;
+const SIDE_TEXT_TOP: u32 = 92;
+const SIDE_TEXT_BOTTOM: u32 = 44;
+const SIDE_TITLE_PX: f32 = 22.0;
+const SIDE_ARTIST_PX: f32 = 14.0;
+/// Acima disto o título vai em duas linhas.
+const TITLE_ONE_LINE: usize = 20;
+/// Títulos de vídeo passam de 80 letras: cortados aqui, a letra continua legível na faixa.
+const TITLE_MAX: usize = 40;
+const SIDE_STATE_SIZE: f32 = 18.0;
+
+pub fn side_now_playing(img: &mut RgbaImage, playing: Option<&NowPlaying>, muted: RGBAColor) {
+    let (w, h) = img.dimensions();
+    let art = playing
+        .and_then(|p| p.art.as_deref())
+        .and_then(|path| image::open(path).ok())
+        .map(trim_letterbox);
+    if let Some(art) = &art {
+        let mut back = art
+            .resize_to_fill(w, h, imageops::FilterType::Triangle)
+            .blur(SIDE_BACKDROP_BLUR)
+            .to_rgba8();
+        shade(&mut back, SIDE_BACKDROP_DIM);
+        *img = back;
+        let side = w - 2 * SIDE_ART_INSET;
+        let cover = art
+            .resize_to_fill(side, side, imageops::FilterType::Lanczos3)
+            .to_rgba8();
+        imageops::overlay(
+            img,
+            &cover,
+            i64::from(SIDE_ART_INSET),
+            i64::from(SIDE_ART_TOP),
+        );
+    }
+    let (Some(regular), Some(bold)) = (font(), bold_font()) else {
+        return;
+    };
+    // O texto vai deitado numa tela (comprimento x largura) e depois gira, como o nome da página.
+    let length = h - SIDE_TEXT_TOP - SIDE_TEXT_BOTTOM;
+    // A tela deitada parte do fundo que já está ali (a capa desfocada), para o texto se misturar a ele.
+    let region = imageops::crop_imm(img, 0, SIDE_TEXT_TOP, w, length).to_image();
+    let mut lying = imageops::rotate270(&region);
+    match playing {
+        Some(p) => {
+            let title = if p.title.is_empty() {
+                t("Tocando")
+            } else {
+                &p.title
+            };
+            // O título é o que se procura: em duas linhas quando é longo, e o artista menor embaixo.
+            let short = shorten(title, TITLE_MAX);
+            let (first, second) = split_title(&short);
+            let size = (SIDE_TITLE_PX, MIN_PX);
+            draw_line(&mut lying, bold, first, size, WHITE, 4.0);
+            if let Some(second) = second {
+                draw_line(&mut lying, bold, second, size, WHITE, 30.0);
+            }
+            if !p.artist.is_empty() {
+                let size = (SIDE_ARTIST_PX, MIN_PX);
+                draw_line(&mut lying, regular, &p.artist, size, SOFT_WHITE, 58.0);
+            }
+        }
+        None => {
+            draw_line(
+                &mut lying,
+                regular,
+                t("Nada tocando"),
+                (SIDE_ARTIST_PX, MIN_PX),
+                muted,
+                30.0,
+            );
+        }
+    }
+    let upright = imageops::rotate90(&lying);
+    imageops::overlay(img, &upright, 0, i64::from(SIDE_TEXT_TOP));
+    if let Some(p) = playing {
+        let (wf, hf) = (w as f32, h as f32);
+        let x = (wf - SIDE_STATE_SIZE) / 2.0;
+        let y = hf - SIDE_TEXT_BOTTOM as f32 + (SIDE_TEXT_BOTTOM as f32 - SIDE_STATE_SIZE) / 2.0;
+        if p.playing {
+            triangle(img, (x, y, SIDE_STATE_SIZE), GREEN);
+        } else {
+            let bar_w = SIDE_STATE_SIZE * 0.34;
+            for bx in [x, x + SIDE_STATE_SIZE - bar_w] {
+                fill_round_rect(
+                    img,
+                    (
+                        bx.round() as i64,
+                        y as i64,
+                        bar_w.round() as i64,
+                        SIDE_STATE_SIZE as i64,
+                    ),
+                    1.0,
+                    SOFT_WHITE,
+                );
+            }
+        }
     }
 }
 

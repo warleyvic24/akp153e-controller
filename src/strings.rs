@@ -338,6 +338,8 @@ const EN: &[(&str, &str)] = &[
     ("Texto na tecla (ex.: Mudo). Enter quebra a linha", "Key text (e.g. Mute). Enter breaks the line"),
     ("Topo", "Top"),
     ("Tela lateral", "Side screen"),
+    ("Nada tocando", "Nothing playing"),
+    ("Tocando agora", "Now playing"),
     ("Ctrl Z", "Ctrl Z"),
     ("andar entre as teclas", "move between keys"),
     ("Setas", "Arrows"),

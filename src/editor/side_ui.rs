@@ -54,8 +54,8 @@ impl App {
         } else {
             0
         };
-        // Só o modo "Sistema" depende dos dados ao vivo.
-        let live = if side == SideScreen::System {
+        // Só "Sistema" e "Tocando agora" dependem dos dados ao vivo.
+        let live = if matches!(side, SideScreen::System | SideScreen::NowPlaying) {
             g.live.clone()
         } else {
             Live::default()
@@ -142,6 +142,7 @@ impl App {
                     (SideScreen::PageName, "Nome da página"),
                     (SideScreen::Clock, "Relógio"),
                     (SideScreen::System, "Sistema"),
+                    (SideScreen::NowPlaying, "Tocando agora"),
                 ];
                 for (mode, name) in modes {
                     let on = *side == mode;

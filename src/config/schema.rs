@@ -310,6 +310,8 @@ pub enum SideScreen {
     Clock,
     /// CPU, RAM e temperatura ao vivo.
     System,
+    /// A música tocando agora: capa, título, artista e se está tocando ou em pausa.
+    NowPlaying,
     /// Uma imagem, recortada para preencher a faixa.
     Image { path: String },
 }

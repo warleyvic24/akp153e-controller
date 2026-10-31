@@ -56,6 +56,7 @@ pub(super) fn wants(sh: &Shared) -> Wants {
             system: a.system || b.system,
         });
     all.system |= page.side == SideScreen::System;
+    all.playing |= page.side == SideScreen::NowPlaying;
     all
 }
 
@@ -91,7 +92,10 @@ pub fn spawn(state: SharedState, tx: Option<Sender<UsbCmd>>) {
                             || (w.playing && diff.playing)
                             || (w.system && diff.system)
                     });
-                    if diff.system && lock(&state).cfg.page().side == SideScreen::System {
+                    let side = lock(&state).cfg.page().side.clone();
+                    if (diff.system && side == SideScreen::System)
+                        || (diff.playing && side == SideScreen::NowPlaying)
+                    {
                         redraw_side(&state, tx);
                     }
                 }
