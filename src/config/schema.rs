@@ -90,6 +90,10 @@ pub enum ButtonAction {
     RunCommand {
         command: String,
     },
+    /// Toca um arquivo de som (soundboard), sem esperar terminar.
+    PlaySound {
+        path: String,
+    },
     /// Muda o brilho do aparelho em `delta` pontos (de 5 a 100 %).
     Brightness {
         delta: i32,

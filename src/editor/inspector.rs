@@ -45,6 +45,7 @@ pub(crate) fn key_title(b: &ButtonConfig) -> Option<String> {
         ButtonAction::Hotkey { keys } if !keys.is_empty() => Some(summary::chord(keys)),
         ButtonAction::OpenMixer => Some(t("Mixer").to_string()),
         ButtonAction::Clock => Some(t("Relógio").to_string()),
+        ButtonAction::PlaySound { path } => summary::sound_name(path),
         ButtonAction::Obs { command, target } if target.is_empty() => {
             Some(t(super::obs_ui::command_label(*command)).to_string())
         }

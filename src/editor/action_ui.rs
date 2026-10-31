@@ -64,7 +64,7 @@ pub(crate) fn media_label(key: &str) -> &str {
         .map_or(key, |(_, label)| label)
 }
 
-const ACTION_KINDS: [(&str, &str); 16] = [
+const ACTION_KINDS: [(&str, &str); 17] = [
     ("none", "Nenhuma"),
     ("hotkey", "Atalho"),
     ("launch-app", "App"),
@@ -81,11 +81,13 @@ const ACTION_KINDS: [(&str, &str); 16] = [
     ("brightness", "Brilho"),
     ("clock", "Relógio"),
     ("obs", "OBS"),
+    ("play-sound", "Som"),
 ];
 
 /// Tipos que podem ser passo de uma multi-ação (navegação não cabe: o serviço a ignora lá dentro).
-const STEP_KINDS: [(&str, &str); 8] = [
+const STEP_KINDS: [(&str, &str); 9] = [
     ("hotkey", "Atalho"),
+    ("play-sound", "Som"),
     ("obs", "OBS"),
     ("run-command", "Comando"),
     ("type-text", "Texto"),
@@ -140,6 +142,7 @@ fn action_name(a: &ButtonAction) -> &'static str {
         ButtonAction::Brightness { .. } => "brightness",
         ButtonAction::Clock => "clock",
         ButtonAction::Obs { .. } => "obs",
+        ButtonAction::PlaySound { .. } => "play-sound",
     }
 }
 
@@ -177,6 +180,9 @@ fn default_action(kind: &str) -> ButtonAction {
             delta: BRIGHTNESS_STEP,
         },
         "clock" => ButtonAction::Clock,
+        "play-sound" => ButtonAction::PlaySound {
+            path: String::new(),
+        },
         "obs" => ButtonAction::Obs {
             command: ObsCommand::Record,
             target: String::new(),
@@ -341,6 +347,7 @@ fn kind_icon(kind: &str) -> &'static str {
         "brightness" => "lucide:sun",
         "clock" => "lucide:clock",
         "obs" => "lucide:clapperboard",
+        "play-sound" => "lucide:audio-lines",
         _ => "ban",
     }
 }
@@ -379,6 +386,7 @@ pub fn action_editor(
         ButtonAction::RunCommand { command } => command_editor(ui, cx, command),
         ButtonAction::Brightness { delta } => brightness_editor(ui, cx, delta),
         ButtonAction::Obs { command, target } => super::obs_ui::obs_editor(ui, cx, command, target),
+        ButtonAction::PlaySound { path } => sound_editor(ui, cx, path),
         ButtonAction::Clock => {
             ui.label(widgets::hint(t(CLOCK_HINT), cx.pal));
             false
@@ -398,6 +406,47 @@ const COMMAND_HINT: &str =
 #[cfg(not(windows))]
 const COMMAND_HINT: &str =
     "Roda no sh (ex.: playerctl play-pause, notify-send oi). A saída não aparece.";
+
+/// Formatos que o tocador do sistema lê (no Windows, só WAV).
+#[cfg(windows)]
+const SOUND_EXTENSIONS: [&str; 1] = ["wav"];
+#[cfg(not(windows))]
+const SOUND_EXTENSIONS: [&str; 5] = ["wav", "ogg", "oga", "flac", "mp3"];
+#[cfg(windows)]
+const SOUND_HINT: &str = "Arquivo WAV. Tocado sem esperar: a tecla responde na hora.";
+#[cfg(not(windows))]
+const SOUND_HINT: &str = "WAV, OGG, FLAC ou MP3, pelo pw-play (ou paplay). Tocado sem esperar.";
+
+fn sound_editor(ui: &mut egui::Ui, cx: &PaneCtx, path: &mut String) -> bool {
+    let mut changed = false;
+    widgets::section(ui, "Arquivo de som", cx.pal);
+    ui.horizontal(|ui| {
+        let name = std::path::Path::new(path.as_str())
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned());
+        match name {
+            Some(name) => {
+                ui.label(name).on_hover_text(path.as_str());
+            }
+            None => {
+                ui.label(RichText::new(t("Nenhum")).color(cx.pal.muted));
+            }
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.button(t("Escolher")).clicked() {
+                let file = rfd::FileDialog::new()
+                    .add_filter(t("Som"), &SOUND_EXTENSIONS)
+                    .pick_file();
+                if let Some(file) = file {
+                    *path = file.display().to_string();
+                    changed = true;
+                }
+            }
+        });
+    });
+    ui.label(widgets::hint(t(SOUND_HINT), cx.pal));
+    changed
+}
 
 fn command_editor(ui: &mut egui::Ui, cx: &PaneCtx, command: &mut String) -> bool {
     let label = widgets::section(ui, "Linha de comando", cx.pal);
@@ -485,6 +534,7 @@ fn step_editor(ui: &mut egui::Ui, cx: &PaneCtx, step: &mut ButtonAction) -> bool
         ButtonAction::Delay { ms } => delay_editor(ui, cx, ms),
         ButtonAction::RunCommand { command } => command_editor(ui, cx, command),
         ButtonAction::Obs { command, target } => super::obs_ui::obs_editor(ui, cx, command, target),
+        ButtonAction::PlaySound { path } => sound_editor(ui, cx, path),
         _ => false,
     }
 }

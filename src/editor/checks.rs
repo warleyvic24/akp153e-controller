@@ -32,6 +32,9 @@ pub(crate) fn action_problem(a: &ButtonAction, targets: &Targets) -> Option<&'st
         {
             Some("Escolha a cena ou a entrada do OBS")
         }
+        ButtonAction::PlaySound { path } if path.trim().is_empty() => {
+            Some("Escolha o arquivo de som")
+        }
         ButtonAction::RunCommand { command } if command.trim().is_empty() => {
             Some("Digite o comando que a tecla roda")
         }

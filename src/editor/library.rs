@@ -136,6 +136,15 @@ pub fn presets() -> Vec<Preset> {
         p("Mídia", "Vol -", "voldown", MEDIA, media("voldown")),
         p("Mídia", "Mudo", "mute", MEDIA, media("mute")),
         p("Mídia", "Mixer", "mixer", MEDIA, ButtonAction::OpenMixer),
+        p(
+            "Mídia",
+            "Tocar som",
+            "lucide:audio-lines",
+            MEDIA,
+            ButtonAction::PlaySound {
+                path: String::new(),
+            },
+        ),
         p("Atalhos", "Copiar", "copy", KEYS, hotkey(&["ctrl", "c"])),
         p("Atalhos", "Colar", "paste", KEYS, hotkey(&["ctrl", "v"])),
         p(

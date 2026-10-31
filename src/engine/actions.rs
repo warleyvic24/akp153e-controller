@@ -91,6 +91,12 @@ impl Executor {
             ButtonAction::Delay { ms } => {
                 tokio::time::sleep(std::time::Duration::from_millis(ms.min(MAX_DELAY_MS))).await;
             }
+            ButtonAction::PlaySound { path } => {
+                let played = tokio::task::spawn_blocking(move || play_sound(&path)).await;
+                if let Ok(Err(e)) = played {
+                    log::error!("som: {e}");
+                }
+            }
             ButtonAction::RunCommand { command } => {
                 let spawned = tokio::task::spawn_blocking(move || run_command(&command)).await;
                 if let Ok(Err(e)) = spawned {
@@ -122,6 +128,37 @@ impl Executor {
             | ButtonAction::PreviousPage
             | ButtonAction::OpenMixer => {}
         }
+    }
+}
+
+/// Toca o arquivo pelo tocador do sistema: no Linux o `pw-play` (PipeWire) ou o `paplay`
+/// (PulseAudio); no Windows o `SoundPlayer` do .NET pelo PowerShell (só WAV).
+fn play_sound(path: &str) -> Result<(), String> {
+    let path = path.trim();
+    if path.is_empty() || !std::path::Path::new(path).is_file() {
+        return Err(format!("arquivo de som não encontrado: {path}"));
+    }
+    #[cfg(windows)]
+    {
+        // Aspas simples do PowerShell: uma aspa no caminho vira duas.
+        let quoted = path.replace('\'', "''");
+        let script = format!("(New-Object Media.SoundPlayer '{quoted}').PlaySync()");
+        let mut cmd = std::process::Command::new("powershell");
+        cmd.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
+        spawn_detached(hide_console(&mut cmd))
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        let mut last = String::new();
+        for player in ["pw-play", "paplay"] {
+            match spawn_detached(std::process::Command::new(player).arg(path)) {
+                Ok(_) => return Ok(()),
+                Err(e) => last = format!("{player}: {e}"),
+            }
+        }
+        Err(format!("nenhum tocador (pw-play, paplay): {last}"))
     }
 }
 
@@ -370,6 +407,19 @@ mod tests {
         })
         .await;
         assert!(started.elapsed() >= std::time::Duration::from_millis(150));
+    }
+
+    #[test]
+    fn a_missing_sound_file_is_refused_before_calling_a_player() {
+        let err = play_sound("/nao/existe/aplausos.ogg").unwrap_err();
+        assert!(err.contains("não encontrado"), "{err}");
+        assert!(play_sound("  ").is_err());
+    }
+
+    #[test]
+    fn an_empty_or_huge_command_is_refused() {
+        assert!(run_command("   ").is_err());
+        assert!(run_command(&"x".repeat(MAX_COMMAND_CHARS + 1)).is_err());
     }
 
     #[test]

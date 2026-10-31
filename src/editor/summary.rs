@@ -43,6 +43,10 @@ pub(crate) fn action_summary(a: &ButtonAction, targets: &Targets) -> Option<Stri
         ButtonAction::Brightness { delta } if *delta >= 0 => tf("Brilho +{}%", &[delta]),
         ButtonAction::Brightness { delta } => tf("Brilho {}%", &[delta]),
         ButtonAction::Clock => t("Relógio (hora e data)").to_string(),
+        ButtonAction::PlaySound { path } => match sound_name(path) {
+            Some(name) => tf("Toca: {}", &[&name]),
+            None => t("Toca um som").to_string(),
+        },
         ButtonAction::Obs { command, target } if target.is_empty() => {
             tf("OBS: {}", &[&t(super::obs_ui::command_label(*command))])
         }
@@ -52,6 +56,14 @@ pub(crate) fn action_summary(a: &ButtonAction, targets: &Targets) -> Option<Stri
         ),
     };
     Some(text)
+}
+
+/// Nome do arquivo de som sem a extensão ("/sons/aplausos.ogg" vira "aplausos").
+pub(crate) fn sound_name(path: &str) -> Option<String> {
+    std::path::Path::new(path.trim())
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .filter(|s| !s.is_empty())
 }
 
 /// Nome curto do programa: "C:\...\Teams.exe" vira "Teams"; um app da Loja
