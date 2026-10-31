@@ -202,16 +202,39 @@ impl Run {
     }
 
     /// Texto e cor de cada tecla no passo atual.
+    /// Número do passo e total (as teclas, segurar, brilho e, se houver, a lateral).
+    fn progress(&self) -> (usize, usize) {
+        let total = if self.has_side { 4 } else { 3 };
+        let now = match self.step {
+            Step::Press(_) => 1,
+            Step::Hold => 2,
+            Step::AskBrightness => 3,
+            Step::AskSide | Step::Done => total,
+        };
+        (now, total)
+    }
+
+    /// Texto e cor de cada tecla no passo atual.
     fn keys_view(&self) -> Vec<(String, RGBAColor)> {
+        let (now, total) = self.progress();
+        // Onde vai o "Teste 2/4" e, no fim, o placar: a última tecla e a do meio.
+        let progress_key = self.keys - 1;
+        let summary_key = self.keys / 2;
         (0..self.keys)
             .map(|i| match self.step {
+                Step::Done if i == summary_key => match self.failures {
+                    0 => (t("FIM\nTUDO OK").to_string(), PASS),
+                    n => (tf("FIM\n{} falha(s)", &[&n]), FAIL),
+                },
                 Step::Press(want) if i == want => (tf("{}\nAPERTE", &[&(i + 1)]), TARGET),
                 Step::Press(_) | Step::Done => match self.pressed[i] {
                     Some(true) => (format!("{}\nOK", i + 1), PASS),
                     Some(false) => (format!("{}\n{}", i + 1, t("ERRO")), FAIL),
                     None => ((i + 1).to_string(), PENDING),
                 },
+                _ if i == progress_key => (tf("Teste\n{} de {}", &[&now, &total]), PENDING),
                 Step::Hold if i == 0 => (t("SEGURE\n1 s").to_string(), TARGET),
+                Step::Hold if i == QUESTION_KEY => (t("Segure a\ntecla 1").to_string(), PENDING),
                 Step::AskBrightness | Step::AskSide if i == 0 => (t("SIM").to_string(), PASS),
                 Step::AskBrightness | Step::AskSide if i == NO_KEY => (t("NÃO").to_string(), FAIL),
                 Step::AskBrightness if i == QUESTION_KEY => {

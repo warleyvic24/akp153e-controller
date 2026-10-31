@@ -44,9 +44,8 @@ no pacote).
 **Problemas:**
 - lista plana com 40+ itens e o mesmo peso para tudo;
 - "Copiar", "Colar" e "Recortar" no topo (ninguém compra stream deck para Ctrl+C);
-- **bug no Linux:** "Calculadora", "Bloco de notas" e "Explorador" abrem `calc`, `notepad` e `explorer`, que
-  são programas do Windows e não existem no Omarchy;
-- "Mostrar área de trabalho" (Win+D) também é do Windows;
+- os atalhos do Windows (Calculadora, Bloco de notas, Explorador, Win+D) já somem no Linux (`WINDOWS_ONLY`),
+  mas o Linux não ganha equivalentes (Omarchy: menu, captura, workspace);
 - "Clique para aplicar" não diz em qual tecla;
 - linhas de 27 px.
 
@@ -317,7 +316,7 @@ O que **não** fazer, para não inchar: loja paga, conta na nuvem, editor de íc
 
 | Degrau do `ROTEIRO.md` | Itens deste plano |
 |---|---|
-| 1 Confiança | Autoteste completo (B); provar pressão longa, lateral e teclas vivas; **bug dos apps do Windows no Linux (A3)** |
+| 1 Confiança | Autoteste completo (B); provar pressão longa, lateral e teclas vivas |
 | 2 Alicerce | Abrir site como tipo próprio (B); chaves de idioma estáveis (A19) |
 | 3 Fundação visual | A1, A2, A12, A13, A14 |
 | 4 Editor bom | A3 a A11, A18; Ações App, Atalho, Webhook, Multi-ação, Dois estados (B) |

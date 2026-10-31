@@ -99,6 +99,11 @@ fn the_screen_shows_the_target_key_and_the_answers() {
     let view = run.keys_view();
     assert_eq!(view[0].1, PASS);
     assert_eq!(view[NO_KEY].1, FAIL);
+    assert!(view[14].0.contains("3"), "{}", view[14].0);
+    tap(&mut run, 0, at, 50);
+    tap(&mut run, NO_KEY, at, 50);
+    let view = run.keys_view();
+    assert_eq!(view[7], ("FIM\n1 falha(s)".to_string(), FAIL));
 }
 
 /// Prévia das telas do autoteste (grade 5 x 3 + lateral) em PNG:
