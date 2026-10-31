@@ -4,7 +4,7 @@ Substituto do aplicativo oficial do AJAZZ AKP153E (stream controller com 15 tecl
 Um executável, dois modos:
 
 - **Serviço** (`akp153e.exe --background`, bandeja, sem janela): dono do USB/HID, das ações e do desenho das teclas.
-- **Editor** (`akp153e.exe --editor`, janela egui): edita `%APPDATA%\AJazz\AKP153E\config.json` (Linux: `~/.config/AJazz/AKP153E/config.json`) e avisa o serviço por TCP em `127.0.0.1:47153` (`reload`, `status`, `reconnect`, `show`, `calib`, `pattern`). Trava do editor: porta 47154.
+- **Editor** (`akp153e.exe --editor`, janela egui): edita `%APPDATA%\AJazz\AKP153E\config.json` (Linux: `~/.config/AJazz/AKP153E/config.json`) e avisa o serviço por TCP em `127.0.0.1:47153` (`reload`, `status`, `reconnect`, `show`, `calib`, `pattern`, `apps`, `obs-info`, `obs-run`). Trava do editor: porta 47154.
 - Outros: `--probe` (grava `akp153e_probe.txt`), `--run-action <json>`, `--autostart on|off`.
 - Esconder uma janela eframe gasta 100% de CPU; por isso são dois processos.
 
@@ -36,13 +36,14 @@ cargo build --release           # -> target\release\akp153e.exe
 - Camadas em `src/`, dependência só para baixo. O editor usa do serviço apenas `service::runtime` (estado compartilhado); o serviço nunca usa o editor.
   - `main.rs`: lê os argumentos e escolhe o modo. `cli.rs`: log, `--run-action`, abertura do editor.
   - `editor/`: janela egui. `mod.rs` (`App`), painéis `panes.rs`, ações `action_ui.rs`, inspetor `inspector.rs`, barras `bars.rs`, palco `stage.rs`, preferências `settings.rs`, avisos `toast.rs`, design `tokens.rs`/`theme.rs`/`widgets.rs`.
-  - `service/`: serviço em segundo plano (`mod.rs`), estado compartilhado `runtime.rs`, thread do mixer `mixer_runtime.rs`.
+  - `service/`: serviço em segundo plano (`mod.rs`), estado compartilhado `runtime.rs` (testes em `runtime/tests.rs`), thread do mixer `mixer_runtime.rs`, perfil automático `auto_profile.rs`, conexão com o OBS `obs_runtime.rs`, descanso da tela `sleep.rs`.
+  - `obs/`: protocolo do obs-websocket 5 e estado do OBS, sem rede (testável); a rede fica em `service/obs_runtime.rs`.
   - `mixer/`: página de mixer, dados puros e testáveis; ação `open-mixer`.
-  - `platform/`: `shell.rs` (os dois sistemas, com `cfg`), `mod.rs` (ícones, processos, `same_user`), `omarchy.rs`. Windows: `audio.rs` (Core Audio), `apps.rs`. Linux: `audio_linux.rs` (`pactl`), `apps_linux.rs` (atalhos `.desktop`), `icon_theme.rs`. Comum: `audio_model.rs`.
-  - `config/`, `engine/` (ações), `graphics/` (desenho das teclas, ícones, ícone do app), `usb/` (protocolo), `strings.rs` (texto novo = `t`/`tf` + entrada em `EN`).
-- Unsafe só em `platform/` (`shell.rs`, `audio.rs`), sempre com `// SAFETY:`.
+  - `platform/`: `shell.rs` (os dois sistemas, com `cfg`), `mod.rs` (ícones, processos, `same_user`), `omarchy.rs`, `focus.rs` (app em foco: Hyprland pelo socket de eventos, Windows pela janela da frente). Windows: `audio.rs` (Core Audio), `apps.rs`. Linux: `audio_linux.rs` (`pactl`), `apps_linux.rs` (atalhos `.desktop`), `icon_theme.rs`. Comum: `audio_model.rs`.
+  - `config/` (`schema.rs`, exportar/importar perfil `profile_io.rs`), `engine/` (ações), `graphics/` (desenho das teclas, ícones, biblioteca Lucide `icon_library.rs` sobre `assets/lucide-icons.tsv`, ícone do app), `usb/` (protocolo), `strings.rs` (texto novo = `t`/`tf` + entrada em `EN`).
+- Unsafe só em `platform/` (`shell.rs`, `audio.rs`, `focus.rs`), sempre com `// SAFETY:`.
 - Testes que leem o código usam `test_support::sources_without_tests()`, que percorre todas as subpastas.
-- Interface: siga `docs/DESIGN.md` (tokens em `editor/tokens.rs`, cores em `theme::Palette`, texto mínimo 12 px, alvo mínimo 24 px, contraste imposto por testes em `editor/theme.rs`). Confira nos dois temas e, para testar clicando sem risco, use em debug `AKP153E_PREVIEW_THEME=light|dark` e `AKP153E_CONFIG_DIR=<pasta com cópia do config.json>`.
+- Interface: siga `docs/DESIGN.md` (tokens em `editor/tokens.rs`, cores em `theme::Palette`, texto mínimo 12 px, alvo mínimo 24 px, contraste imposto por testes em `editor/theme.rs`). Confira nos dois temas e, para testar clicando sem risco, use em debug `AKP153E_PREVIEW_THEME=light|dark` e `AKP153E_CONFIG_DIR=<pasta com cópia do config.json>` (com ele um segundo editor abre ao lado do real) e `AKP153E_PREVIEW_UI=key=5,tab=1,settings,picker,library` para abrir já numa tela. O OBS se testa de verdade com `AKP_OBS_PORT=.. AKP_OBS_PASSWORD=.. cargo test real_obs -- --ignored`.
 
 ## Hardware
 
