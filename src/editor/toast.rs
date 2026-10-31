@@ -7,13 +7,27 @@ use std::time::{Duration, Instant};
 
 const LIFETIME: Duration = Duration::from_secs(4);
 const MAX_VISIBLE: usize = 3;
+/// Duração do surgir e do sumir (opacidade e um leve deslize).
+const FADE: Duration = Duration::from_millis(180);
+const SLIDE: f32 = 8.0;
 /// Distância da borda inferior: fica acima da bandeja de ações e do rodapé.
 const BOTTOM_OFFSET: f32 = 210.0;
 
 struct Toast {
     text: String,
     action: Option<&'static str>,
+    born: Instant,
     until: Instant,
+}
+
+impl Toast {
+    /// 0 ao nascer e ao morrer, 1 no meio: entra e sai suave.
+    fn presence(&self, now: Instant) -> f32 {
+        let fade = FADE.as_secs_f32();
+        let grown = now.saturating_duration_since(self.born).as_secs_f32() / fade;
+        let left = self.until.saturating_duration_since(now).as_secs_f32() / fade;
+        grown.min(left).clamp(0.0, 1.0)
+    }
 }
 
 #[derive(Default)]
@@ -29,6 +43,7 @@ impl Toasts {
         self.0.push(Toast {
             text,
             action,
+            born: Instant::now(),
             until: Instant::now() + LIFETIME,
         });
         let extra = self.0.len().saturating_sub(MAX_VISIBLE);
@@ -46,13 +61,20 @@ impl Toasts {
 
     /// Desenha os avisos vivos. Devolve `true` se o usuário clicou na ação de algum.
     pub fn show(&mut self, ctx: &egui::Context, pal: &Palette) -> bool {
-        self.prune(Instant::now());
+        let now = Instant::now();
+        self.prune(now);
+        if self.0.iter().any(|t| t.presence(now) < 1.0) {
+            ctx.request_repaint();
+        }
         let mut clicked: Option<usize> = None;
         egui::Area::new("toasts".into())
             .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -BOTTOM_OFFSET))
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
                 for (i, t) in self.0.iter().enumerate() {
+                    let presence = t.presence(now);
+                    ui.set_opacity(presence);
+                    ui.add_space((1.0 - presence) * SLIDE);
                     Frame::none()
                         .fill(pal.raise)
                         .stroke(Stroke::new(1.0_f32, pal.control))

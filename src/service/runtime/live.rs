@@ -6,9 +6,39 @@ use crate::graphics::live_art;
 use crate::platform::live::{Live, Sampler, Wants};
 use crate::usb::UsbCmd;
 use std::sync::mpsc::Sender;
+use std::sync::{Condvar, Mutex};
 use std::time::Duration;
 
 pub const PERIOD: Duration = Duration::from_secs(2);
+/// Depois de um toque numa tecla de mídia, espera o sistema aplicar a mudança antes de ler.
+const AFTER_WAKE: Duration = Duration::from_millis(150);
+
+/// Pedido de consulta antecipada (tecla de mídia tocada) e o sinal que acorda a thread.
+static WAKE: (Mutex<bool>, Condvar) = (Mutex::new(false), Condvar::new());
+
+/// Faz a thread consultar já, em vez de esperar o fim do `PERIOD`.
+pub fn wake() {
+    let (flag, signal) = &WAKE;
+    *flag
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = true;
+    signal.notify_all();
+}
+
+/// Dorme até `PERIOD` ou até um `wake`.
+fn nap() {
+    let (flag, signal) = &WAKE;
+    let guard = flag
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (mut woken, _) = signal
+        .wait_timeout_while(guard, PERIOD, |w| !*w)
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if std::mem::take(&mut *woken) {
+        drop(woken);
+        std::thread::sleep(AFTER_WAKE);
+    }
+}
 
 /// O que a página ativa usa (nada com o mixer aberto, que ocupa as teclas e a lateral).
 pub(super) fn wants(sh: &Shared) -> Wants {
@@ -66,7 +96,7 @@ pub fn spawn(state: SharedState, tx: Option<Sender<UsbCmd>>) {
                     }
                 }
             }
-            std::thread::sleep(PERIOD);
+            nap();
         }
     });
 }

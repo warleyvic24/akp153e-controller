@@ -396,6 +396,10 @@ fn dispatch(sh: &mut Shared, exec: &Executor, index: usize, action: ButtonAction
             };
         }
         other => {
+            // Volume/música mudam agora: a tecla viva não espera a próxima consulta.
+            if matches!(other, ButtonAction::MediaKey { .. }) {
+                live::wake();
+            }
             exec.run(other);
             return Followup::default();
         }

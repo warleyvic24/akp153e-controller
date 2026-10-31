@@ -134,6 +134,49 @@ fn paint_device_body(p: &egui::Painter, rect: Rect, pal: &Palette, accent: Color
 const BEAUTIFY_HINT: &str =
     "Cor da categoria, fundo em degradê, rótulo e ícone nas teclas que não têm. Ctrl+Z desfaz.";
 
+/// Deslize da grade ao trocar de página (vem do lado da página nova) e a escala da tecla apertada.
+const SLIDE_TIME: f32 = 0.16;
+const SLIDE_SHARE: f32 = 0.6;
+const PRESS_TIME: f32 = 0.08;
+const PRESSED_SCALE: f32 = 0.86;
+
+/// Animação da troca de página no palco.
+#[derive(Default)]
+pub(super) struct PageSlide {
+    page: Option<(usize, usize)>,
+    start: Option<std::time::Instant>,
+    dir: f32,
+}
+
+impl PageSlide {
+    /// Deslocamento x (em teclas) e opacidade da grade neste quadro para a página `page`
+    /// (perfil, página).
+    fn frame(&mut self, page: (usize, usize)) -> (f32, f32) {
+        if self.page != Some(page) {
+            if let Some(old) = self.page {
+                self.start = Some(std::time::Instant::now());
+                // Mesma página em outro perfil: entra pela direita.
+                self.dir = if page.0 == old.0 && page.1 < old.1 {
+                    -1.0
+                } else {
+                    1.0
+                };
+            }
+            self.page = Some(page);
+        }
+        let Some(start) = self.start else {
+            return (0.0, 1.0);
+        };
+        let t = (start.elapsed().as_secs_f32() / SLIDE_TIME).min(1.0);
+        if t >= 1.0 {
+            self.start = None;
+        }
+        // Desacelera no fim (ease-out cúbico).
+        let eased = 1.0 - (1.0 - t).powi(3);
+        ((1.0 - eased) * self.dir * SLIDE_SHARE, eased)
+    }
+}
+
 /// Atalhos do palco em forma de tecla, para quem não sabe que eles existem.
 fn shortcut_hints(ui: &mut Ui, pal: &Palette) {
     let hints = [
@@ -323,6 +366,16 @@ impl App {
         let cols = g.cfg.page().cols;
         let targets = Targets::from(&g.cfg);
         let mut events = DeviceEvents::default();
+        let page_at = (
+            g.cfg.active_profile,
+            g.cfg.profiles[g.cfg.active_profile].active_page,
+        );
+        let (slide, opacity) = self.page_slide.frame(page_at);
+        if opacity < 1.0 {
+            ctx.request_repaint();
+        }
+        let mut painter = painter;
+        painter.set_opacity(opacity);
         for i in 0..g.cfg.page().rows * cols {
             let origin = pos2(
                 rect.left() + DEVICE_PAD + (i % cols) as f32 * (key + DEVICE_GAP),
@@ -356,7 +409,15 @@ impl App {
             let tex = self.key_tex.get(ctx, i, &live, g.icon_px);
             let view = key_view(button, Some(i + 1), tex, problem.is_some());
             let hot = resp.hovered() || drop_target;
-            widgets::paint_key(&painter, kr, &view, hot, i == self.selected, pal, accent);
+            let down = ctx.animate_bool_with_time(
+                resp.id.with("down"),
+                resp.is_pointer_button_down_on(),
+                PRESS_TIME,
+            );
+            let shown = kr
+                .translate(vec2(slide * key, 0.0))
+                .shrink(key * (1.0 - PRESSED_SCALE) / 2.0 * down);
+            widgets::paint_key(&painter, shown, &view, hot, i == self.selected, pal, accent);
             let resp = match (problem, key_tooltip(button, &targets)) {
                 (Some(problem), _) => resp.on_hover_text(t(problem)),
                 (None, Some(tip)) => resp.on_hover_text(tip),

@@ -68,6 +68,10 @@ espaçamento artificial entre letras (só o logotipo "AKP153E" o tem).
   agora (Play/Pause com a capa escurecida, estado no canto, título e artista) e "Monitor" (CPU, RAM, temperatura;
   barra verde, âmbar a partir de 60 %, vermelha a partir de 85 %), consultados a cada 2 s só se a página os usa
   (`service/runtime/live.rs`, desenho em `graphics/live_art.rs`). Sem dado, a tecla sai como uma tecla comum.
+- **Movimento**: a grade desliza ~0,16 s ao trocar de página (vem do lado da página nova); a tecla
+  segurada no editor afunda como no aparelho; avisos surgem e somem em ~0,18 s. As prévias das teclas são
+  redesenhadas numa thread (`editor/key_tex.rs`), mantendo a imagem anterior até a nova ficar pronta.
+- **Tecla de mídia tocada** acorda a consulta ao vivo na hora (`runtime::live::wake`): o volume novo aparece em ~0,2 s.
 - **Degradê e "Embelezar página"** (`editor/beautify.rs`): fundo mais claro em cima e mais escuro embaixo
   (±18 %); o botão no rodapé do palco dá a cada tecla configurada a cor da categoria da biblioteca, degradê,
   rótulo e ícone quando faltam (teclas vivas ficam sem rótulo), e avisa com "Desfazer".

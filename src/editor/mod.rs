@@ -7,6 +7,7 @@ mod favicon;
 mod history;
 mod icon_picker;
 mod inspector;
+mod key_tex;
 mod layout;
 mod library;
 mod library_panel;
@@ -28,10 +29,9 @@ mod widgets;
 
 use crate::config::schema::*;
 use crate::engine::actions::Executor;
-use crate::platform::live::Live;
 use crate::platform::shell;
 use crate::service::runtime;
-use crate::{graphics, strings, usb};
+use crate::{strings, usb};
 use eframe::egui::{self, Color32};
 use picker::AppPicker;
 use std::sync::mpsc::Sender;
@@ -63,7 +63,7 @@ pub(crate) struct App {
     query: String,
     clipboard: Option<ButtonConfig>,
     recording: Option<&'static str>,
-    key_tex: KeyTextures,
+    key_tex: key_tex::KeyTextures,
     picker: AppPicker,
     /// Busca dos ícones dos sites das teclas "Abrir site".
     favicons: favicon::Favicons,
@@ -80,6 +80,7 @@ pub(crate) struct App {
     /// Janela da tela lateral aberta.
     side_open: bool,
     side_tex: side_ui::SideTexture,
+    page_slide: stage::PageSlide,
 }
 
 impl App {
@@ -102,7 +103,7 @@ impl App {
             query: String::new(),
             clipboard: None,
             recording: None,
-            key_tex: KeyTextures::default(),
+            key_tex: key_tex::KeyTextures::default(),
             picker: AppPicker::default(),
             favicons: favicon::Favicons::default(),
             toasts: toast::Toasts::default(),
@@ -114,6 +115,7 @@ impl App {
             obs_live: obs_ui::ObsLive::default(),
             side_open: false,
             side_tex: side_ui::SideTexture::default(),
+            page_slide: stage::PageSlide::default(),
         }
         .with_preview_state()
     }
@@ -359,74 +361,11 @@ fn key_view(
     }
 }
 
-/// Texturas das teclas: a imagem exata que vai ao display, refeita só quando o botão muda.
-#[derive(Default)]
-struct KeyTextures {
-    keys: Vec<Option<CachedKey>>,
-    /// Dados ao vivo do quadro atual (copiados de `Shared::live`), para as teclas vivas.
-    live: Live,
-}
-
-/// Imagem de uma tecla e o que ela usou para ser desenhada (muda algo, desenha de novo).
-struct CachedKey {
-    button: ButtonConfig,
-    px: u32,
-    minute: u64,
-    /// Só nas teclas vivas; nas outras fica vazio e não força redesenho.
-    live: Option<Live>,
-    tex: egui::TextureHandle,
-}
-
 /// Minuto atual (para a prévia da tecla de relógio mudar junto com a do aparelho).
 pub(crate) fn current_minute() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() / 60)
-}
-
-impl KeyTextures {
-    fn get(
-        &mut self,
-        ctx: &egui::Context,
-        index: usize,
-        b: &ButtonConfig,
-        px: u32,
-    ) -> Option<egui::TextureId> {
-        if self.keys.len() <= index {
-            self.keys.resize_with(index + 1, || None);
-        }
-        if is_blank(b) {
-            return None;
-        }
-        let slot = &mut self.keys[index];
-        // Só a tecla de relógio depende da hora; nas outras o minuto não conta.
-        let minute = if b.action == ButtonAction::Clock {
-            current_minute()
-        } else {
-            0
-        };
-        let live = graphics::live_art::wants(b)
-            .any()
-            .then(|| self.live.clone());
-        if slot
-            .as_ref()
-            .is_none_or(|c| c.button != *b || c.px != px || c.minute != minute || c.live != live)
-        {
-            let rgba = match &live {
-                Some(data) => graphics::live_art::render_live(b, px, px, data),
-                None => graphics::renderer::render_rgba(b, px, px),
-            };
-            let image = egui::ColorImage::from_rgba_unmultiplied([px as usize; 2], rgba.as_raw());
-            *slot = Some(CachedKey {
-                button: b.clone(),
-                px,
-                minute,
-                live,
-                tex: ctx.load_texture(format!("key{index}"), image, egui::TextureOptions::LINEAR),
-            });
-        }
-        slot.as_ref().map(|c| c.tex.id())
-    }
 }
 
 impl eframe::App for App {
