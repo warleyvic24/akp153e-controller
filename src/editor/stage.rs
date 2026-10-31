@@ -17,7 +17,7 @@ const STAGE_FOOTER_HEIGHT: f32 = 30.0;
 const HINT_CHROME: f32 = 48.0;
 const PAGE_TABS_HEIGHT: f32 = 40.0;
 // Título e três passos de uma linha, com margens; medido na tela (o antigo 120 cortava o fim).
-const GUIDE_HEIGHT: f32 = 170.0;
+const GUIDE_HEIGHT: f32 = 210.0;
 const OFFLINE_BANNER_HEIGHT: f32 = 60.0;
 const BADGE_STROKE: f32 = 1.0;
 const BEZEL_INSET: f32 = 8.0;
@@ -233,8 +233,10 @@ fn shortcuts_button(ui: &mut Ui, pal: &Palette) {
 }
 
 /// Passo a passo para quem abre uma página sem nenhuma tecla configurada.
-fn empty_guide(ui: &mut Ui, pal: &Palette, accent: Color32, width: f32) {
+/// Devolve o ponto de partida escolhido (índice em `templates::TEMPLATES`), se algum.
+fn empty_guide(ui: &mut Ui, pal: &Palette, accent: Color32, width: f32) -> Option<usize> {
     let ink = theme::ink(accent, pal);
+    let mut chosen = None;
     // Da largura do aparelho e alinhado à esquerda, como as páginas, não ao centro do palco.
     ui.allocate_ui(vec2(width, 0.0), |ui| {
         ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
@@ -245,11 +247,7 @@ fn empty_guide(ui: &mut Ui, pal: &Palette, accent: Color32, width: f32) {
                 .inner_margin(Margin::same(space::MD as i8))
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    ui.label(
-                        RichText::new(t("COMECE POR AQUI"))
-                            .font(theme::display_font(text::CAPTION))
-                            .color(pal.muted),
-                    );
+                    ui.label(RichText::new(t("Comece por aqui")).strong());
                     let steps = [
                         "Clique numa tecla do aparelho",
                         "Escolha uma ação em Ações, ou arraste-a até a tecla",
@@ -261,9 +259,19 @@ fn empty_guide(ui: &mut Ui, pal: &Palette, accent: Color32, width: f32) {
                             ui.label(t(step));
                         });
                     }
+                    ui.add_space(space::SM);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(t("Ou comece com uma página pronta:"));
+                        for (i, template) in super::templates::TEMPLATES.iter().enumerate() {
+                            if widgets::pill(ui, template.name, false, accent, pal).clicked() {
+                                chosen = Some(i);
+                            }
+                        }
+                    });
                 });
         });
     });
+    chosen
 }
 
 impl App {
@@ -354,7 +362,16 @@ impl App {
         }
         ui.add_space(space::MD);
         if page_blank {
-            empty_guide(ui, pal, accent, rect.width());
+            if let Some(i) = empty_guide(ui, pal, accent, rect.width()) {
+                let template = &super::templates::TEMPLATES[i];
+                let snapshot = g.cfg.clone();
+                super::templates::fill(template, g.cfg.page_mut(), &self.presets, &snapshot);
+                self.touch();
+                self.toasts.push(
+                    tf("Página {} pronta · Ctrl+Z desfaz", &[&t(template.name)]),
+                    None,
+                );
+            }
         } else {
             let beautify = ui
                 .allocate_ui(vec2(rect.width(), STAGE_FOOTER_HEIGHT), |ui| {

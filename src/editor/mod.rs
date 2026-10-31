@@ -27,6 +27,7 @@ pub(crate) use settings::selftest_reply_text;
 mod side_ui;
 mod stage;
 mod summary;
+mod templates;
 mod textlist;
 pub(crate) mod theme;
 mod toast;
