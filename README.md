@@ -13,8 +13,8 @@ Unofficial, open-source controller software for Windows and Linux for the AJAZZ 
 - **Editor** with a live preview of each key (the exact image the device shows), drag and drop, copy/paste, undo/redo, pages and profiles.
 - **Actions:** keyboard shortcut, text, open app or website, shell command, webhook, media keys, multi-action with delays, page and profile navigation, volume mixer on the device, two-state keys and long press.
 - **OBS Studio** (obs-websocket 5, built into OBS 28+): switch scene, stream, record, pause, mute an input, virtual camera, replay buffer. Keys follow OBS live: red while recording, streaming or muted; the current scene lights up.
-- **Live keys:** a clock with time and date; **device** keys for brightness up and down.
-- **Look:** 2,000 searchable icons ([Lucide](https://lucide.dev), search in English or Portuguese), your own PNG/JPG/SVG/ICO images (drop a file on a key), up to three label lines placed at the top, middle or bottom.
+- **Live keys:** a clock with time and date; volume keys show the current level (bar and %, red when muted); Play/Pause shows the album art, title and artist of what is playing (Linux, MPRIS); a system monitor key with CPU, RAM and temperature; **device** keys for brightness up and down.
+- **Look:** 2,000 searchable icons ([Lucide](https://lucide.dev), search in English or Portuguese), your own PNG/JPG/SVG/ICO images (drop a file on a key), up to three label lines placed at the top, middle or bottom, optional gradient background, and a "Beautify page" button that gives the whole page category colors, gradients, labels and icons in one click (undoable).
 - **Automatic profiles:** a profile switches in when its app gets focus (Windows, Hyprland, Sway and X11) and the previous one returns when you leave.
 - **Profiles export/import** as one file with the key images inside.
 - **Screen sleep** after a chosen idle time; the first press only wakes it.

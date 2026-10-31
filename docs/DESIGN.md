@@ -64,6 +64,13 @@ espaçamento artificial entre letras (só o logotipo "AKP153E" o tem).
 
 - **Rótulo da tecla**: até 3 linhas (Enter quebra), posição Topo/Meio/Base; no meio, por cima do ícone, leva sombra. O número da tecla só aparece em tecla vazia ou ao apontar, sobre plaqueta escura; a dica ao apontar diz nome e ação.
 - **Teclas vivas**: relógio (redesenhado na virada do minuto) e teclas do OBS, que mudam de cor com o estado do OBS.
+  Volume (Vol+, Vol−, Mudo: porcentagem em cima, barra no pé; Mudo ligado fica vermelho e diz MUDO), tocando
+  agora (Play/Pause com a capa escurecida, estado no canto, título e artista) e "Monitor" (CPU, RAM, temperatura;
+  barra verde, âmbar a partir de 60 %, vermelha a partir de 85 %), consultados a cada 2 s só se a página os usa
+  (`service/runtime/live.rs`, desenho em `graphics/live_art.rs`). Sem dado, a tecla sai como uma tecla comum.
+- **Degradê e "Embelezar página"** (`editor/beautify.rs`): fundo mais claro em cima e mais escuro embaixo
+  (±18 %); o botão no rodapé do palco dá a cada tecla configurada a cor da categoria da biblioteca, degradê,
+  rótulo e ícone quando faltam (teclas vivas ficam sem rótulo), e avisa com "Desfazer".
 - **Toasts** (`editor/toast.rs`): ações sem resultado visível (copiar, colar, limpar, trocar teclas, excluir
   página ou perfil) avisam por 4 s; as que se desfazem trazem o botão "Desfazer".
 - **Estado vazio** (`editor/stage.rs::empty_guide`): página sem nenhuma tecla configurada mostra o passo a

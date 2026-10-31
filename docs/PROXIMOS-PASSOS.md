@@ -31,62 +31,19 @@ Estado em 2026-10-31: branch `linux-port`, último push `9d75ab8`; local, sem pu
   `GlobalMemoryStatusEx` (feature `Win32_System_SystemInformation` já no Cargo.toml); sem temperatura.
 - 4 testes passam. A saída de volume deste PC (HyperX) foi lida de verdade: 40 %.
 
-## Falta fazer, nesta ordem
+## Feito em 2026-10-31 (segunda parte)
 
-### 1. Config (`src/config/schema.rs`)
-- `ButtonAppearance`: `#[serde(default)] pub gradient: bool` (e `gradient: false` em `ButtonConfig::blank`).
-- `ButtonAction::Monitor { #[serde(default)] metric: Metric }` e
-  `enum Metric { #[default] Overview, Cpu, Ram, Temp }` (kebab-case).
-- `SideScreen::System` (CPU/RAM/temp na faixa lateral).
-- Os `match` que reclamarem: `engine/actions.rs` (Monitor não faz nada ao tocar, como `Clock`),
-  `editor/action_ui.rs` (nomes, ícone `lucide:activity`, editor com pílulas Visão geral/CPU/RAM/Temperatura,
-  `STEP_KINDS` não), `editor/summary.rs`, `editor/inspector.rs::key_title`, `graphics/side.rs`.
+Os passos 1 a 5 do plano: `Monitor`/`Metric`, `gradient` e `SideScreen::System` na config;
+`graphics/live_art.rs` (volume, tocando agora, monitor, lateral "Sistema"); `service/runtime/live.rs`
+(thread de 2 s, redesenha só as teclas afetadas; o editor liga a mesma thread sem `tx` para a prévia);
+editor com a ação "Monitor" (`editor/monitor_ui.rs`), modo "Sistema" da lateral, caixa "Fundo em degradê"
+e o botão "Embelezar página" (`editor/beautify.rs`). Prévia do aparelho conferida em PNG
+(`device_preview`); a foto do editor não foi tirada porque a tela estava bloqueada.
 
-### 2. Desenho (novo `src/graphics/live_art.rs`)
-`render_live(button, w, h, &Live) -> RgbaImage`, que cai em `renderer::render_rgba` quando não há dado:
-- `MediaKey volup/voldown/mute` com `live.volume`: rótulo vira "40%" (se a tecla não tiver rótulo),
-  barra fina de nível no pé (verde; vermelha mudo); Mudo mutado com fundo vermelho e rótulo "MUDO".
-- `MediaKey playpause` com `live.playing`: capa cobrindo a tecla, escurecida (~50 %) com degradê no pé;
-  glifo play/pause pequeno no canto; título (negrito) e artista embaixo. Sem capa: fundo da tecla.
-- `Monitor`: Overview = 3 linhas (rótulo à esquerda, barra, valor à direita); métrica única = número
-  grande, rótulo e barra. Cor da barra: verde < 60, âmbar < 85, vermelho acima. Sem dado: "--".
-- `gradient`: em `render_rgba`, preencher de `bg` clareado (~+18 %) em cima a escurecido (~−18 %) embaixo.
-- `graphics/side.rs`: `render(side, info, live)` com o modo `System` (3 blocos em pé).
-- Para alinhar texto à esquerda, tornar `renderer::draw_glyphs` `pub(super)`.
-- Toda imagem continua passando por `encode_frame` (limite de 3 KB: ver `MAX_JPEG_BYTES`).
+## Falta
 
-### 3. Serviço (`src/service/runtime.rs`)
-- `Shared.live: Live`; função `spawn_live(state, Option<Sender<UsbCmd>>)` (fica em `runtime.rs`, porque o
-  editor só pode usar `service::runtime`): a cada 2 s calcula `Wants` da página ativa (teclas de volume,
-  playpause, Monitor; lateral `System`), consulta com o `Sampler`, e se `Live` mudou guarda e, no serviço,
-  redesenha só as teclas afetadas (`redraw_where`) e a lateral (`redraw_side`). Sem nada vivo na página:
-  só dorme.
-- `Snapshot`/`redraw_where`/`show_pressed`: trocar `render_button_frame(b)` pelo desenho com `Live`
-  (guardar uma cópia de `sh.live` no `Snapshot`). O mixer aberto não usa.
-- Testes que contam quadros usam `key_frames(&rx)` em `runtime/tests.rs`.
-
-### 4. Editor
-- Prévia ao vivo: o editor chama `runtime::spawn_live(sh, None)` e as texturas (`KeyTextures` em
-  `editor/mod.rs`) entram com `Live` na chave de cache só para teclas vivas.
-- Ação "Monitor" na grade de tipos e na biblioteca (categoria "Aparelho"); modo "Sistema" na janela da
-  tela lateral (`editor/side_ui.rs`).
-- Aparência: caixa "Fundo em degradê".
-- Botão "Embelezar página" (no rodapé do palco, perto das dicas de atalho, ou no menu da página):
-  função pura em `editor/beautify.rs`, com testes: para cada tecla configurada, cor da categoria
-  (as constantes de `editor/library.rs`: MEDIA, KEYS, APPS, WEB, NAV, DEVICE, OBS), degradê ligado,
-  rótulo curto quando vazio (`inspector::key_title`), ícone quando faltar; `touch()` e toast com Desfazer.
-- Textos novos em `strings.rs` (o teste recusa chave repetida).
-
-### 5. Fechamento
-- `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test` sem falhas.
-- Imagem de como fica: `AKP_PREVIEW_CONFIG=... AKP_PREVIEW_OUT=... cargo test device_preview -- --ignored`
-  (em `graphics/side.rs`); mandar ao usuário com SendUserFile.
-- Prévia do editor: script de monitor virtual do Hyprland (ver `CLAUDE.md`, `AKP153E_PREVIEW_UI` e
-  `AKP153E_CONFIG_DIR` com uma cópia da config; nunca a config real).
-- Atualizar README (Funções), `docs/DESIGN.md`, `CLAUDE.md` (módulos novos) e `evals/hardware-checklist.md`
-  (itens novos de volume, tocando agora, monitor e lateral "Sistema").
-- Commits pequenos com mensagem em português, push no `linux-port` e conferir o CI (Windows e Linux).
-- O usuário instala com `packaging/arch/atualizar.sh` (pede sudo; não guardar senha em lugar nenhum).
+- Foto do editor (rodapé com "Embelezar página", aba Aparência) quando a tela estiver desbloqueada.
+- Instalar (`packaging/arch/atualizar.sh`) e conferir os itens 17 a 21 da checklist no aparelho.
 
 ## Ainda pendente de antes (não depende de código)
 

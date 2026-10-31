@@ -22,11 +22,16 @@ Preparação: abra o editor, ponha uma ação visível em cada botão testado (p
 | 14 | OBS | Ligue o WebSocket do OBS (Ferramentas > Configurações do servidor WebSocket); tecla "Gravar" | O OBS começa a gravar e a tecla fica vermelha; outro toque para e ela volta | não verificado |
 | 15 | Perfil automático | Perfil e página > "Ativar sozinho quando este app estiver em foco": escolha um app recente | Ao focar o app, o aparelho troca de perfil; ao sair dele, volta ao anterior | não verificado |
 | 16 | Tela lateral | Clique na faixa à direita das teclas no editor > "Nome da página"; depois "Imagem" com uma foto | A faixa do aparelho mostra o nome da página (e os pontos), e depois a foto inteira, sem emendas nem corte; trocar de página atualiza | não verificado |
+| 17 | Volume ao vivo | Teclas Vol+, Vol− e Mudo (Biblioteca > Mídia); mude o volume pelo teclado do PC | Em até 2 s as três mostram a % nova e a barra; com o mudo ligado, Mudo fica vermelha e diz MUDO | não verificado |
+| 18 | Tocando agora | Tecla Play/Pause; toque uma música no Spotify ou navegador (Linux) | A tecla mostra a capa, o título e o artista; pausar troca o símbolo do canto em até 2 s | não verificado |
+| 19 | Monitor do sistema | Biblioteca > Aparelho > "Monitor"; outra tecla Monitor em "CPU" | As barras e números mudam a cada ~2 s; rode algo pesado e a barra da CPU fica âmbar/vermelha | não verificado |
+| 20 | Lateral "Sistema" | Faixa lateral no editor > "Sistema" | A faixa mostra CPU, RAM e temperatura em pé, atualizando sem piscar as teclas | não verificado |
+| 21 | Embelezar página | Rodapé do palco > "Embelezar página" | Teclas ganham cor por categoria e degradê no editor e no aparelho; Ctrl+Z volta como estava | não verificado |
 
 ## Tela lateral (atualizado em 2026-10-31)
 
 - **Fonte nova:** [bodyboarder2528/opendeck-akp153e-sac](https://github.com/bodyboarder2528/opendeck-akp153e-sac) (`bridge.cs`, 27/28-10-2026), testado num AKP153E rev. 2 `0300:3010`: a faixa é uma tela de ~82 x 400 px que recebe imagens pelas posições 5, 11 e 17 da grade 3 x 6 (aparelho 15, 16, 17), cada uma uma faixa de 82 x 200 a partir das linhas 0, 146 e 219 (a seguinte cobre a anterior); mesma rotação das teclas; imagens acima de 3 KB em sequência derrubam a tela para o logo de inicialização.
-- **Implementado** em `graphics/side.rs` (modos: nada, nome da página, relógio, imagem), por página. Item 16 da tabela acima.
+- **Implementado** em `graphics/side.rs` (modos: nada, nome da página, relógio, sistema, imagem), por página. Item 16 da tabela acima.
 
 ### Pesquisa anterior (2026-10-24)
 
