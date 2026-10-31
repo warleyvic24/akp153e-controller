@@ -50,7 +50,7 @@ cargo build --release           # -> target\release\akp153e.exe
 O aparelho do usuário enumera como HID `0300:3010` (usage page FFA0), tratado como protocolo v3 (JPEG 100 px, soltura reportada, pacote de 1024 com recuo para 512). O protocolo vem de documentação pública, não de engenharia reversa própria.
 **Verificado:** desenho das teclas (pelo log e pelo aparelho conectado), interface, ações de app/webhook/atalho, autostart, bandeja.
 **Não verificado:** aperto e soltura físicos das teclas, pressão longa pelo hardware.
-**Lateral:** no AKP153E é uma tela decorativa sem botões (as 3 teclas extras do protocolo são só do AKP153R; os índices delas seguem ignorados). Imagem nela só pelo `LOG`, que grava o logo de inicialização na flash e não está documentado para o protocolo v3: não implemente sem fonte nova. Detalhes em `evals/hardware-checklist.md`.
+**Lateral:** no AKP153E é uma tela só de ~82 x 400 px, sem botões, que o aparelho trata como as 3 "teclas" da 6ª coluna (aparelho 15, 16, 17; apertos ali são ignorados). Cada uma desenha uma faixa de 82 x 200 a partir das linhas 0, 146 e 219, e a seguinte cobre a anterior: `graphics/side.rs` monta a tela e manda as 3 faixas em ordem (`UsbCmd::Side`), pelo mesmo BAT das teclas (tela, não flash). Geometria medida num `0300:3010` por bodyboarder2528/opendeck-akp153e-sac (27-10-2026); ainda não conferida neste aparelho. O `LOG` (logo de inicialização, grava na flash) continua sem implementar. Toda imagem ao aparelho cabe em 3 KB (`renderer::MAX_JPEG_BYTES`): imagens maiores em sequência derrubam a tela para o logo.
 Não afirme que "funciona" no aparelho sem prova do usuário. Os passos para provar cada item estão em `evals/hardware-checklist.md`.
 
 ## Guarda do config real

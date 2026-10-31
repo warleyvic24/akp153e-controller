@@ -1,4 +1,11 @@
 use super::*;
+
+/// Quadros de tecla enviados (a tela lateral vai à parte, em `UsbCmd::Side`).
+fn key_frames(rx: &std::sync::mpsc::Receiver<UsbCmd>) -> usize {
+    rx.try_iter()
+        .filter(|c| matches!(c, UsbCmd::Frame { .. }))
+        .count()
+}
 use std::sync::mpsc::channel;
 
 fn two_page_state(action: ButtonAction, long: Option<ButtonAction>) -> Shared {
@@ -26,7 +33,7 @@ async fn short_press_runs_normal_action_and_redraws() {
     let mut sh = two_page_state(ButtonAction::SwitchPage { page: 2 }, None);
     trigger(&mut sh, &tx, &exec, 0, Duration::from_millis(50));
     assert_eq!(sh.cfg.profiles[0].active_page, 1);
-    assert_eq!(rx.try_iter().count(), 15);
+    assert_eq!(key_frames(&rx), 15);
 }
 
 #[tokio::test]
@@ -50,7 +57,7 @@ async fn toggle_with_page_switch_redraws_once() {
     let mut sh = two_page_state(ButtonAction::SwitchPage { page: 2 }, None);
     sh.cfg.page_mut().buttons[0].toggled_appearance = Some(ButtonConfig::blank().appearance);
     trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);
-    assert_eq!(rx.try_iter().count(), 15);
+    assert_eq!(key_frames(&rx), 15);
 }
 
 #[tokio::test]
@@ -61,7 +68,7 @@ async fn toggle_without_page_change_still_redraws() {
     sh.cfg.page_mut().buttons[0].toggled_appearance = Some(ButtonConfig::blank().appearance);
     trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);
     assert!(sh.cfg.page().buttons[0].toggle_state);
-    assert_eq!(rx.try_iter().count(), 15);
+    assert_eq!(key_frames(&rx), 15);
 }
 
 #[tokio::test]
@@ -71,7 +78,7 @@ async fn out_of_range_page_is_ignored() {
     let mut sh = two_page_state(ButtonAction::SwitchPage { page: 9 }, None);
     trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);
     assert_eq!(sh.cfg.profiles[0].active_page, 0);
-    assert_eq!(rx.try_iter().count(), 0);
+    assert_eq!(key_frames(&rx), 0);
 }
 
 #[tokio::test]
@@ -82,7 +89,7 @@ async fn open_mixer_action_asks_the_service_to_open_it() {
     let followup = trigger_locked(&mut sh, &exec, 0, Duration::ZERO);
     assert_eq!(followup.mixer_home(), Some(0));
     followup.run(&tx);
-    assert_eq!(rx.try_iter().count(), 0);
+    assert_eq!(key_frames(&rx), 0);
     assert_eq!(sh.cfg.profiles[0].active_page, 0);
 }
 
@@ -108,11 +115,7 @@ async fn next_and_previous_page_wrap_around() {
         sh.cfg.profiles[0].active_page, 1,
         "antes da primeira vai à última"
     );
-    assert_eq!(
-        rx.try_iter().count(),
-        45,
-        "cada troca redesenha as 15 teclas"
-    );
+    assert_eq!(key_frames(&rx), 45, "cada troca redesenha as 15 teclas");
 }
 
 #[tokio::test]
@@ -123,7 +126,7 @@ async fn next_page_does_nothing_in_a_single_page_profile() {
     sh.cfg.profiles[0].pages.truncate(1);
     trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);
     assert_eq!(sh.cfg.profiles[0].active_page, 0);
-    assert_eq!(rx.try_iter().count(), 0);
+    assert_eq!(key_frames(&rx), 0);
 }
 
 #[tokio::test]
@@ -228,7 +231,7 @@ async fn a_key_press_waits_for_a_drawing_in_progress() {
     }
     assert_eq!(pressed.join().unwrap(), None);
     assert_eq!(lock(&state).cfg.profiles[0].active_page, 1);
-    assert_eq!(rx.try_iter().count(), 15);
+    assert_eq!(key_frames(&rx), 15);
 }
 
 fn mixer_state(opener: usize) -> SharedState {
@@ -247,9 +250,9 @@ fn mixer_draws_everything_once_then_only_what_changes() {
     let (tx, rx) = channel();
     let state = mixer_state(14);
     drawn(&state, &tx);
-    assert_eq!(rx.try_iter().count(), 15);
+    assert_eq!(key_frames(&rx), 15);
     drawn(&state, &tx);
-    assert_eq!(rx.try_iter().count(), 0);
+    assert_eq!(key_frames(&rx), 0);
 }
 
 #[test]
@@ -257,10 +260,10 @@ fn a_reconnected_device_gets_the_whole_mixer_again() {
     let (tx, rx) = channel();
     let state = mixer_state(14);
     drawn(&state, &tx);
-    rx.try_iter().count();
+    key_frames(&rx);
     lock(&state).mixer.as_ref().unwrap().invalidate();
     drawn(&state, &tx);
-    assert_eq!(rx.try_iter().count(), 15);
+    assert_eq!(key_frames(&rx), 15);
 }
 
 #[test]
@@ -268,10 +271,10 @@ fn tapping_the_exit_key_closes_the_mixer_and_restores_the_page() {
     let (tx, rx) = channel();
     let state = mixer_state(14);
     drawn(&state, &tx);
-    rx.try_iter().count();
+    key_frames(&rx);
     mixer_runtime::key_up(&state, &tx, 14, Duration::ZERO);
     assert!(!mixer_runtime::is_open(&state));
-    assert_eq!(rx.try_iter().count(), 15);
+    assert_eq!(key_frames(&rx), 15);
 }
 
 #[test]
@@ -307,13 +310,13 @@ fn holding_plus_repeats_only_after_the_delay() {
         mixer.update(MixerData { apps: vec![app] }, version);
     }
     drawn(&state, &tx);
-    rx.try_iter().count();
+    key_frames(&rx);
     let mut hold = mixer_runtime::key_down(&state, &tx, 5).expect("tecla + segura");
     let start = Instant::now();
     mixer_runtime::repeat_if_due(&state, &tx, &mut hold, start);
-    let after_press = rx.try_iter().count();
+    let after_press = key_frames(&rx);
     mixer_runtime::repeat_if_due(&state, &tx, &mut hold, start + REPEAT_DELAY);
-    assert!(rx.try_iter().count() > 0 && after_press > 0);
+    assert!(key_frames(&rx) > 0 && after_press > 0);
     assert!(hold.due() > start + REPEAT_DELAY);
 }
 
@@ -322,7 +325,7 @@ fn a_held_key_sinks_and_comes_back_on_release() {
     let (tx, rx) = channel();
     let state = Arc::new(Mutex::new(two_page_state(ButtonAction::None, None)));
     show_pressed(&state, &tx, 0);
-    assert_eq!(rx.try_iter().count(), 0, "tecla sem ação não afunda");
+    assert_eq!(key_frames(&rx), 0, "tecla sem ação não afunda");
     lock(&state).cfg.page_mut().buttons[0].action = ButtonAction::Clock;
     show_pressed(&state, &tx, 0);
     redraw_key(&state, &tx, 0);
@@ -351,4 +354,49 @@ fn the_pressed_image_is_smaller_and_framed_in_black() {
     let img = crate::graphics::renderer::render_pressed_rgba(&b, 100, 100);
     assert_eq!(img.get_pixel(1, 1).0[0], 0, "borda preta");
     assert_eq!(img.get_pixel(50, 50).0[0], 200, "centro com a imagem");
+}
+
+#[tokio::test]
+async fn a_page_switch_also_redraws_that_pages_side_screen() {
+    let (tx, rx) = channel();
+    let exec = Executor::new(tokio::runtime::Handle::current());
+    let mut sh = two_page_state(ButtonAction::SwitchPage { page: 2 }, None);
+    sh.cfg.profiles[0].pages[1].side = SideScreen::PageName;
+    trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);
+    let sides: Vec<SideFrame> = rx
+        .try_iter()
+        .filter_map(|c| match c {
+            UsbCmd::Side(s) => Some(s),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        matches!(sides.as_slice(), [SideFrame::Strips(_)]),
+        "a página 2 mostra o nome"
+    );
+    sh.cfg.profiles[0].pages[0].buttons[0].action = ButtonAction::None;
+    sh.cfg.profiles[0].active_page = 0;
+    drawn_page(&sh, &tx);
+    assert!(
+        rx.try_iter()
+            .any(|c| matches!(c, UsbCmd::Side(SideFrame::Clear))),
+        "a página 1 apaga"
+    );
+}
+
+#[test]
+fn a_side_clock_counts_as_a_clock() {
+    let state = Arc::new(Mutex::new(two_page_state(ButtonAction::None, None)));
+    assert!(!has_clock(&state));
+    lock(&state).cfg.page_mut().side = SideScreen::Clock;
+    assert!(has_clock(&state));
+    let (tx, rx) = channel();
+    redraw_clocks(&state, &tx);
+    assert!(rx
+        .try_iter()
+        .any(|c| matches!(c, UsbCmd::Side(SideFrame::Strips(_)))));
+}
+
+fn drawn_page(sh: &Shared, tx: &Sender<UsbCmd>) {
+    Snapshot::take(sh).render(tx);
 }

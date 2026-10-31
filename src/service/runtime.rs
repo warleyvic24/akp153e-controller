@@ -1,12 +1,13 @@
 //! Núcleo que roda independente da janela: recebe eventos do aparelho, executa ações
 //! e redesenha os botões. A UI e este módulo compartilham o estado via `SharedState`.
-use crate::config::schema::{AppConfig, ButtonAction, ButtonConfig, RGBAColor};
+use crate::config::schema::{AppConfig, ButtonAction, ButtonConfig, RGBAColor, SideScreen};
 use crate::engine::actions::Executor;
 use crate::graphics::mixer_art::render_mixer_key;
 use crate::graphics::renderer::{encode_frame, render_button_frame};
+use crate::graphics::side::SideInfo;
 use crate::mixer::{MixerKey, MixerView};
 use crate::service::mixer_runtime::{self, StepHold};
-use crate::usb::{UsbCmd, UsbEvent};
+use crate::usb::{SideFrame, UsbCmd, UsbEvent};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -68,6 +69,23 @@ pub struct Snapshot {
     /// (índice da tecla, o que desenhar). Com o mixer aberto só vão as teclas que mudaram.
     frames: Vec<(usize, Frame)>,
     px: u32,
+    /// Tela lateral da página (só nos desenhos da página inteira; o mixer não a usa).
+    side: Option<(SideScreen, SideInfo)>,
+}
+
+/// O que a tela lateral da página ativa mostra agora e com que dados.
+fn side_of(sh: &Shared) -> (SideScreen, SideInfo) {
+    let profile = &sh.cfg.profiles[sh.cfg.active_profile.min(sh.cfg.profiles.len() - 1)];
+    let page_index = profile.active_page.min(profile.pages.len() - 1);
+    let [r, g, b] = sh.cfg.ui.accent;
+    let info = SideInfo {
+        profile: crate::strings::display_name(&profile.name),
+        page: crate::strings::display_name(&profile.pages[page_index].name),
+        page_index,
+        page_count: profile.pages.len(),
+        accent: RGBAColor { r, g, b, a: 255 },
+    };
+    (sh.cfg.page().side.clone(), info)
 }
 
 /// Uma tecla a desenhar: botão da configuração ou tecla do mixer (que tem desenho próprio).
@@ -99,6 +117,7 @@ impl Snapshot {
                     .collect(),
             },
             px: sh.icon_px,
+            side: sh.mixer.is_none().then(|| side_of(sh)),
         }
     }
 
@@ -110,6 +129,13 @@ impl Snapshot {
                 Frame::Mixer(key) => encode_frame(&render_mixer_key(key, self.px)),
             };
             let _ = tx.send(UsbCmd::Frame { index, data });
+        }
+        if let Some((side, info)) = &self.side {
+            let frame = match crate::graphics::side::render(side, info) {
+                Some(img) => SideFrame::Strips(crate::graphics::side::strips(&img)),
+                None => SideFrame::Clear,
+            };
+            let _ = tx.send(UsbCmd::Side(frame));
         }
     }
 }
@@ -466,6 +492,26 @@ pub fn redraw_where(
                 .map(|(i, b)| (i, Frame::Button(Box::new(shown(&sh, b)))))
                 .collect(),
             px: sh.icon_px,
+            side: None,
+        }
+    };
+    snapshot.render(tx);
+}
+
+/// Redesenha só a tela lateral (relógio dela na virada do minuto).
+fn redraw_side(state: &SharedState, tx: &Sender<UsbCmd>) {
+    let _order = DRAW_ORDER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let snapshot = {
+        let sh = lock(state);
+        if sh.mixer.is_some() {
+            return;
+        }
+        Snapshot {
+            frames: Vec::new(),
+            px: sh.icon_px,
+            side: Some(side_of(&sh)),
         }
     };
     snapshot.render(tx);
@@ -529,12 +575,21 @@ fn clock_keys(sh: &Shared) -> Vec<usize> {
 }
 
 fn has_clock(state: &SharedState) -> bool {
-    !clock_keys(&lock(state)).is_empty()
+    let sh = lock(state);
+    !clock_keys(&sh).is_empty() || side_clock(&sh)
 }
 
-/// Redesenha só as teclas de relógio.
+/// A tela lateral da página mostra o relógio (e o mixer não está por cima)?
+fn side_clock(sh: &Shared) -> bool {
+    sh.mixer.is_none() && sh.cfg.page().side == SideScreen::Clock
+}
+
+/// Redesenha só as teclas de relógio (e a tela lateral, se ela for um relógio).
 fn redraw_clocks(state: &SharedState, tx: &Sender<UsbCmd>) {
     redraw_where(state, tx, |_, b| b.action == ButtonAction::Clock);
+    if side_clock(&lock(state)) {
+        redraw_side(state, tx);
+    }
 }
 
 /// No editor: consulta o serviço a cada segundo para mostrar o estado do aparelho.

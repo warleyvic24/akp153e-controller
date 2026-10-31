@@ -254,6 +254,24 @@ pub struct Page {
     pub rows: usize,
     pub cols: usize,
     pub buttons: Vec<ButtonConfig>,
+    /// O que a tela lateral (a faixa à direita das teclas) mostra nesta página.
+    #[serde(default)]
+    pub side: SideScreen,
+}
+
+/// Conteúdo da tela lateral do AKP153E (faixa de ~82 x 400 px à direita das 15 teclas).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "mode", rename_all = "kebab-case")]
+pub enum SideScreen {
+    /// Apagada (o padrão, e o de configs antigas).
+    #[default]
+    Off,
+    /// Nome da página e do perfil, com um ponto por página.
+    PageName,
+    /// Hora e data, atualizadas a cada minuto.
+    Clock,
+    /// Uma imagem, recortada para preencher a faixa.
+    Image { path: String },
 }
 impl Page {
     pub fn new(name: &str, rows: usize, cols: usize) -> Self {
@@ -263,6 +281,7 @@ impl Page {
             rows,
             cols,
             buttons: (0..rows * cols).map(|_| ButtonConfig::blank()).collect(),
+            side: SideScreen::Off,
         }
     }
 }

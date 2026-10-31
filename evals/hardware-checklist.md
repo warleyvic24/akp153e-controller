@@ -21,8 +21,14 @@ Preparação: abra o editor, ponha uma ação visível em cada botão testado (p
 | 13 | Relógio | Biblioteca > Aparelho > "Relógio" | A tecla mostra a hora e a data e muda sozinha na virada do minuto | não verificado |
 | 14 | OBS | Ligue o WebSocket do OBS (Ferramentas > Configurações do servidor WebSocket); tecla "Gravar" | O OBS começa a gravar e a tecla fica vermelha; outro toque para e ela volta | não verificado |
 | 15 | Perfil automático | Perfil e página > "Ativar sozinho quando este app estiver em foco": escolha um app recente | Ao focar o app, o aparelho troca de perfil; ao sair dele, volta ao anterior | não verificado |
+| 16 | Tela lateral | Clique na faixa à direita das teclas no editor > "Nome da página"; depois "Imagem" com uma foto | A faixa do aparelho mostra o nome da página (e os pontos), e depois a foto inteira, sem emendas nem corte; trocar de página atualiza | não verificado |
 
-## Tela lateral (pesquisa de 2026-10-24, sem teste no aparelho)
+## Tela lateral (atualizado em 2026-10-31)
+
+- **Fonte nova:** [bodyboarder2528/opendeck-akp153e-sac](https://github.com/bodyboarder2528/opendeck-akp153e-sac) (`bridge.cs`, 27/28-10-2026), testado num AKP153E rev. 2 `0300:3010`: a faixa é uma tela de ~82 x 400 px que recebe imagens pelas posições 5, 11 e 17 da grade 3 x 6 (aparelho 15, 16, 17), cada uma uma faixa de 82 x 200 a partir das linhas 0, 146 e 219 (a seguinte cobre a anterior); mesma rotação das teclas; imagens acima de 3 KB em sequência derrubam a tela para o logo de inicialização.
+- **Implementado** em `graphics/side.rs` (modos: nada, nome da página, relógio, imagem), por página. Item 16 da tabela acima.
+
+### Pesquisa anterior (2026-10-24)
 
 - No AKP153E a lateral é uma faixa LCD decorativa, sem botões. As "3 teclas extras" do protocolo (18 = 15 + 3) são botões físicos só da revisão AKP153R. Fontes: [Aiacos/ajazz-control-center](https://github.com/Aiacos/ajazz-control-center) (`docs/protocols/streamdeck/akp153.md`) e [lukasMega/DeckBridge](https://github.com/lukasMega/DeckBridge), que mapeou só 15 teclas no `0300:3010` em hardware real.
 - A única forma documentada de pôr imagem nela é o comando `LOG` ([ajazz-sdk em mistweaverco/opendeck-ajazz](https://github.com/mistweaverco/opendeck-ajazz)): grava o **logo de inicialização** de 854×480 (a tela inteira, não só a lateral). Por ser logo de inicialização, deve ir para a flash; regravar a cada troca de página a desgastaria.

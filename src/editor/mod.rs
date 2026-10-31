@@ -15,6 +15,7 @@ mod panes;
 mod picker;
 mod profile_ui;
 mod settings;
+mod side_ui;
 mod stage;
 mod summary;
 mod textlist;
@@ -71,6 +72,9 @@ pub(crate) struct App {
     library_open: bool,
     /// Apps que estiveram em foco (do serviço), sugeridos na troca automática de perfil.
     recent_apps: profile_ui::RecentApps,
+    /// Janela da tela lateral aberta.
+    side_open: bool,
+    side_tex: side_ui::SideTexture,
 }
 
 impl App {
@@ -102,6 +106,8 @@ impl App {
             rename: None,
             library_open: false,
             recent_apps: profile_ui::RecentApps::default(),
+            side_open: false,
+            side_tex: side_ui::SideTexture::default(),
         }
         .with_preview_state()
     }
@@ -124,6 +130,7 @@ impl App {
                 _ if item == "settings" => self.settings_open = true,
                 _ if item == "picker" => self.picker.show(),
                 _ if item == "library" => self.library_open = true,
+                _ if item == "side" => self.side_open = true,
                 _ => {}
             }
         }
@@ -351,7 +358,7 @@ fn key_view(
 struct KeyTextures(Vec<Option<(ButtonConfig, u32, u64, egui::TextureHandle)>>);
 
 /// Minuto atual (para a prévia da tecla de relógio mudar junto com a do aparelho).
-fn current_minute() -> u64 {
+pub(crate) fn current_minute() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() / 60)
@@ -432,6 +439,7 @@ impl eframe::App for App {
         widgets::focus_ring(ctx);
         self.app_picker(ctx, g);
         self.settings_window(ctx, g, &pal);
+        self.side_window(ctx, g, &pal);
         want_undo |= self.toasts.show(ctx, &pal);
 
         self.track_history(g, before, want_undo, want_redo);

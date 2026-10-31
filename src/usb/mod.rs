@@ -81,10 +81,29 @@ pub enum UsbCmd {
         index: usize,
         data: Vec<u8>,
     },
+    /// Tela lateral: as 3 faixas (de cima para baixo) ou apagar.
+    Side(SideFrame),
     Reconnect,
     /// Muda o brilho (0 a 100) sem reiniciar o aparelho.
     Brightness(u8),
 }
+
+/// O que mandar à tela lateral.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SideFrame {
+    /// JPEGs das 3 faixas, de cima para baixo (a de baixo cobre parte da do meio, que cobre a de cima).
+    Strips([Vec<u8>; 3]),
+    /// Apaga a faixa (CLE nas 3 posições).
+    Clear,
+}
+
+/// Posições do aparelho (0-based) que formam a tela lateral, de cima para baixo: a 6ª coluna da
+/// grade de 3 x 6 (`OPENDECK_TO_DEVICE[5]`, `[11]` e `[17]`).
+pub const SIDE_DEVICE_KEYS: [u8; 3] = [
+    OPENDECK_TO_DEVICE[DEVICE_COLS - 1],
+    OPENDECK_TO_DEVICE[2 * DEVICE_COLS - 1],
+    OPENDECK_TO_DEVICE[3 * DEVICE_COLS - 1],
+];
 
 /// Índice da grade da UI (5 colunas) -> índice físico do dispositivo (0-based).
 fn ui_to_device(i: usize) -> Option<u8> {
@@ -184,6 +203,33 @@ fn send_image(
     Ok(true)
 }
 
+/// Manda a tela lateral: as faixas na ordem (cada uma cobre parte da anterior) ou o apagar.
+fn send_side(dev: &HidDevice, profile: Profile, side: &SideFrame) -> Result<bool, HidError> {
+    match side {
+        SideFrame::Clear => {
+            for key in SIDE_DEVICE_KEYS {
+                dev.write(&command(
+                    profile.payload,
+                    &[b'C', b'L', b'E', 0, 0, 0, key + 1],
+                ))?;
+            }
+        }
+        SideFrame::Strips(strips) => {
+            for (key, jpeg) in SIDE_DEVICE_KEYS.iter().zip(strips) {
+                let Some(packets) = image_packets(profile.payload, *key, jpeg) else {
+                    log::warn!("faixa da tela lateral excede 64 KiB");
+                    continue;
+                };
+                for p in &packets {
+                    dev.write(p)?;
+                }
+            }
+            log::info!("tela lateral: 3 faixas");
+        }
+    }
+    Ok(true)
+}
+
 /// Interpreta um relatório "ACK": (tecla da UI, pressionada) quando for tecla da grade.
 /// Com `both_states` (v3) o byte de estado é obrigatório: relatório curto é ignorado, pois
 /// tratá-lo como aperto deixaria a tecla "presa" até o watchdog. Sem ele (v1) só o aperto vem
@@ -218,6 +264,7 @@ struct Pending {
     reconnect: bool,
     brightness: Option<u8>,
     frames: [Option<Vec<u8>>; UI_KEYS],
+    side: Option<SideFrame>,
 }
 
 fn collect_commands(cmds: impl Iterator<Item = UsbCmd>) -> Pending {
@@ -225,6 +272,7 @@ fn collect_commands(cmds: impl Iterator<Item = UsbCmd>) -> Pending {
         reconnect: false,
         brightness: None,
         frames: std::array::from_fn(|_| None),
+        side: None,
     };
     for cmd in cmds {
         match cmd {
@@ -238,6 +286,7 @@ fn collect_commands(cmds: impl Iterator<Item = UsbCmd>) -> Pending {
                 }
             }
             UsbCmd::Brightness(level) => pending.brightness = Some(level),
+            UsbCmd::Side(frame) => pending.side = Some(frame),
         }
     }
     pending
@@ -320,6 +369,9 @@ fn run_connection(
             if let Some(data) = data {
                 flush |= send_image(dev, profile, index, data)?;
             }
+        }
+        if let Some(side) = &pending.side {
+            flush |= send_side(dev, profile, side)?;
         }
         if flush {
             dev.write(&command(profile.payload, b"STP"))?;
@@ -427,6 +479,27 @@ fn run_probe(say: &mut dyn FnMut(String)) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_side_screen_is_the_sixth_column_and_never_a_key() {
+        assert_eq!(SIDE_DEVICE_KEYS, [15, 16, 17]);
+        for key in SIDE_DEVICE_KEYS {
+            assert_eq!(
+                device_to_ui(key + 1),
+                None,
+                "aperto na lateral não vira tecla"
+            );
+        }
+    }
+
+    #[test]
+    fn the_last_side_command_wins_and_strips_keep_their_order() {
+        let strips = SideFrame::Strips([vec![1], vec![2], vec![3]]);
+        let pending = collect_commands(
+            [UsbCmd::Side(SideFrame::Clear), UsbCmd::Side(strips.clone())].into_iter(),
+        );
+        assert_eq!(pending.side, Some(strips));
+    }
 
     #[test]
     fn the_linux_udev_rule_covers_every_known_device() {

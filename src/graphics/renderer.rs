@@ -84,7 +84,7 @@ fn load_font(
     found
 }
 
-fn font() -> Option<&'static FontArc> {
+pub(super) fn font() -> Option<&'static FontArc> {
     static FONT: OnceLock<Option<FontArc>> = OnceLock::new();
     FONT.get_or_init(|| {
         load_font(&FONT_FILES, "sans-serif").or_else(|| {

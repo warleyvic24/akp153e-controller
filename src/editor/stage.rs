@@ -24,6 +24,8 @@ const KEY_MAX: f32 = 140.0;
 const DEVICE_MAX_WIDTH: f32 = 780.0;
 const DEVICE_PAD: f32 = 24.0;
 const DEVICE_GAP: f32 = 12.0;
+/// Largura da tela lateral em relação à tecla (82 px de faixa para ~95 px de tecla no aparelho).
+const SIDE_RATIO: f32 = 0.86;
 const BEZEL_INSET: f32 = 8.0;
 const SCREEN_RADIUS: f32 = 16.0;
 const LED_SIZE: egui::Vec2 = egui::Vec2::new(34.0, 3.0);
@@ -48,10 +50,11 @@ struct DeviceEvents {
     under_pointer: Option<usize>,
 }
 
-/// Lado da tecla que cabe no espaço livre (entre `KEY_MIN` e `KEY_MAX`).
+/// Lado da tecla que cabe no espaço livre (entre `KEY_MIN` e `KEY_MAX`), contando a tela lateral.
 fn fit_key_size(avail_w: f32, avail_h: f32, rows: usize, cols: usize) -> f32 {
     let (r, c) = (rows as f32, cols as f32);
-    let by_width = (avail_w.min(DEVICE_MAX_WIDTH) - 2.0 * DEVICE_PAD - (c - 1.0) * DEVICE_GAP) / c;
+    let by_width =
+        (avail_w.min(DEVICE_MAX_WIDTH) - 2.0 * DEVICE_PAD - c * DEVICE_GAP) / (c + SIDE_RATIO);
     let by_height = (avail_h - 2.0 * DEVICE_PAD - (r - 1.0) * DEVICE_GAP) / r;
     by_width.min(by_height).clamp(KEY_MIN, KEY_MAX)
 }
@@ -59,7 +62,7 @@ fn fit_key_size(avail_w: f32, avail_h: f32, rows: usize, cols: usize) -> f32 {
 fn device_size(key: f32, rows: usize, cols: usize) -> egui::Vec2 {
     let (r, c) = (rows as f32, cols as f32);
     vec2(
-        2.0 * DEVICE_PAD + c * key + (c - 1.0) * DEVICE_GAP,
+        2.0 * DEVICE_PAD + c * key + c * DEVICE_GAP + key * SIDE_RATIO,
         2.0 * DEVICE_PAD + r * key + (r - 1.0) * DEVICE_GAP,
     )
 }
@@ -257,6 +260,18 @@ impl App {
         let (rect, _) = ui.allocate_exact_size(device, Sense::hover());
         paint_device_body(ui.painter(), rect, pal, accent, g.connected);
         let events = self.draw_keys(ui, ctx, g, rect, key, pal, accent);
+        // A tela lateral é a 6ª coluna do aparelho, da altura das 3 fileiras de teclas.
+        let side = Rect::from_min_size(
+            pos2(
+                rect.left() + DEVICE_PAD + cols as f32 * (key + DEVICE_GAP),
+                rect.top() + DEVICE_PAD,
+            ),
+            vec2(
+                key * SIDE_RATIO,
+                rows as f32 * key + (rows as f32 - 1.0) * DEVICE_GAP,
+            ),
+        );
+        self.side_strip(ui, g, side, pal, accent);
         ui.add_space(space::MD);
         if page_blank {
             empty_guide(ui, pal, accent, rect.width());
@@ -395,7 +410,8 @@ mod tests {
     #[test]
     fn keys_shrink_to_fit_a_short_stage_but_never_below_the_minimum() {
         // Com sobra de altura, a largura máxima do aparelho (780 px) é que limita a tecla.
-        let by_width = (DEVICE_MAX_WIDTH - 2.0 * DEVICE_PAD - 4.0 * DEVICE_GAP) / 5.0;
+        let by_width =
+            (DEVICE_MAX_WIDTH - 2.0 * DEVICE_PAD - 5.0 * DEVICE_GAP) / (5.0 + SIDE_RATIO);
         assert_eq!(fit_key_size(900.0, 2000.0, 3, 5), by_width);
         assert_eq!(fit_key_size(900.0, 2000.0, 3, 2), KEY_MAX);
         let mid = fit_key_size(900.0, 400.0, 3, 5);
@@ -407,12 +423,16 @@ mod tests {
     fn the_device_is_never_wider_than_its_cap() {
         let key = fit_key_size(5000.0, 5000.0, 3, 5);
         assert!(device_size(key, 3, 5).x <= DEVICE_MAX_WIDTH + 2.0 * DEVICE_PAD);
+        assert!(device_size(key, 3, 5).x <= DEVICE_MAX_WIDTH + 1.0);
     }
 
     #[test]
     fn device_size_matches_the_grid() {
         let s = device_size(100.0, 3, 5);
-        assert_eq!(s.x, 2.0 * DEVICE_PAD + 500.0 + 4.0 * DEVICE_GAP);
+        assert_eq!(
+            s.x,
+            2.0 * DEVICE_PAD + 500.0 + 5.0 * DEVICE_GAP + 100.0 * SIDE_RATIO
+        );
         assert_eq!(s.y, 2.0 * DEVICE_PAD + 300.0 + 2.0 * DEVICE_GAP);
     }
 }
