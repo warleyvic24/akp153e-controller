@@ -64,7 +64,7 @@ pub(crate) fn media_label(key: &str) -> &str {
         .map_or(key, |(_, label)| label)
 }
 
-const ACTION_KINDS: [(&str, &str); 15] = [
+const ACTION_KINDS: [(&str, &str); 16] = [
     ("none", "Nenhuma"),
     ("hotkey", "Atalho"),
     ("launch-app", "App"),
@@ -80,11 +80,13 @@ const ACTION_KINDS: [(&str, &str); 15] = [
     ("run-command", "Comando"),
     ("brightness", "Brilho"),
     ("clock", "Relógio"),
+    ("obs", "OBS"),
 ];
 
 /// Tipos que podem ser passo de uma multi-ação (navegação não cabe: o serviço a ignora lá dentro).
-const STEP_KINDS: [(&str, &str); 7] = [
+const STEP_KINDS: [(&str, &str); 8] = [
     ("hotkey", "Atalho"),
+    ("obs", "OBS"),
     ("run-command", "Comando"),
     ("type-text", "Texto"),
     ("launch-app", "App"),
@@ -137,6 +139,7 @@ fn action_name(a: &ButtonAction) -> &'static str {
         ButtonAction::RunCommand { .. } => "run-command",
         ButtonAction::Brightness { .. } => "brightness",
         ButtonAction::Clock => "clock",
+        ButtonAction::Obs { .. } => "obs",
     }
 }
 
@@ -174,6 +177,10 @@ fn default_action(kind: &str) -> ButtonAction {
             delta: BRIGHTNESS_STEP,
         },
         "clock" => ButtonAction::Clock,
+        "obs" => ButtonAction::Obs {
+            command: ObsCommand::Record,
+            target: String::new(),
+        },
         _ => ButtonAction::None,
     }
 }
@@ -333,6 +340,7 @@ fn kind_icon(kind: &str) -> &'static str {
         "run-command" => "lucide:terminal",
         "brightness" => "lucide:sun",
         "clock" => "lucide:clock",
+        "obs" => "lucide:clapperboard",
         _ => "ban",
     }
 }
@@ -370,6 +378,7 @@ pub fn action_editor(
         ButtonAction::Delay { ms } => delay_editor(ui, cx, ms),
         ButtonAction::RunCommand { command } => command_editor(ui, cx, command),
         ButtonAction::Brightness { delta } => brightness_editor(ui, cx, delta),
+        ButtonAction::Obs { command, target } => super::obs_ui::obs_editor(ui, cx, command, target),
         ButtonAction::Clock => {
             ui.label(widgets::hint(t(CLOCK_HINT), cx.pal));
             false
@@ -475,6 +484,7 @@ fn step_editor(ui: &mut egui::Ui, cx: &PaneCtx, step: &mut ButtonAction) -> bool
         ButtonAction::TypeText { text } => type_text_editor(ui, cx, text),
         ButtonAction::Delay { ms } => delay_editor(ui, cx, ms),
         ButtonAction::RunCommand { command } => command_editor(ui, cx, command),
+        ButtonAction::Obs { command, target } => super::obs_ui::obs_editor(ui, cx, command, target),
         _ => false,
     }
 }

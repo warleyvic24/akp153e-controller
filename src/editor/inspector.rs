@@ -44,6 +44,10 @@ pub(crate) fn key_title(b: &ButtonConfig) -> Option<String> {
         ButtonAction::Hotkey { keys } if !keys.is_empty() => Some(summary::chord(keys)),
         ButtonAction::OpenMixer => Some(t("Mixer").to_string()),
         ButtonAction::Clock => Some(t("Relógio").to_string()),
+        ButtonAction::Obs { command, target } if target.is_empty() => {
+            Some(t(super::obs_ui::command_label(*command)).to_string())
+        }
+        ButtonAction::Obs { target, .. } => Some(target.clone()),
         ButtonAction::Brightness { delta } if *delta >= 0 => Some(t("Brilho +").to_string()),
         ButtonAction::Brightness { .. } => Some(t("Brilho −").to_string()),
         ButtonAction::NextPage => Some(t("Próxima página").to_string()),

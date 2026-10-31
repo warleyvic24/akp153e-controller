@@ -43,6 +43,13 @@ pub(crate) fn action_summary(a: &ButtonAction, targets: &Targets) -> Option<Stri
         ButtonAction::Brightness { delta } if *delta >= 0 => tf("Brilho +{}%", &[delta]),
         ButtonAction::Brightness { delta } => tf("Brilho {}%", &[delta]),
         ButtonAction::Clock => t("Relógio (hora e data)").to_string(),
+        ButtonAction::Obs { command, target } if target.is_empty() => {
+            tf("OBS: {}", &[&t(super::obs_ui::command_label(*command))])
+        }
+        ButtonAction::Obs { command, target } => tf(
+            "OBS: {} · {}",
+            &[&t(super::obs_ui::command_label(*command)), target],
+        ),
     };
     Some(text)
 }

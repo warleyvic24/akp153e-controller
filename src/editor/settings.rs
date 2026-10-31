@@ -62,6 +62,9 @@ impl App {
                 self.language_section(ui, g, pal);
                 self.startup_section(ui, pal);
                 self.device_section(ui, g, pal);
+                if super::obs_ui::settings_section(ui, &mut g.cfg.obs, pal) {
+                    self.touch();
+                }
                 self.about_section(ui, pal);
             });
         self.settings_open = open;

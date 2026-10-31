@@ -6,6 +6,7 @@ mod editor;
 mod engine;
 mod graphics;
 mod mixer;
+mod obs;
 mod platform;
 mod service;
 mod strings;

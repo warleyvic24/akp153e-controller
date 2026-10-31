@@ -9,6 +9,7 @@ mod inspector;
 mod layout;
 mod library;
 mod library_panel;
+mod obs_ui;
 pub(crate) mod omarchy;
 mod panes;
 mod picker;

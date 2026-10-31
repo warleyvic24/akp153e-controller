@@ -1,4 +1,4 @@
-use crate::config::schema::{AppConfig, ButtonAction};
+use crate::config::schema::{AppConfig, ButtonAction, ObsCommand};
 
 /// Ação pronta da biblioteca: aplicada a um botão define ação, ícone, rótulo e cor de fundo.
 #[derive(Clone, Debug)]
@@ -17,6 +17,8 @@ const WEB: [u8; 3] = [168, 120, 44];
 const NAV: [u8; 3] = [111, 88, 184];
 /// Teclas que mexem no próprio aparelho (brilho) ou mostram algo vivo (relógio).
 const DEVICE: [u8; 3] = [52, 60, 78];
+/// Teclas do OBS Studio.
+const OBS: [u8; 3] = [40, 44, 58];
 /// Cores oferecidas no seletor do inspetor (a última é o grafite neutro).
 pub const SWATCHES: [[u8; 3]; 7] = [MEDIA, KEYS, APPS, WEB, NAV, [42, 47, 58], [0, 0, 0]];
 
@@ -101,6 +103,20 @@ impl Preset {
             },
             other => other.clone(),
         }
+    }
+}
+
+/// Preset do OBS: o nome e o ícone do comando.
+fn obs(command: ObsCommand) -> Preset {
+    Preset {
+        category: "OBS",
+        label: super::obs_ui::command_label(command),
+        icon: super::obs_ui::command_icon(command),
+        color: OBS,
+        action: ButtonAction::Obs {
+            command,
+            target: String::new(),
+        },
     }
 }
 
@@ -226,6 +242,13 @@ pub fn presets() -> Vec<Preset> {
             DEVICE,
             ButtonAction::Clock,
         ),
+        obs(ObsCommand::Record),
+        obs(ObsCommand::Stream),
+        obs(ObsCommand::Scene),
+        obs(ObsCommand::Mute),
+        obs(ObsCommand::RecordPause),
+        obs(ObsCommand::VirtualCam),
+        obs(ObsCommand::ReplaySave),
     ];
     // Calculadora, Bloco de notas e Explorador são programas do Windows (no Linux o nome muda
     // de uma distribuição para outra: o usuário escolhe em "Aplicativo..."), e Área de trabalho é o Win+D.

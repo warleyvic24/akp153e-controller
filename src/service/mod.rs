@@ -2,6 +2,7 @@
 //! para o editor. Não cria janela, então não consome CPU quando está ocioso.
 mod auto_profile;
 pub(crate) mod mixer_runtime;
+mod obs_runtime;
 pub(crate) mod runtime;
 
 use crate::config::schema::AppConfig;
@@ -108,7 +109,8 @@ pub fn run(open_editor: bool) {
         .enable_all()
         .build()
         .expect("tokio");
-    let exec = Executor::new(rt.handle().clone());
+    let (obs_tx, obs_rx) = channel();
+    let exec = Executor::new(rt.handle().clone()).with_obs(obs_tx.clone());
     let (event_tx, event_rx) = channel();
     let (cmd_tx, cmd_rx) = channel();
     // O brilho precisa estar definido antes da thread USB inicializar o aparelho.
@@ -121,7 +123,8 @@ pub fn run(open_editor: bool) {
     let (focus_tx, focus_rx) = channel();
     crate::platform::focus::spawn_watch(focus_tx);
     auto_profile::spawn(state.clone(), cmd_tx.clone(), focus_rx);
-    spawn_control_server(listener, state, cmd_tx);
+    obs_runtime::spawn(state.clone(), cmd_tx.clone(), obs_rx);
+    spawn_control_server(listener, state, cmd_tx, obs_tx);
 
     let _tray = shell::create_tray();
     if open_editor {
@@ -132,7 +135,12 @@ pub fn run(open_editor: bool) {
 }
 
 /// Uma thread por conexão, com teto: um cliente lento não trava os demais comandos.
-fn spawn_control_server(listener: TcpListener, state: SharedState, tx: Sender<UsbCmd>) {
+fn spawn_control_server(
+    listener: TcpListener,
+    state: SharedState,
+    tx: Sender<UsbCmd>,
+    obs: Sender<crate::obs::ObsCall>,
+) {
     std::thread::spawn(move || {
         let active = Arc::new(AtomicUsize::new(0));
         for conn in listener.incoming().flatten() {
@@ -141,9 +149,9 @@ fn spawn_control_server(listener: TcpListener, state: SharedState, tx: Sender<Us
                 log::warn!("conexões de controle demais; descartada");
                 continue;
             }
-            let (state, tx, active) = (state.clone(), tx.clone(), active.clone());
+            let (state, tx, active, obs) = (state.clone(), tx.clone(), active.clone(), obs.clone());
             std::thread::spawn(move || {
-                handle(conn, &state, &tx);
+                handle(conn, &state, &tx, &obs);
                 active.fetch_sub(1, Ordering::SeqCst);
             });
         }
@@ -212,7 +220,12 @@ fn reload(state: &SharedState, tx: &Sender<UsbCmd>, cfg: Option<AppConfig>) {
     }
 }
 
-fn handle(mut conn: TcpStream, state: &SharedState, tx: &Sender<UsbCmd>) {
+fn handle(
+    mut conn: TcpStream,
+    state: &SharedState,
+    tx: &Sender<UsbCmd>,
+    obs: &Sender<crate::obs::ObsCall>,
+) {
     // A porta é TCP local: outro usuário da mesma máquina também conecta.
     if !crate::platform::same_user(&conn) {
         log::warn!("conexão de controle de outro usuário recusada");
@@ -227,6 +240,19 @@ fn handle(mut conn: TcpStream, state: &SharedState, tx: &Sender<UsbCmd>) {
             let _ = tx.send(UsbCmd::Reconnect);
         }
         "reload" => reload(state, tx, AppConfig::load_existing()),
+        // Estado do OBS para o editor (conectado, cenas, entradas), numa linha de JSON.
+        "obs-info" => {
+            let info = runtime::lock(state).obs.info_json();
+            let _ = writeln!(conn, "{info}");
+        }
+        other if other.starts_with("obs-run ") => {
+            match crate::obs::ObsCall::from_control(&other["obs-run ".len()..]) {
+                Some(call) => {
+                    let _ = obs.send(call);
+                }
+                None => log::warn!("comando do OBS desconhecido: {other}"),
+            }
+        }
         // Apps que ganharam o foco há pouco, um por linha: o editor os sugere na troca automática.
         "apps" => {
             let recent = runtime::lock(state).recent_apps.join("\t");
@@ -323,7 +349,8 @@ mod tests {
             reply
         });
         let (server, _) = listener.accept().unwrap();
-        handle(server, &state, &tx);
+        let (obs, _obs_rx) = channel();
+        handle(server, &state, &tx, &obs);
         let reply = client.join().unwrap();
         (reply, rx.try_iter().collect())
     }

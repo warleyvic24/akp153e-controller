@@ -1,4 +1,5 @@
 use crate::config::schema::ButtonAction;
+use crate::obs::ObsCall;
 use crate::platform::{hide_console, spawn_detached};
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 
@@ -13,6 +14,8 @@ pub const MAX_TYPE_CHARS: usize = 2_000;
 pub struct Executor {
     rt: tokio::runtime::Handle,
     http: reqwest::Client,
+    /// No serviço: a conexão com o OBS. No editor é `None` e o pedido vai ao serviço pela porta.
+    obs: Option<std::sync::mpsc::Sender<ObsCall>>,
 }
 
 impl Executor {
@@ -20,7 +23,14 @@ impl Executor {
         Self {
             rt,
             http: reqwest::Client::new(),
+            obs: None,
         }
+    }
+
+    /// Executor do serviço: as teclas do OBS vão para a conexão dele.
+    pub fn with_obs(mut self, obs: std::sync::mpsc::Sender<ObsCall>) -> Self {
+        self.obs = Some(obs);
+        self
     }
 
     pub fn run(&self, action: ButtonAction) {
@@ -85,6 +95,22 @@ impl Executor {
                 let spawned = tokio::task::spawn_blocking(move || run_command(&command)).await;
                 if let Ok(Err(e)) = spawned {
                     log::error!("comando: {e}");
+                }
+            }
+            ButtonAction::Obs { command, target } => {
+                let call = ObsCall { command, target };
+                match &self.obs {
+                    Some(obs) => {
+                        let _ = obs.send(call);
+                    }
+                    // Editor ("Testar"): quem fala com o OBS é o serviço.
+                    None => {
+                        let line = call.control_line();
+                        let _ = tokio::task::spawn_blocking(move || {
+                            crate::platform::shell::send(&line)
+                        })
+                        .await;
+                    }
                 }
             }
             ButtonAction::None

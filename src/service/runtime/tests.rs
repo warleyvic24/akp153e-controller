@@ -14,6 +14,7 @@ fn two_page_state(action: ButtonAction, long: Option<ButtonAction>) -> Shared {
         icon_px: 85,
         mixer: None,
         recent_apps: Vec::new(),
+        obs: crate::obs::ObsState::default(),
     }
 }
 

@@ -96,6 +96,72 @@ pub enum ButtonAction {
     },
     /// Tecla viva: mostra a hora e a data, redesenhada a cada minuto. Tocar não faz nada.
     Clock,
+    /// Comando no OBS Studio (obs-websocket). `target` é a cena ou a entrada, quando o comando usa.
+    Obs {
+        command: ObsCommand,
+        #[serde(default)]
+        target: String,
+    },
+}
+
+/// O que uma tecla do OBS faz.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ObsCommand {
+    /// Vai para a cena `target`.
+    Scene,
+    /// Liga ou desliga a transmissão.
+    Stream,
+    /// Liga ou desliga a gravação.
+    Record,
+    /// Pausa ou retoma a gravação.
+    RecordPause,
+    /// Muda ou desmuda a entrada de áudio `target`.
+    Mute,
+    /// Liga ou desliga a câmera virtual.
+    VirtualCam,
+    /// Liga ou desliga o buffer de replay.
+    ReplayBuffer,
+    /// Salva o replay.
+    ReplaySave,
+}
+
+impl ObsCommand {
+    pub const ALL: [ObsCommand; 8] = [
+        ObsCommand::Scene,
+        ObsCommand::Stream,
+        ObsCommand::Record,
+        ObsCommand::RecordPause,
+        ObsCommand::Mute,
+        ObsCommand::VirtualCam,
+        ObsCommand::ReplayBuffer,
+        ObsCommand::ReplaySave,
+    ];
+
+    /// O comando age sobre uma cena ou entrada (e precisa de `target`).
+    pub fn needs_target(self) -> bool {
+        matches!(self, ObsCommand::Scene | ObsCommand::Mute)
+    }
+}
+
+/// Onde achar o obs-websocket. No OBS: Ferramentas > Configurações do servidor WebSocket.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ObsSettings {
+    pub host: String,
+    pub port: u16,
+    /// Senha do servidor WebSocket (vazia se a autenticação estiver desligada no OBS).
+    #[serde(default)]
+    pub password: String,
+}
+
+impl Default for ObsSettings {
+    fn default() -> Self {
+        Self {
+            host: "127.0.0.1".into(),
+            port: 4455,
+            password: String::new(),
+        }
+    }
 }
 fn get() -> String {
     "GET".into()
@@ -219,6 +285,9 @@ pub struct AppConfig {
     pub active_profile: usize,
     #[serde(default)]
     pub ui: UiSettings,
+    /// Conexão com o OBS Studio; ausente em configs antigas (padrão: este PC, porta 4455).
+    #[serde(default)]
+    pub obs: ObsSettings,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -399,6 +468,7 @@ impl Default for AppConfig {
             }],
             active_profile: 0,
             ui: UiSettings::default(),
+            obs: ObsSettings::default(),
         }
     }
 }

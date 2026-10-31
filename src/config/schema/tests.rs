@@ -20,6 +20,7 @@ fn sanitize_repairs_broken_config() {
         }],
         active_profile: 7,
         ui: UiSettings::default(),
+        obs: ObsSettings::default(),
     };
     assert_eq!(broken.sanitized().page().buttons.len(), 15);
     assert_eq!(
@@ -27,7 +28,8 @@ fn sanitize_repairs_broken_config() {
             schema_version: SCHEMA_VERSION,
             profiles: vec![],
             active_profile: 0,
-            ui: UiSettings::default()
+            ui: UiSettings::default(),
+            obs: ObsSettings::default(),
         }
         .sanitized()
         .page()

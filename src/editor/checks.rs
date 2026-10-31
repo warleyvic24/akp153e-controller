@@ -27,6 +27,11 @@ pub(crate) fn action_problem(a: &ButtonAction, targets: &Targets) -> Option<&'st
         ButtonAction::Hotkey { keys } if !keys.iter().all(|k| engine::actions::is_valid_key(k)) => {
             Some("O atalho tem uma tecla desconhecida")
         }
+        ButtonAction::Obs { command, target }
+            if command.needs_target() && target.trim().is_empty() =>
+        {
+            Some("Escolha a cena ou a entrada do OBS")
+        }
         ButtonAction::RunCommand { command } if command.trim().is_empty() => {
             Some("Digite o comando que a tecla roda")
         }

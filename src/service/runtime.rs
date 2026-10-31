@@ -26,6 +26,8 @@ pub struct Shared {
     pub mixer: Option<MixerView>,
     /// No serviço: apps que ganharam o foco há pouco (o mais novo primeiro), para o editor sugerir.
     pub recent_apps: Vec<String>,
+    /// No serviço: o que se sabe do OBS (conexão, gravação, cena...), para as teclas do OBS.
+    pub obs: crate::obs::ObsState,
 }
 
 pub type SharedState = Arc<Mutex<Shared>>;
@@ -38,6 +40,7 @@ pub fn new_state(cfg: AppConfig, icon_px: u32) -> SharedState {
         icon_px,
         mixer: None,
         recent_apps: Vec::new(),
+        obs: crate::obs::ObsState::default(),
     }))
 }
 
@@ -88,9 +91,8 @@ impl Snapshot {
                     .page()
                     .buttons
                     .iter()
-                    .cloned()
                     .enumerate()
-                    .map(|(index, b)| (index, Frame::Button(Box::new(b))))
+                    .map(|(index, b)| (index, Frame::Button(Box::new(shown(sh, b)))))
                     .collect(),
             },
             px: sh.icon_px,
@@ -426,6 +428,46 @@ fn press(
     mixer_home
 }
 
+/// O botão como deve aparecer agora: teclas do OBS refletem o estado do OBS (gravando, cena...).
+fn shown(sh: &Shared, b: &ButtonConfig) -> ButtonConfig {
+    match &b.action {
+        ButtonAction::Obs { command, target } => {
+            crate::obs::live_look(b, *command, sh.obs.is_active(*command, target))
+        }
+        _ => b.clone(),
+    }
+}
+
+/// Redesenha só as teclas da página que satisfazem `pick`, na ordem dos outros desenhos.
+pub fn redraw_where(
+    state: &SharedState,
+    tx: &Sender<UsbCmd>,
+    pick: impl Fn(&ButtonConfig) -> bool,
+) {
+    let _order = DRAW_ORDER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let snapshot = {
+        let sh = lock(state);
+        if sh.mixer.is_some() {
+            return;
+        }
+        Snapshot {
+            frames: sh
+                .cfg
+                .page()
+                .buttons
+                .iter()
+                .enumerate()
+                .filter(|(_, b)| pick(b))
+                .map(|(i, b)| (i, Frame::Button(Box::new(shown(&sh, b)))))
+                .collect(),
+            px: sh.icon_px,
+        }
+    };
+    snapshot.render(tx);
+}
+
 /// Folga depois da virada do minuto, para a hora lida já ser a nova.
 const CLOCK_SLACK: Duration = Duration::from_millis(50);
 
@@ -457,23 +499,9 @@ fn has_clock(state: &SharedState) -> bool {
     !clock_keys(&lock(state)).is_empty()
 }
 
-/// Redesenha só as teclas de relógio, na ordem dos outros desenhos.
+/// Redesenha só as teclas de relógio.
 fn redraw_clocks(state: &SharedState, tx: &Sender<UsbCmd>) {
-    let _order = DRAW_ORDER
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let snapshot = {
-        let sh = lock(state);
-        let keys = clock_keys(&sh);
-        Snapshot {
-            frames: keys
-                .into_iter()
-                .map(|i| (i, Frame::Button(Box::new(sh.cfg.page().buttons[i].clone()))))
-                .collect(),
-            px: sh.icon_px,
-        }
-    };
-    snapshot.render(tx);
+    redraw_where(state, tx, |b| b.action == ButtonAction::Clock);
 }
 
 /// No editor: consulta o serviço a cada segundo para mostrar o estado do aparelho.

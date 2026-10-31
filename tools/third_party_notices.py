@@ -16,6 +16,8 @@ OUTPUT = pathlib.Path("THIRD_PARTY_NOTICES.md")
 LICENSE_PREFIXES = ("license", "licence", "copying", "unlicense", "notice")
 # Pastas com licenças de arquivos embutidos: `epaint_default_fonts` guarda as das fontes em `fonts/`.
 EXTRA_LICENSE_DIRS = ("fonts",)
+# Arquivos embutidos que não vêm de crates: (nome na lista, arquivo de licença no repositório).
+EMBEDDED_ASSETS = (("Lucide icons (assets/lucide-icons.tsv)", "assets/LUCIDE-LICENSE.txt"),)
 
 HEADER = """# Third-party notices
 
@@ -66,6 +68,11 @@ def main() -> None:
             key = hashlib.sha256(" ".join(text.split()).encode()).hexdigest()
             entry = texts.setdefault(key, {"text": text, "crates": set()})
             entry["crates"].add(label)
+
+    for label, path in EMBEDDED_ASSETS:
+        text = pathlib.Path(path).read_text(encoding="utf-8").strip()
+        key = hashlib.sha256(" ".join(text.split()).encode()).hexdigest()
+        texts.setdefault(key, {"text": text, "crates": set()})["crates"].add(label)
 
     parts = [HEADER]
     for n, entry in enumerate(sorted(texts.values(), key=lambda e: sorted(e["crates"])[0]), 1):
