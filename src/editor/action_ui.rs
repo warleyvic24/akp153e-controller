@@ -322,7 +322,7 @@ fn step_editor(ui: &mut egui::Ui, cx: &PaneCtx, step: &mut ButtonAction) -> bool
     match step {
         ButtonAction::Hotkey { keys } => {
             let label = widgets::section(ui, "Atalho", cx.pal);
-            let field_id = ui.id().with("step-keys");
+            let field_id = ui.scope_id().with("step-keys");
             textlist::list_field(
                 ui,
                 field_id,
@@ -405,7 +405,7 @@ fn step_button(ui: &mut egui::Ui, glyph: &str, name: &str, enabled: bool) -> egu
     let button = egui::Button::new(glyph).min_size(egui::vec2(STEP_BUTTON, STEP_BUTTON));
     let resp = ui.add_enabled(enabled, button);
     let name = t(name);
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name));
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, name));
     resp
 }
 
@@ -432,7 +432,7 @@ fn hotkey_editor(
             .size(text::CAPTION)
             .color(pal.muted),
     );
-    let field_id = ui.id().with((id, "keys"));
+    let field_id = ui.scope_id().with((id, "keys"));
     changed |= textlist::list_field(
         ui,
         field_id,
@@ -486,7 +486,7 @@ fn hotkey_recorder(
         }
         let clear = ui.button(t("Limpar"));
         clear.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, t("Limpar atalho"))
+            egui::WidgetInfo::labeled(egui::Role::Button, true, t("Limpar atalho"))
         });
         if clear.clicked() {
             keys.clear();
@@ -509,7 +509,7 @@ fn launch_editor(
         .labelled_by(path_label)
         .changed();
     let args_label = widgets::section(ui, "Argumentos", pal);
-    let field_id = ui.id().with((id, "args"));
+    let field_id = ui.scope_id().with((id, "args"));
     changed |= textlist::list_field(
         ui,
         field_id,

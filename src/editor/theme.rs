@@ -5,7 +5,7 @@ use crate::editor::omarchy;
 use crate::editor::tokens::TEXT_MIN_CONTRAST;
 use crate::editor::tokens::{radius, space, text, COMPONENT_MIN_CONTRAST};
 use eframe::egui::{
-    self, vec2, Color32, Context, FontData, FontDefinitions, FontFamily, FontId, Stroke, TextStyle,
+    self, Color32, Context, FontData, FontDefinitions, FontFamily, FontId, Stroke, TextStyle,
     Visuals,
 };
 
@@ -271,9 +271,10 @@ pub fn install_fonts(ctx: &Context) {
         else {
             continue;
         };
-        fonts
-            .font_data
-            .insert(name.into(), FontData::from_owned(bytes));
+        fonts.font_data.insert(
+            name.into(),
+            std::sync::Arc::new(FontData::from_owned(bytes)),
+        );
     }
     let has = |n: &str| fonts.font_data.contains_key(n);
     let (ui, mono, display) = (has("ui"), has("mono"), has("display"));
@@ -322,18 +323,18 @@ pub fn apply(ctx: &Context, ui: &UiSettings) {
     v.faint_bg_color = p.raise;
     v.override_text_color = Some(p.fg);
     let ink = ink(accent, &p);
-    v.window_rounding = egui::Rounding::same(radius::CARD);
+    v.window_corner_radius = egui::CornerRadius::from(radius::CARD);
     v.window_stroke = Stroke::new(1.0_f32, p.control);
     let shadow = egui::epaint::Shadow {
-        offset: vec2(0.0, SHADOW_OFFSET_Y),
-        blur: 24.0,
-        spread: 0.0,
+        offset: [0, SHADOW_OFFSET_Y as i8],
+        blur: 24,
+        spread: 0,
         color: Color32::from_black_alpha(if dark { 150 } else { 45 }),
     };
     v.window_shadow = shadow;
     v.popup_shadow = shadow;
-    v.menu_rounding = egui::Rounding::same(radius::CARD);
-    let round = egui::Rounding::same(radius::CONTROL);
+    v.menu_corner_radius = egui::CornerRadius::from(radius::CARD);
+    let round = egui::CornerRadius::from(radius::CONTROL);
     let base = match ui.theme {
         Theme::Omarchy => mix(p.raise, p.fg, OMARCHY_HOVER_BASE_TINT),
         _ if dark => Color32::from_rgb(32, 37, 58),
@@ -349,7 +350,7 @@ pub fn apply(ctx: &Context, ui: &UiSettings) {
         w.bg_fill = fill;
         w.weak_bg_fill = fill;
         w.bg_stroke = Stroke::new(1.0_f32, p.line);
-        w.rounding = round;
+        w.corner_radius = round;
         w.fg_stroke = Stroke::new(1.0_f32, p.fg);
     }
     // A trilha do slider usa `bg_fill`; com o mesmo cinza do painel ela some.
@@ -362,7 +363,7 @@ pub fn apply(ctx: &Context, ui: &UiSettings) {
     v.selection.stroke = Stroke::new(1.0_f32, readable_on(accent));
     v.hyperlink_color = ink;
     ctx.set_visuals(v);
-    ctx.style_mut(|s| {
+    ctx.all_styles_mut(|s| {
         s.spacing.item_spacing = egui::vec2(space::SM, space::SM);
         s.spacing.button_padding = egui::vec2(space::MD, 6.0);
         s.spacing.interact_size.y = 28.0;
@@ -505,12 +506,12 @@ mod tests {
             ..UiSettings::default()
         };
         apply(&ctx, &s);
-        let v = ctx.style().visuals.clone();
+        let v = ctx.global_style().visuals.clone();
         assert!(!v.dark_mode);
         assert_eq!(v.selection.bg_fill, Color32::from_rgb(10, 200, 30));
         s.theme = Theme::Dark;
         apply(&ctx, &s);
-        assert!(ctx.style().visuals.dark_mode);
+        assert!(ctx.global_style().visuals.dark_mode);
     }
 
     #[test]

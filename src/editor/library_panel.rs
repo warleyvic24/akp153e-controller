@@ -10,7 +10,7 @@ use crate::editor::tokens::{radius, space, text};
 use crate::service::runtime;
 use crate::strings::{t, tf};
 use eframe::egui::{
-    self, pos2, vec2, Color32, Frame, Margin, RichText, Rounding, Sense, Stroke, Ui,
+    self, pos2, vec2, Color32, CornerRadius, Frame, Margin, RichText, Sense, Stroke, Ui,
 };
 
 const PANEL_MARGIN: f32 = 12.0;
@@ -60,18 +60,18 @@ fn library_row(
     let label = t(p.label);
     let size = vec2(ui.available_width(), ROW_HEIGHT);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click_and_drag());
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
     let hot = resp.hovered() || resp.has_focus();
     let painter = ui.painter();
     if hot {
-        painter.rect_filled(rect, Rounding::same(radius::CONTROL), pal.raise);
+        painter.rect_filled(rect, CornerRadius::from(radius::CONTROL), pal.raise);
     }
     let badge = egui::Rect::from_center_size(
         pos2(rect.left() + space::XS + BADGE / 2.0, rect.center().y),
         vec2(BADGE, BADGE),
     );
     let badge_fill = if hot { pal.panel } else { pal.raise };
-    painter.rect_filled(badge, Rounding::same(radius::CONTROL - 1.0), badge_fill);
+    painter.rect_filled(badge, CornerRadius::from(radius::CONTROL - 1.0), badge_fill);
     super::icon_picker::paint_any(
         painter,
         ui.ctx(),
@@ -98,7 +98,11 @@ fn library_row(
             ),
             galley.size() + 2.0 * APPLY_PAD,
         );
-        painter.rect_filled(chip, Rounding::same(6.0), accent.gamma_multiply(APPLY_TINT));
+        painter.rect_filled(
+            chip,
+            CornerRadius::from(6.0),
+            accent.gamma_multiply(APPLY_TINT),
+        );
         painter.galley(chip.min + APPLY_PAD, galley, ink);
     }
     // Sem alça em repouso: repetida em 25 linhas ela só faz ruído. Ao passar o mouse o cursor
@@ -110,21 +114,22 @@ impl App {
     /// Coluna da esquerda: título, busca e as ações agrupadas por categoria.
     pub(crate) fn library(
         &mut self,
-        ctx: &egui::Context,
+        root: &mut egui::Ui,
         g: &mut runtime::Shared,
         pal: &Palette,
         accent: Color32,
     ) {
-        let frame = Frame::none()
+        let ctx = &root.ctx().clone();
+        let frame = Frame::NONE
             .fill(pal.panel)
             .stroke(Stroke::new(1.0_f32, pal.line))
-            .inner_margin(Margin::same(PANEL_MARGIN));
+            .inner_margin(Margin::same(PANEL_MARGIN as i8));
         let mut picked = Picked::default();
-        egui::SidePanel::left("library")
-            .exact_width(super::layout::LIBRARY_WIDTH)
+        egui::Panel::left("library")
+            .exact_size(super::layout::LIBRARY_WIDTH)
             .resizable(false)
             .frame(frame)
-            .show(ctx, |ui| {
+            .show(root, |ui| {
                 ui.label(RichText::new(t("Ações")).size(text::BODY + 1.0).strong());
                 ui.label(
                     widgets::hint("Clique para aplicar ou arraste até uma tecla", pal)

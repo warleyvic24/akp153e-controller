@@ -2,8 +2,8 @@
 use crate::editor::theme::Palette;
 use crate::editor::tokens::{radius, space, text, TARGET_MIN, TEXT_MIN_CONTRAST};
 use eframe::egui::{
-    self, pos2, vec2, Align2, Color32, FontId, Painter, Pos2, Rect, Response, RichText, Rounding,
-    Sense, Stroke, Ui,
+    self, pos2, vec2, Align2, Color32, CornerRadius, FontId, Painter, Pos2, Rect, Response,
+    RichText, Sense, Stroke, Ui,
 };
 
 const KEY_RADIUS: f32 = radius::KEY;
@@ -72,8 +72,9 @@ pub fn glow(p: &Painter, rect: Rect, round: f32, color: Color32) {
     for (grow, width, strength) in GLOW_LAYERS {
         p.rect_stroke(
             rect.expand(grow),
-            Rounding::same(round + grow),
+            CornerRadius::from(round + grow),
             Stroke::new(width, color.gamma_multiply(strength)),
+            egui::StrokeKind::Inside,
         );
     }
 }
@@ -133,7 +134,7 @@ pub fn paint_key(
             let plate = Rect::from_min_size(at, galley.size()).expand(KEY_NUMBER_PLATE_PAD);
             p.rect_filled(
                 plate,
-                Rounding::same(KEY_NUMBER_PLATE_PAD),
+                CornerRadius::from(KEY_NUMBER_PLATE_PAD),
                 Color32::from_black_alpha(KEY_NUMBER_PLATE_ALPHA),
             );
         }
@@ -146,8 +147,9 @@ pub fn paint_key(
         glow(p, rect, KEY_RADIUS, accent);
         p.rect_stroke(
             rect,
-            Rounding::same(KEY_RADIUS),
+            CornerRadius::from(KEY_RADIUS),
             Stroke::new(KEY_SELECTED_STROKE, accent),
+            egui::StrokeKind::Inside,
         );
     }
     if k.problem {
@@ -178,10 +180,10 @@ fn paint_empty_key(
     pal: &Palette,
     accent: Color32,
 ) {
-    let round = Rounding::same(KEY_RADIUS);
+    let round = CornerRadius::from(KEY_RADIUS);
     p.rect_filled(rect, round, pal.keyoff);
     let rim = Stroke::new(1.0_f32, Color32::from_white_alpha(EMPTY_RIM_ALPHA));
-    p.rect_stroke(rect, round, rim);
+    p.rect_stroke(rect, round, rim, egui::StrokeKind::Inside);
     // Com 15 teclas vazias, cantos e "+" acesos em todas viram ruído: em repouso só o "+",
     // mais baixo (ainda acima de 3:1 sobre o preto); os cantos aparecem ao passar o mouse.
     if hovered || selected {
@@ -207,27 +209,27 @@ fn paint_empty_key(
 
 /// Tecla com a imagem exata que vai ao aparelho (renderizada em textura).
 fn paint_image_key(p: &Painter, rect: Rect, tex: egui::TextureId, hovered: bool, accent: Color32) {
-    let round = Rounding::same(KEY_RADIUS);
+    let round = CornerRadius::from(KEY_RADIUS);
     let mut shape = egui::epaint::RectShape::filled(rect, round, Color32::WHITE);
-    shape.fill_texture_id = tex;
-    shape.uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+    shape = shape.with_texture(tex, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)));
     p.add(shape);
     if hovered {
         let stroke = Stroke::new(KEY_HOVER_STROKE, accent.gamma_multiply(0.7));
-        p.rect_stroke(rect, round, stroke);
+        p.rect_stroke(rect, round, stroke, egui::StrokeKind::Inside);
     }
 }
 
 /// Tecla só com cor de fundo (sem textura): clareia ao passar o mouse e leva um brilho no alto.
 fn paint_plain_key(p: &Painter, rect: Rect, k: &KeyView, hovered: bool) {
     let fill = if hovered { lighten(k.bg, 16) } else { k.bg };
-    p.rect_filled(rect, Rounding::same(KEY_RADIUS), fill);
+    p.rect_filled(rect, CornerRadius::from(KEY_RADIUS), fill);
     let top = Rect::from_min_max(rect.min, pos2(rect.max.x, rect.center().y));
-    let shine = Rounding {
-        nw: KEY_RADIUS,
-        ne: KEY_RADIUS,
-        sw: 0.0,
-        se: 0.0,
+    let r = KEY_RADIUS as u8;
+    let shine = CornerRadius {
+        nw: r,
+        ne: r,
+        sw: 0,
+        se: 0,
     };
     let a = SHINE_ALPHA;
     p.rect_filled(top, shine, Color32::from_rgba_premultiplied(a, a, a, a));
@@ -283,12 +285,10 @@ pub fn pill(ui: &mut Ui, text: &str, active: bool, accent: Color32, pal: &Palett
             .fill(fill)
             .stroke(stroke)
             .selected(active)
-            .rounding(Rounding::same(radius::PILL))
+            .corner_radius(CornerRadius::from(radius::PILL))
             .min_size(vec2(0.0, TARGET_MIN)),
     );
-    r.widget_info(|| {
-        egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, active, text)
-    });
+    r.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, active, text));
     r
 }
 
@@ -313,11 +313,11 @@ pub fn icon_button_tinted(
         Sense::hover()
     };
     let (rect, resp) = ui.allocate_exact_size(vec2(ICON_BUTTON, ICON_BUTTON), sense);
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name));
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, name));
     let hot = enabled && (resp.hovered() || resp.has_focus());
     if hot {
         ui.painter()
-            .rect_filled(rect, Rounding::same(radius::CONTROL), pal.raise);
+            .rect_filled(rect, CornerRadius::from(radius::CONTROL), pal.raise);
     }
     let color = if enabled {
         ink
@@ -343,19 +343,19 @@ pub fn segment(ui: &mut Ui, text: &str, on: bool, width: f32, pal: &Palette) -> 
         egui::Button::new(label)
             .fill(fill)
             .stroke(Stroke::NONE)
-            .rounding(Rounding::same(SEGMENT_RADIUS))
+            .corner_radius(CornerRadius::from(SEGMENT_RADIUS))
             .min_size(vec2(width, TARGET_MIN + 6.0)),
     );
-    r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, on, text));
+    r.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, text));
     r
 }
 
 /// Moldura dos segmentos: um trilho escuro com cantos arredondados.
 pub fn segmented<R>(ui: &mut Ui, pal: &Palette, add: impl FnOnce(&mut Ui) -> R) -> R {
-    egui::Frame::none()
+    egui::Frame::NONE
         .fill(pal.field)
-        .rounding(Rounding::same(SEGMENT_RADIUS + 3.0))
-        .inner_margin(egui::Margin::same(3.0))
+        .corner_radius(CornerRadius::from(SEGMENT_RADIUS + 3.0))
+        .inner_margin(egui::Margin::same(3))
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             ui.horizontal(add).inner
@@ -383,11 +383,11 @@ pub fn status_chip(ui: &mut Ui, label: &str, color: Color32) -> Response {
     let label = crate::strings::t(label);
     let fill = crate::editor::theme::mix(ui.visuals().panel_fill, color, CHIP_FILL);
     let ink = crate::editor::theme::ensure_contrast(color, fill, TEXT_MIN_CONTRAST);
-    egui::Frame::none()
+    egui::Frame::NONE
         .fill(fill)
         .stroke(Stroke::new(1.0_f32, color.gamma_multiply(CHIP_STROKE)))
-        .rounding(Rounding::same(radius::PILL))
-        .inner_margin(egui::Margin::symmetric(space::MD - 2.0, 3.0))
+        .corner_radius(CornerRadius::from(radius::PILL))
+        .inner_margin(egui::Margin::symmetric((space::MD - 2.0) as i8, 3))
         .show(ui, |ui| {
             ui.label(
                 RichText::new(format!("● {label}"))
@@ -410,24 +410,26 @@ pub fn swatch(
     name: &str,
 ) -> Response {
     let (rect, resp) = ui.allocate_exact_size(vec2(size, size), egui::Sense::click());
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, selected, name));
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, selected, name));
     let body = if resp.hovered() {
         rect.expand(SWATCH_HOVER_GROW)
     } else {
         rect
     };
     let p = ui.painter();
-    p.rect_filled(body, Rounding::same(radius), fill);
+    p.rect_filled(body, CornerRadius::from(radius), fill);
     p.rect_stroke(
         body,
-        Rounding::same(radius),
+        CornerRadius::from(radius),
         Stroke::new(1.0_f32, Color32::from_white_alpha(28)),
+        egui::StrokeKind::Inside,
     );
     if selected {
         p.rect_stroke(
             rect.expand(SWATCH_RING_GAP),
-            Rounding::same(radius + SWATCH_RING_GAP),
+            CornerRadius::from(radius + SWATCH_RING_GAP),
             Stroke::new(2.0_f32, ring),
+            egui::StrokeKind::Inside,
         );
     }
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -446,25 +448,27 @@ pub fn focus_ring(ctx: &egui::Context) {
     };
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Foreground,
-        egui::Id::new("focus_ring"),
+        egui::Id::unique("focus_ring"),
     ));
     let inner = rect.expand(FOCUS_RING_GAP);
     painter.rect_stroke(
         inner.expand(FOCUS_RING_WIDTH),
-        Rounding::same(FOCUS_RING_RADIUS + FOCUS_RING_WIDTH),
+        CornerRadius::from(FOCUS_RING_RADIUS + FOCUS_RING_WIDTH),
         Stroke::new(FOCUS_RING_WIDTH, FOCUS_RING_OUTER),
+        egui::StrokeKind::Inside,
     );
     painter.rect_stroke(
         inner,
-        Rounding::same(FOCUS_RING_RADIUS),
+        CornerRadius::from(FOCUS_RING_RADIUS),
         Stroke::new(FOCUS_RING_WIDTH, Color32::WHITE),
+        egui::StrokeKind::Inside,
     );
 }
 
 /// Nome falado de um controle que não tem rótulo visível ao lado (campo de busca, seletor).
 pub fn name(resp: &Response, label: &str) {
     resp.ctx
-        .accesskit_node_builder(resp.id, |node| node.set_name(crate::strings::t(label)));
+        .accesskit_node_builder(resp.id, |node| node.set_label(crate::strings::t(label)));
 }
 
 /// Placeholder de campo. O tema força a cor do texto (`override_text_color`), o que deixava a dica
@@ -472,21 +476,21 @@ pub fn name(resp: &Response, label: &str) {
 /// Campo de busca: lupa à esquerda, dica apagada e o nome falado igual à dica.
 pub fn search_field(ui: &mut Ui, query: &mut String, hint_text: &str, pal: &Palette) -> Response {
     const ICON: f32 = 14.0;
-    const LEFT_PAD: f32 = 26.0;
+    const LEFT_PAD: i8 = 26;
     let resp = ui.add(
         egui::TextEdit::singleline(query)
             .hint_text(hint(hint_text, pal))
             .margin(egui::Margin {
                 left: LEFT_PAD,
-                right: 6.0,
-                top: 4.0,
-                bottom: 4.0,
+                right: 6,
+                top: 4,
+                bottom: 4,
             })
             .desired_width(ui.available_width()),
     );
     // O retângulo da resposta é o do texto, já sem a margem: a lupa vai na margem, à esquerda dele.
     let center = pos2(
-        resp.rect.left() - LEFT_PAD / 2.0 + 1.0,
+        resp.rect.left() - f32::from(LEFT_PAD) / 2.0 + 1.0,
         resp.rect.center().y,
     );
     paint_icon(ui.painter(), center, ICON, "search", pal.muted);
@@ -500,11 +504,11 @@ pub fn hint(text: &str, pal: &Palette) -> RichText {
 
 /// Texto de tecla ao estilo "kbd".
 pub fn kbd(ui: &mut Ui, label: &str, pal: &Palette) {
-    egui::Frame::none()
+    egui::Frame::NONE
         .fill(pal.raise)
         .stroke(Stroke::new(1.0_f32, pal.line))
-        .rounding(Rounding::same(KBD_RADIUS))
-        .inner_margin(egui::Margin::symmetric(8.0, 2.0))
+        .corner_radius(CornerRadius::from(KBD_RADIUS))
+        .inner_margin(egui::Margin::symmetric(8, 2))
         .show(ui, |ui| {
             ui.label(
                 RichText::new(label.to_uppercase())

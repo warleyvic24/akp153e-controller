@@ -125,7 +125,7 @@ impl App {
         prof: usize,
     ) {
         if ui.button(t("Exportar perfil…")).clicked() {
-            ui.close_menu();
+            ui.close();
             let profile = &g.cfg.profiles[prof];
             let file = rfd::FileDialog::new()
                 .set_file_name(format!("{}.{}", profile.name, profile_io::EXTENSION))
@@ -140,7 +140,7 @@ impl App {
             }
         }
         if ui.button(t("Importar perfil…")).clicked() {
-            ui.close_menu();
+            ui.close();
             let file = rfd::FileDialog::new()
                 .add_filter(t("Perfil do Keyforge"), &["json"])
                 .pick_file();

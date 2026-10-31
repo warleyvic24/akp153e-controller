@@ -8,7 +8,7 @@ use crate::editor::theme::Palette;
 use crate::platform::{apps, shell};
 use crate::service::runtime;
 use crate::strings::{t, tf};
-use eframe::egui::{self, vec2, Color32, Frame, Margin, RichText, Rounding, Sense, Stroke};
+use eframe::egui::{self, vec2, Color32, CornerRadius, Frame, Margin, RichText, Sense, Stroke};
 use std::time::Duration;
 
 const APP_ROW_HEIGHT: f32 = 36.0;
@@ -65,13 +65,11 @@ pub(crate) fn key_title(b: &ButtonConfig) -> Option<String> {
 fn app_row(ui: &mut egui::Ui, app: &apps::InstalledApp, pal: &Palette) -> egui::Response {
     let size = vec2(ui.available_width(), APP_ROW_HEIGHT);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
-    resp.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Button, true, app.name.as_str())
-    });
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, app.name.as_str()));
     let p = ui.painter();
     if resp.hovered() {
         let tint = theme::mix(pal.raise, pal.fg, APP_ROW_HOVER_TINT);
-        p.rect_filled(rect, Rounding::same(tokens::radius::CONTROL), tint);
+        p.rect_filled(rect, CornerRadius::from(tokens::radius::CONTROL), tint);
     }
     let seed: usize = app.name.bytes().map(usize::from).sum();
     let [r, g, b] = theme::ACCENTS[seed % theme::ACCENTS.len()].1;
@@ -143,6 +141,9 @@ fn app_list(
     chosen
 }
 
+/// Id da janela da lista de apps (o título muda com o idioma).
+pub(crate) const APP_PICKER_ID: &str = "app-picker";
+
 impl App {
     pub(crate) fn app_picker(&mut self, ctx: &egui::Context, g: &mut runtime::Shared) {
         self.picker.poll();
@@ -159,6 +160,7 @@ impl App {
                 .size(tokens::text::BODY)
                 .strong(),
         )
+        .id(egui::Id::unique(APP_PICKER_ID))
         .open(&mut open)
         .collapsible(false)
         .default_width(360.0)
@@ -204,11 +206,11 @@ impl App {
             )
         };
         ui.allocate_ui(egui::vec2(width, 0.0), |ui| {
-            Frame::none()
+            Frame::NONE
                 .fill(pal.bad.gamma_multiply(0.15))
                 .stroke(Stroke::new(1.0_f32, pal.bad.gamma_multiply(0.5)))
-                .rounding(Rounding::same(tokens::radius::CARD))
-                .inner_margin(Margin::symmetric(14.0, 10.0))
+                .corner_radius(CornerRadius::from(tokens::radius::CARD))
+                .inner_margin(Margin::symmetric(14, 10))
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
@@ -287,11 +289,7 @@ impl App {
                     None => test.on_hover_text(t("Executa a ação agora")),
                 };
                 test.widget_info(|| {
-                    egui::WidgetInfo::labeled(
-                        egui::WidgetType::Button,
-                        untestable.is_none(),
-                        t("Testar"),
-                    )
+                    egui::WidgetInfo::labeled(egui::Role::Button, untestable.is_none(), t("Testar"))
                 });
                 if test.clicked() {
                     self.test_key(g, sel);
@@ -332,7 +330,7 @@ impl App {
     /// enquanto se digita, se grava um atalho ou há uma janela aberta.
     pub(crate) fn key_shortcuts(&mut self, ctx: &egui::Context, g: &mut runtime::Shared) {
         let busy = self.recording.is_some() || self.picker.open || self.settings_open;
-        if busy || ctx.wants_keyboard_input() {
+        if busy || ctx.egui_wants_keyboard_input() {
             return;
         }
         let (copy, paste, clear) = ctx.input_mut(|i| {
@@ -377,21 +375,22 @@ impl App {
     /// Painel do botão selecionado, com as abas Aparência, Ação e Alternar.
     pub(crate) fn inspector(
         &mut self,
-        ctx: &egui::Context,
+        root: &mut egui::Ui,
         g: &mut runtime::Shared,
         pal: &Palette,
         accent: Color32,
         width: f32,
     ) {
-        let frame = Frame::none()
+        let ctx = &root.ctx().clone();
+        let frame = Frame::NONE
             .fill(pal.panel)
             .stroke(Stroke::new(1.0_f32, pal.line))
-            .inner_margin(Margin::same(INSPECTOR_MARGIN));
-        egui::SidePanel::right("insp")
-            .exact_width(width)
+            .inner_margin(Margin::same(INSPECTOR_MARGIN as i8));
+        egui::Panel::right("insp")
+            .exact_size(width)
             .resizable(false)
             .frame(frame)
-            .show(ctx, |ui| {
+            .show(root, |ui| {
                 let sel = self.selected.min(g.cfg.page().buttons.len() - 1);
                 self.selected = sel;
                 let targets = Targets::from(&g.cfg);

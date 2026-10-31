@@ -5,7 +5,7 @@ use crate::config::schema::{ButtonAppearance, RGBAColor};
 use crate::editor::theme::Palette;
 use crate::graphics::{icon_library, icons};
 use crate::strings::{t, tf};
-use eframe::egui::{self, vec2, Color32, Rounding, Sense, Stroke};
+use eframe::egui::{self, vec2, Color32, CornerRadius, Sense, Stroke};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -23,7 +23,7 @@ type TextureCache = Arc<Mutex<HashMap<(String, [u8; 3]), egui::TextureHandle>>>;
 
 pub(crate) fn texture(ctx: &egui::Context, id: &str, color: Color32) -> Option<egui::TextureId> {
     let cache: TextureCache = ctx.data_mut(|d| {
-        d.get_temp_mut_or_default::<TextureCache>(egui::Id::new("icon-picker-textures"))
+        d.get_temp_mut_or_default::<TextureCache>(egui::Id::unique("icon-picker-textures"))
             .clone()
     });
     let rgb = [color.r(), color.g(), color.b()];
@@ -77,9 +77,9 @@ fn cell(
     ink: Color32,
 ) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(vec2(CELL, CELL), Sense::click());
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, name));
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, name));
     let p = ui.painter();
-    let round = Rounding::same(tokens::radius::CONTROL);
+    let round = CornerRadius::from(tokens::radius::CONTROL);
     let fill = if resp.hovered() {
         theme::mix(pal.field, pal.fg, 0.08)
     } else {
@@ -91,7 +91,7 @@ fn cell(
     } else {
         Stroke::new(1.0_f32, pal.control)
     };
-    p.rect_stroke(rect, round, border);
+    p.rect_stroke(rect, round, border, egui::StrokeKind::Inside);
     let color = if on { ink } else { pal.fg };
     if id.is_empty() {
         let font = egui::FontId::monospace(NO_ICON_FONT);
@@ -131,7 +131,7 @@ pub fn icon_section(
     let mut changed = false;
     let label = widgets::section(ui, "Ícone", pal);
     let ink = theme::ink(accent, pal);
-    let query_id = egui::Id::new(("icon-picker-query", salt));
+    let query_id = egui::Id::unique(("icon-picker-query", salt));
     let mut query: String = ui.data_mut(|d| d.get_temp(query_id).unwrap_or_default());
     let field = widgets::search_field(ui, &mut query, "Buscar ícone (ex.: microfone, câmera)", pal)
         .labelled_by(label);

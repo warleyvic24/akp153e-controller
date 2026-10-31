@@ -8,13 +8,6 @@ all-features = false
 # Avisos de crates sem manutenção não travam: entram como aviso no log.
 unmaintained = "workspace"
 yanked = "warn"
-ignore = [
-    # quick-xml 0.30 vem do egui 0.29 (accesskit -> atspi -> zbus_xml) e só lê o XML de introspecção
-    # do D-Bus da própria sessão: o risco é um serviço local travar o editor. Sai com a atualização do
-    # egui (docs/ROTEIRO.md, Degrau 2). Revisar até 2027-01-31.
-    { id = "RUSTSEC-2026-0194", reason = "quick-xml 0.30 preso pelo egui 0.29; só lê XML do D-Bus local" },
-    { id = "RUSTSEC-2026-0195", reason = "quick-xml 0.30 preso pelo egui 0.29; só lê XML do D-Bus local" },
-]
 
 [licenses]
 allow = [

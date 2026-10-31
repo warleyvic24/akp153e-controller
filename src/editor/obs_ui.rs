@@ -86,7 +86,7 @@ struct Info {
 }
 
 fn info(ctx: &egui::Context) -> Info {
-    let id = egui::Id::new("obs-info");
+    let id = egui::Id::unique("obs-info");
     let cached: Info = ctx.data_mut(|d| d.get_temp(id).unwrap_or_default());
     if cached.asked.is_some_and(|at| at.elapsed() < INFO_REFRESH) {
         return cached;

@@ -170,7 +170,7 @@ fn image_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette) -> bool
                 let clear = ui.button(t("Limpar"));
                 // O nome falado contém o texto visível (WCAG 2.5.3) e diz o que será limpo.
                 clear.widget_info(|| {
-                    egui::WidgetInfo::labeled(egui::WidgetType::Button, true, t("Limpar imagem"))
+                    egui::WidgetInfo::labeled(egui::Role::Button, true, t("Limpar imagem"))
                 });
                 if clear.clicked() {
                     b.appearance.icon_path = None;

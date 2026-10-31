@@ -8,7 +8,7 @@ use crate::editor::tokens::{radius, space, text};
 use crate::service::runtime;
 use crate::strings::{t, tf};
 use eframe::egui::{
-    self, pos2, vec2, Color32, Frame, Margin, Rect, RichText, Rounding, Sense, Stroke, Ui,
+    self, pos2, vec2, Color32, CornerRadius, Frame, Margin, Rect, RichText, Sense, Stroke, Ui,
 };
 
 const STAGE_MARGIN: f32 = 16.0;
@@ -58,11 +58,12 @@ fn experimental_badge(ui: &Ui, row: Rect, pal: &Palette) {
     // Texto e contorno na cor do texto: o contraste com o fundo já é o testado em `theme.rs`.
     ui.painter().rect_stroke(
         badge,
-        Rounding::same(radius::PILL),
+        CornerRadius::from(radius::PILL),
         Stroke::new(BADGE_STROKE, pal.fg),
+        egui::StrokeKind::Inside,
     );
     ui.painter().galley(badge.min + pad, galley, pal.fg);
-    ui.interact(badge, ui.id().with("experimental"), Sense::hover())
+    ui.interact(badge, ui.scope_id().with("experimental"), Sense::hover())
         .on_hover_text(t("Este modelo ainda não foi provado num aparelho de verdade: teclas trocadas ou tela apagada podem acontecer."));
 }
 
@@ -86,7 +87,7 @@ fn key_widget_info(
     if let Some(problem) = problem {
         name = format!("{name}. {}", t(problem));
     }
-    egui::WidgetInfo::selected(egui::WidgetType::Button, true, selected, name)
+    egui::WidgetInfo::selected(egui::Role::Button, true, selected, name)
 }
 
 /// Dica ao apontar uma tecla configurada: o nome e o que ela faz (teclas só com ícone não dizem).
@@ -106,28 +107,30 @@ fn key_tooltip(b: &ButtonConfig, targets: &Targets) -> Option<String> {
 /// Corpo do aparelho: moldura, tela, aro interno e o LED de conexão.
 fn paint_device_body(p: &egui::Painter, rect: Rect, pal: &Palette, accent: Color32, on: bool) {
     let screen = rect.shrink(BEZEL_INSET);
-    let outer = Rounding::same(radius::DEVICE);
-    let inner = Rounding::same(SCREEN_RADIUS);
+    let outer = CornerRadius::from(radius::DEVICE);
+    let inner = CornerRadius::from(SCREEN_RADIUS);
     p.rect_filled(rect, outer, pal.bezel);
     p.rect_filled(screen, inner, pal.device);
     p.rect_stroke(
         screen,
         inner,
         Stroke::new(1.0_f32, Color32::from_black_alpha(160)),
+        egui::StrokeKind::Inside,
     );
     p.rect_stroke(
         rect,
         outer,
         Stroke::new(1.5_f32, accent.gamma_multiply(0.4)),
+        egui::StrokeKind::Inside,
     );
     let led = if on { accent } else { pal.bad };
     let led_rect = Rect::from_center_size(pos2(rect.center().x, rect.top() + LED_TOP), LED_SIZE);
     p.rect_filled(
         led_rect.expand(LED_HALO),
-        Rounding::same(LED_HALO_RADIUS),
+        CornerRadius::from(LED_HALO_RADIUS),
         led.gamma_multiply(0.25),
     );
-    p.rect_filled(led_rect, Rounding::same(LED_RADIUS), led);
+    p.rect_filled(led_rect, CornerRadius::from(LED_RADIUS), led);
 }
 
 const BEAUTIFY_HINT: &str =
@@ -187,8 +190,8 @@ fn shortcut_hints(ui: &mut Ui, pal: &Palette) {
     for (key, what) in hints {
         // Palco estreito: as dicas que não cabem ficam de fora em vez de sair cortadas.
         let font = egui::FontId::proportional(text::CAPTION);
-        let need = ui.fonts(|f| {
-            let w = |s: &str| {
+        let need = ui.ctx().fonts_mut(|f| {
+            let mut w = |s: &str| {
                 f.layout_no_wrap(s.to_string(), font.clone(), Color32::WHITE)
                     .size()
                     .x
@@ -210,11 +213,11 @@ fn empty_guide(ui: &mut Ui, pal: &Palette, accent: Color32, width: f32) {
     // Da largura do aparelho e alinhado à esquerda, como as páginas, não ao centro do palco.
     ui.allocate_ui(vec2(width, 0.0), |ui| {
         ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-            Frame::none()
+            Frame::NONE
                 .fill(pal.raise)
                 .stroke(Stroke::new(1.0_f32, pal.control))
-                .rounding(Rounding::same(radius::CARD))
-                .inner_margin(Margin::same(space::MD))
+                .corner_radius(CornerRadius::from(radius::CARD))
+                .inner_margin(Margin::same(space::MD as i8))
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.label(
@@ -241,16 +244,17 @@ fn empty_guide(ui: &mut Ui, pal: &Palette, accent: Color32, width: f32) {
 impl App {
     pub(crate) fn stage(
         &mut self,
-        ctx: &egui::Context,
+        root: &mut egui::Ui,
         g: &mut runtime::Shared,
         pal: &Palette,
         accent: Color32,
     ) {
-        let frame = Frame::none()
+        let ctx = &root.ctx().clone();
+        let frame = Frame::NONE
             .fill(pal.bg)
-            .inner_margin(Margin::same(STAGE_MARGIN));
+            .inner_margin(Margin::same(STAGE_MARGIN as i8));
         let mut events = DeviceEvents::default();
-        egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
+        egui::CentralPanel::default().frame(frame).show(root, |ui| {
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
@@ -382,7 +386,7 @@ impl App {
         painter.set_opacity(opacity);
         // `buttons[i]` é a tecla `i` do modelo; sobra de um lado ou do outro não é desenhada.
         for (i, &kr) in keys.iter().enumerate().take(g.cfg.page().buttons.len()) {
-            let resp = ui.interact(kr, ui.id().with(("key", i)), Sense::click_and_drag());
+            let resp = ui.interact(kr, ui.scope_id().with(("key", i)), Sense::click_and_drag());
             let button = &g.cfg.page().buttons[i];
             let problem = checks::button_problem(button, &targets);
             resp.widget_info(|| key_widget_info(i, button, i == self.selected, problem));
@@ -451,7 +455,7 @@ impl App {
             i.raw
                 .dropped_files
                 .iter()
-                .filter_map(|f| f.path.clone())
+                .map(|f| f.path().to_path_buf())
                 .collect()
         });
         let Some(path) = files.first() else {

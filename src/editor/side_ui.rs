@@ -7,7 +7,7 @@ use crate::graphics::side::{self, SideInfo};
 use crate::platform::live::Live;
 use crate::service::runtime;
 use crate::strings::{display_name, t, tf};
-use eframe::egui::{self, Color32, RichText, Rounding, Sense, Stroke};
+use eframe::egui::{self, Color32, CornerRadius, RichText, Sense, Stroke};
 
 const WINDOW_WIDTH: f32 = 320.0;
 const OFF_LABEL_ALPHA: f32 = 0.55;
@@ -43,12 +43,10 @@ impl App {
         pal: &Palette,
         accent: Color32,
     ) {
-        let resp = ui.interact(rect, ui.id().with("side-screen"), Sense::click());
-        resp.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, t("Tela lateral"))
-        });
+        let resp = ui.interact(rect, ui.scope_id().with("side-screen"), Sense::click());
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, t("Tela lateral")));
         let p = ui.painter();
-        let round = Rounding::same(tokens::radius::KEY);
+        let round = CornerRadius::from(tokens::radius::KEY);
         p.rect_filled(rect, round, pal.keyoff);
         let side = g.cfg.page().side.clone();
         let minute = if side == SideScreen::Clock {
@@ -82,8 +80,10 @@ impl App {
         match &self.side_tex.0 {
             Some((_, _, _, _, tex)) => {
                 let mut shape = egui::epaint::RectShape::filled(rect, round, Color32::WHITE);
-                shape.fill_texture_id = tex.id();
-                shape.uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+                shape = shape.with_texture(
+                    tex.id(),
+                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                );
                 p.add(shape);
             }
             None => {
@@ -109,7 +109,7 @@ impl App {
         } else {
             Stroke::new(1.0_f32, Color32::from_white_alpha(14))
         };
-        p.rect_stroke(rect, round, stroke);
+        p.rect_stroke(rect, round, stroke, egui::StrokeKind::Inside);
         let resp = resp.on_hover_text(t(
             "Tela lateral: clique para escolher o que ela mostra nesta página",
         ));
@@ -136,7 +136,7 @@ impl App {
             .strong();
         let mut changed = false;
         egui::Window::new(title)
-            .id(egui::Id::new("side-window"))
+            .id(egui::Id::unique("side-window"))
             .open(&mut open)
             .collapsible(false)
             .resizable(false)

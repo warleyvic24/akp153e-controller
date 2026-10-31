@@ -291,7 +291,7 @@ impl App {
 
     fn read_undo_keys(&self, ctx: &egui::Context) -> (bool, bool) {
         let (mut undo, mut redo) = (false, false);
-        if self.recording.is_none() && !ctx.wants_keyboard_input() {
+        if self.recording.is_none() && !ctx.egui_wants_keyboard_input() {
             ctx.input_mut(|i| {
                 let ctrl = egui::Modifiers::COMMAND;
                 if i.consume_key(ctrl | egui::Modifiers::SHIFT, egui::Key::Z)
@@ -375,7 +375,8 @@ pub(crate) fn current_minute() -> u64 {
 }
 
 impl eframe::App for App {
-    fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+    fn ui(&mut self, root: &mut egui::Ui, _: &mut eframe::Frame) {
+        let ctx = &root.ctx().clone();
         let sh = self.sh.clone();
         let mut guard = runtime::lock(&sh);
         let g: &mut runtime::Shared = &mut guard;
@@ -401,16 +402,16 @@ impl eframe::App for App {
         let (mut want_undo, mut want_redo) = self.read_undo_keys(ctx);
         self.key_shortcuts(ctx, g);
 
-        let panels = layout::panels(ctx.screen_rect().width(), self.library_open);
+        let panels = layout::panels(ctx.content_rect().width(), self.library_open);
         let undo_redo = (&mut want_undo, &mut want_redo);
-        self.top_bar(ctx, g, (&pal, accent), undo_redo, panels);
+        self.top_bar(root, g, (&pal, accent), undo_redo, panels);
         if panels.library {
-            self.library(ctx, g, &pal, accent);
+            self.library(root, g, &pal, accent);
         }
         if panels.inspector {
-            self.inspector(ctx, g, &pal, accent, panels.inspector_width);
+            self.inspector(root, g, &pal, accent, panels.inspector_width);
         }
-        self.stage(ctx, g, &pal, accent);
+        self.stage(root, g, &pal, accent);
         widgets::focus_ring(ctx);
         self.app_picker(ctx, g);
         self.settings_window(ctx, g, &pal);
@@ -479,6 +480,13 @@ mod tests {
         );
         assert_eq!(b.appearance.text, "Bloco de Notas");
         assert_eq!(b.appearance.background, BLANK_BACKGROUND);
+    }
+
+    /// Um quadro do egui sem janela (as texturas que ele pediria para enviar são descartadas).
+    fn frame(ctx: &egui::Context, run: impl FnMut(&egui::Context)) {
+        ctx.run_pass(egui::RawInput::default(), run)
+            .textures_delta
+            .clear();
     }
 
     /// Extrai o ícone de verdade com o PowerShell. Fora do CI: no runner do GitHub a extração às vezes
@@ -596,9 +604,9 @@ mod tests {
         app.picker.open = true;
         app.picker.apps = Some(vec![apps::InstalledApp::exe("Bloco de Notas", NOTEPAD)]);
         let ctx = egui::Context::default();
-        let _ = ctx.run(egui::RawInput::default(), |ctx| app.app_picker(ctx, g));
-        let _ = ctx.run(egui::RawInput::default(), |ctx| app.app_picker(ctx, g));
-        let shown = ctx.memory(|m| m.area_rect(egui::Id::new("Apps instalados")));
+        frame(&ctx, |ctx| app.app_picker(ctx, g));
+        frame(&ctx, |ctx| app.app_picker(ctx, g));
+        let shown = ctx.memory(|m| m.area_rect(egui::Id::unique(inspector::APP_PICKER_ID)));
         assert!(
             shown.is_some_and(|r| r.width() > 100.0),
             "a janela da lista deveria estar visível"
@@ -618,7 +626,7 @@ mod tests {
         theme::install_fonts(&ctx);
         theme::apply(&ctx, &runtime::lock(&sh).cfg.ui);
         // O primeiro quadro só aplica as fontes ao egui.
-        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        frame(&ctx, |_| {});
         let actions = [
             ButtonAction::None,
             ButtonAction::LaunchApp {
@@ -660,18 +668,28 @@ mod tests {
                 let (mut undo, mut redo) = (false, false);
                 // Barra do modo compacto (com o botão "Ações"), mas os dois painéis desenhados.
                 let compact = layout::panels(layout::INSPECTOR_WIDTH, false);
-                let out = ctx.run(egui::RawInput::default(), |ctx| {
-                    app.top_bar(ctx, g, (&pal, accent), (&mut undo, &mut redo), compact);
-                    app.library(ctx, g, &pal, accent);
-                    app.inspector(ctx, g, &pal, accent, layout::INSPECTOR_WIDTH);
-                    app.stage(ctx, g, &pal, accent);
-                    app.settings_window(ctx, g, &pal);
+                let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                    app.top_bar(ui, g, (&pal, accent), (&mut undo, &mut redo), compact);
+                    app.library(ui, g, &pal, accent);
+                    app.inspector(ui, g, &pal, accent, layout::INSPECTOR_WIDTH);
+                    app.stage(ui, g, &pal, accent);
+                    let ctx = ui.ctx().clone();
+                    app.settings_window(&ctx, g, &pal);
                 });
+                // Sem janela, as texturas novas não vão a lugar nenhum: o egui exige descartá-las.
+                out.textures_delta.clear();
                 let update = out.platform_output.accesskit_update.expect("accesskit");
                 for (_, node) in update.nodes {
-                    let named = node.name().is_some_and(|n| !n.trim().is_empty())
+                    // No egui 0.37 o texto de um rótulo vai em `value`: ele se nomeia sozinho.
+                    let named = [node.label(), node.value()]
+                        .into_iter()
+                        .flatten()
+                        .any(|n| !n.trim().is_empty())
                         || !node.labelled_by().is_empty();
-                    let clickable = node.supports_action(egui::accesskit::Action::Default);
+                    // O egui 0.37 marca as áreas dos painéis (papel `Unknown`) como clicáveis;
+                    // não são controles nossos.
+                    let clickable = node.supports_action(egui::accesskit::Action::Click)
+                        && node.role() != egui::accesskit::Role::Unknown;
                     if (checked.contains(&node.role()) || clickable) && !named {
                         unnamed.push(format!("aba {tab}, {action:?}: {:?}", node.role()));
                     }

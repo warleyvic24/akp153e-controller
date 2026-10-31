@@ -37,10 +37,10 @@ pub(super) fn kind_picker(
     let width = ui.available_width();
     let (rect, resp) =
         ui.allocate_exact_size(egui::vec2(width, KIND_ROW_HEIGHT), egui::Sense::click());
-    let popup = ui.id().with(("kind-popup", id));
-    let open = ui.memory(|m| m.is_popup_open(popup));
+    let popup = ui.scope_id().with(("kind-popup", id));
+    let open = egui::Popup::is_id_open(ui.ctx(), popup);
     let spoken = tf("Tipo de ação: {}. Trocar", &[&t(label)]);
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, &spoken));
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, &spoken));
     let pal = cx.pal;
     let hot = resp.hovered() || resp.has_focus() || open;
     let fill = if hot {
@@ -49,10 +49,15 @@ pub(super) fn kind_picker(
         pal.raise
     };
     let p = ui.painter();
-    let round = egui::Rounding::same(radius::CONTROL);
+    let round = egui::CornerRadius::from(radius::CONTROL);
     p.rect_filled(rect, round, fill);
     if hot {
-        p.rect_stroke(rect, round, egui::Stroke::new(1.0_f32, pal.line));
+        p.rect_stroke(
+            rect,
+            round,
+            egui::Stroke::new(1.0_f32, pal.line),
+            egui::StrokeKind::Inside,
+        );
     }
     let ink = theme::ink(cx.accent, pal);
     let icon_at = egui::pos2(
@@ -92,21 +97,25 @@ pub(super) fn kind_picker(
     );
     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
     if resp.clicked() {
-        ui.memory_mut(|m| m.toggle_popup(popup));
+        egui::Popup::toggle_id(ui.ctx(), popup);
     }
     let close = egui::PopupCloseBehavior::CloseOnClickOutside;
-    let changed = egui::popup_below_widget(ui, popup, &resp, close, |ui| {
-        ui.set_width(width - 2.0 * space::SM);
-        ui.label(widgets::hint(
-            t("Trocar o tipo apaga os campos desta ação."),
-            pal,
-        ));
-        ui.add_space(space::XS);
-        kind_grid(ui, cx, a, true)
-    })
-    .unwrap_or(false);
+    let changed = egui::Popup::from_response(&resp)
+        .id(popup)
+        .open_memory(None)
+        .close_behavior(close)
+        .show(|ui| {
+            ui.set_width(width - 2.0 * space::SM);
+            ui.label(widgets::hint(
+                t("Trocar o tipo apaga os campos desta ação."),
+                pal,
+            ));
+            ui.add_space(space::XS);
+            kind_grid(ui, cx, a, true)
+        })
+        .is_some_and(|r| r.inner);
     if changed {
-        ui.memory_mut(|m| m.close_popup());
+        egui::Popup::close_id(ui.ctx(), popup);
     }
     ui.add_space(space::SM);
     changed
@@ -148,12 +157,10 @@ fn kind_tile(
     let label = t(kind.label());
     let (rect, resp) =
         ui.allocate_exact_size(egui::vec2(width, KIND_TILE_HEIGHT), egui::Sense::click());
-    resp.widget_info(|| {
-        egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, on, label)
-    });
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, label));
     let pal = cx.pal;
     let ink = theme::ink(cx.accent, pal);
-    let round = egui::Rounding::same(radius::CONTROL);
+    let round = egui::CornerRadius::from(radius::CONTROL);
     let (fill, fg) = if on {
         (cx.accent.gamma_multiply(KIND_ON_TINT), ink)
     } else if resp.hovered() || resp.has_focus() {
@@ -164,7 +171,12 @@ fn kind_tile(
     let p = ui.painter();
     p.rect_filled(rect, round, fill);
     if on {
-        p.rect_stroke(rect, round, egui::Stroke::new(1.5_f32, ink));
+        p.rect_stroke(
+            rect,
+            round,
+            egui::Stroke::new(1.5_f32, ink),
+            egui::StrokeKind::Inside,
+        );
     }
     let icon_at = egui::pos2(rect.center().x, rect.top() + KIND_ICON_TOP);
     icon_picker::paint_any(p, cx.ctx, icon_at, KIND_ICON, kind.icon(), fg);

@@ -48,50 +48,48 @@ impl App {
     /// direita. As páginas ficam no palco, coladas ao aparelho (ver `page_tabs`).
     pub(crate) fn top_bar(
         &mut self,
-        ctx: &egui::Context,
+        root: &mut egui::Ui,
         g: &mut runtime::Shared,
         (pal, accent): (&Palette, Color32),
         (undo, redo): (&mut bool, &mut bool),
         panels: super::layout::Panels,
     ) {
-        let frame = Frame::none()
+        let frame = Frame::NONE
             .fill(pal.panel)
             .stroke(egui::Stroke::new(1.0_f32, pal.line))
-            .inner_margin(Margin::symmetric(16.0, 8.0));
-        egui::TopBottomPanel::top("top")
-            .frame(frame)
-            .show(ctx, |ui| {
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if widgets::icon_button(ui, "settings", "Preferências", true, pal).clicked() {
-                        self.open_settings();
+            .inner_margin(Margin::symmetric(16, 8));
+        egui::Panel::top("top").frame(frame).show(root, |ui| {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if widgets::icon_button(ui, "settings", "Preferências", true, pal).clicked() {
+                    self.open_settings();
+                }
+                self.manage_menu(ui, g, pal);
+                ui.add_space(WORDMARK_GAP);
+                self.undo_redo(ui, undo, redo, pal);
+                ui.add_space(WORDMARK_GAP);
+                self.save_chip(ui, pal);
+                self.connection_chip(ui, g, pal);
+                let left = Layout::left_to_right(Align::Center);
+                ui.with_layout(left, |ui| {
+                    // Janela estreita: o botão "Ações" abre a biblioteca no lugar do inspetor.
+                    if panels.compact
+                        && widgets::pill(ui, "Ações", self.library_open, accent, pal).clicked()
+                    {
+                        self.library_open = !self.library_open;
                     }
-                    self.manage_menu(ui, g, pal);
-                    ui.add_space(WORDMARK_GAP);
-                    self.undo_redo(ui, undo, redo, pal);
-                    ui.add_space(WORDMARK_GAP);
-                    self.save_chip(ui, pal);
-                    self.connection_chip(ui, g, pal);
-                    let left = Layout::left_to_right(Align::Center);
-                    ui.with_layout(left, |ui| {
-                        // Janela estreita: o botão "Ações" abre a biblioteca no lugar do inspetor.
-                        if panels.compact
-                            && widgets::pill(ui, "Ações", self.library_open, accent, pal).clicked()
-                        {
-                            self.library_open = !self.library_open;
-                        }
-                        if panels.full_top_bar {
-                            ui.label(
-                                RichText::new("Keyforge")
-                                    .font(theme::display_font(TITLE - 3.0))
-                                    .strong(),
-                            );
-                            ui.add_space(WORDMARK_GAP * 2.0);
-                            ui.label(RichText::new(t("Perfil")).color(pal.muted));
-                        }
-                        self.profile_combo(ui, g);
-                    });
+                    if panels.full_top_bar {
+                        ui.label(
+                            RichText::new("Keyforge")
+                                .font(theme::display_font(TITLE - 3.0))
+                                .strong(),
+                        );
+                        ui.add_space(WORDMARK_GAP * 2.0);
+                        ui.label(RichText::new(t("Perfil")).color(pal.muted));
+                    }
+                    self.profile_combo(ui, g);
                 });
             });
+        });
     }
 
     /// Ícones em ordem visual Desfazer, Refazer (o layout à direita os desenha ao contrário).
@@ -140,35 +138,39 @@ impl App {
         };
         let chip = widgets::status_chip(ui, label, color);
         let resp = ui
-            .interact(chip.rect, ui.id().with("conn_chip"), Sense::click())
+            .interact(chip.rect, ui.scope_id().with("conn_chip"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand);
         widgets::name(&resp, "Estado da conexão");
-        let popup = ui.id().with("conn_popup");
+        let popup = ui.scope_id().with("conn_popup");
         if resp.clicked() {
-            ui.memory_mut(|m| m.toggle_popup(popup));
+            egui::Popup::toggle_id(ui.ctx(), popup);
         }
         let close = egui::PopupCloseBehavior::CloseOnClickOutside;
-        egui::popup_below_widget(ui, popup, &resp, close, |ui| {
-            ui.set_min_width(CONN_POPUP_WIDTH);
-            let msg = if !g.service_running {
-                t("O serviço em segundo plano não está rodando.")
-            } else if g.connected {
-                t("Aparelho conectado.")
-            } else {
-                t("Aparelho não encontrado. Confira o cabo USB.")
-            };
-            ui.label(msg);
-            if !g.service_running {
-                if ui.button(t("Iniciar serviço")).clicked() {
-                    shell::start_service();
+        egui::Popup::from_response(&resp)
+            .id(popup)
+            .open_memory(None)
+            .close_behavior(close)
+            .show(|ui| {
+                ui.set_min_width(CONN_POPUP_WIDTH);
+                let msg = if !g.service_running {
+                    t("O serviço em segundo plano não está rodando.")
+                } else if g.connected {
+                    t("Aparelho conectado.")
+                } else {
+                    t("Aparelho não encontrado. Confira o cabo USB.")
+                };
+                ui.label(msg);
+                if !g.service_running {
+                    if ui.button(t("Iniciar serviço")).clicked() {
+                        shell::start_service();
+                    }
+                } else if ui.button(t("Reconectar")).clicked() {
+                    let _ = shell::send("reconnect");
                 }
-            } else if ui.button(t("Reconectar")).clicked() {
-                let _ = shell::send("reconnect");
-            }
-            if ui.button(t("Abrir pasta de logs")).clicked() {
-                settings::open_log_folder();
-            }
-        });
+                if ui.button(t("Abrir pasta de logs")).clicked() {
+                    settings::open_log_folder();
+                }
+            });
     }
 
     fn profile_combo(&mut self, ui: &mut egui::Ui, g: &mut runtime::Shared) {
@@ -261,7 +263,7 @@ impl App {
                 if g.cfg.profiles[prof].move_page(index, delta).is_some() {
                     self.touch_nav();
                 }
-                ui.close_menu();
+                ui.close();
             }
         }
         let delete = ui.button(RichText::new(t("Excluir página")).color(pal.bad));
@@ -271,7 +273,7 @@ impl App {
                 self.touch_nav();
                 self.toasts.push(t("Página excluída"), Some("Desfazer"));
             }
-            ui.close_menu();
+            ui.close();
         }
     }
 
@@ -286,7 +288,7 @@ impl App {
     ) {
         if ui.button(t("Renomear")).clicked() {
             self.rename = Some(Rename::new(index, name));
-            ui.close_menu();
+            ui.close();
         }
         self.page_actions(ui, g, prof, index, pal);
     }
@@ -328,7 +330,7 @@ impl App {
             let name = tf("Perfil {}", &[&(g.cfg.profiles.len() + 1)]);
             g.cfg.add_profile(&name);
             self.touch();
-            ui.close_menu();
+            ui.close();
         }
         self.profile_file_items(ui, g, prof);
         let delete = ui.button(RichText::new(t("Excluir perfil")).color(pal.bad));
@@ -338,7 +340,7 @@ impl App {
                 self.touch_nav();
                 self.toasts.push(t("Perfil excluído"), Some("Desfazer"));
             }
-            ui.close_menu();
+            ui.close();
         }
     }
 }

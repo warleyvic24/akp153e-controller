@@ -67,7 +67,7 @@ impl Toasts {
             ctx.request_repaint();
         }
         let mut clicked: Option<usize> = None;
-        egui::Area::new("toasts".into())
+        egui::Area::new(egui::Id::unique("toasts"))
             .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -BOTTOM_OFFSET))
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
@@ -75,12 +75,12 @@ impl Toasts {
                     let presence = t.presence(now);
                     ui.set_opacity(presence);
                     ui.add_space((1.0 - presence) * SLIDE);
-                    Frame::none()
+                    Frame::NONE
                         .fill(pal.raise)
                         .stroke(Stroke::new(1.0_f32, pal.control))
-                        .rounding(egui::Rounding::same(radius::CARD))
+                        .corner_radius(egui::CornerRadius::from(radius::CARD))
                         .shadow(ui.visuals().popup_shadow)
-                        .inner_margin(Margin::symmetric(space::MD, space::SM))
+                        .inner_margin(Margin::symmetric(space::MD as i8, space::SM as i8))
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 ui.label(&t.text);
