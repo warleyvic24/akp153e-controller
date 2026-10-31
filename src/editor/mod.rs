@@ -458,7 +458,8 @@ mod tests {
 
     const NOTEPAD: &str = r"C:\Windows\System32\notepad.exe";
     #[cfg(windows)]
-    const ICON_WAIT: Duration = Duration::from_secs(20);
+    // O PowerShell que extrai o ícone demora a abrir no CI: com 20 s o teste já estourou o prazo.
+    const ICON_WAIT: Duration = Duration::from_secs(60);
 
     fn test_app() -> (App, tokio::runtime::Runtime) {
         let rt = tokio::runtime::Builder::new_multi_thread()
