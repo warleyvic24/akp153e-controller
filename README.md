@@ -15,7 +15,7 @@ Unofficial, open-source controller software for Windows and Linux for the AJAZZ 
 - **OBS Studio** (obs-websocket 5, built into OBS 28+): switch scene, stream, record, pause, mute an input, virtual camera, replay buffer. Keys follow OBS live: red while recording, streaming or muted; the current scene lights up.
 - **Live keys:** a clock with time and date; **device** keys for brightness up and down.
 - **Look:** 2,000 searchable icons ([Lucide](https://lucide.dev), search in English or Portuguese), your own PNG/JPG/SVG/ICO images (drop a file on a key), up to three label lines placed at the top, middle or bottom.
-- **Automatic profiles:** a profile switches in when its app gets focus (Windows and Hyprland) and the previous one returns when you leave.
+- **Automatic profiles:** a profile switches in when its app gets focus (Windows, Hyprland, Sway and X11) and the previous one returns when you leave.
 - **Profiles export/import** as one file with the key images inside.
 - **Screen sleep** after a chosen idle time; the first press only wakes it.
 - Dark, light and Omarchy themes; Portuguese and English.

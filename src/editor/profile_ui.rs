@@ -52,9 +52,12 @@ fn add_to_rule(rule: &str, app: &str) -> String {
     items.join(", ")
 }
 
-/// A troca automática funciona nesta sessão? (Windows sempre; Linux só no Hyprland.)
+/// A troca automática funciona nesta sessão? (Windows sempre; Linux no Hyprland, Sway e X11.)
 fn focus_supported() -> bool {
-    cfg!(windows) || std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some()
+    #[cfg(windows)]
+    return true;
+    #[cfg(not(windows))]
+    return crate::platform::focus::source().is_some();
 }
 
 impl App {
@@ -81,7 +84,7 @@ impl App {
         });
         let mut changed = field.inner.changed();
         if !focus_supported() {
-            let msg = t("Só funciona no Hyprland e no Windows.");
+            let msg = t("Esta sessão não informa a janela ativa (GNOME e KDE no Wayland): use Hyprland, Sway, X11 ou Windows.");
             ui.label(
                 RichText::new(msg)
                     .size(tokens::text::CAPTION)

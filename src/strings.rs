@@ -419,7 +419,7 @@ const EN: &[(&str, &str)] = &[
     ("Perfil e página", "Profile & page"),
     ("Ativar sozinho quando este app estiver em foco", "Switch to it when this app is focused"),
     ("ex.: obs, firefox", "e.g. obs, firefox"),
-    ("Só funciona no Hyprland e no Windows.", "Works on Hyprland and Windows only."),
+    ("Esta sessão não informa a janela ativa (GNOME e KDE no Wayland): use Hyprland, Sway, X11 ou Windows.", "This session does not expose the active window (GNOME and KDE on Wayland): use Hyprland, Sway, X11 or Windows."),
     ("Apps usados há pouco (clique para incluir):", "Recently focused apps (click to add):"),
     ("Exportar perfil…", "Export profile…"),
     ("Importar perfil…", "Import profile…"),

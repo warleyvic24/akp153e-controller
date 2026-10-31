@@ -15,7 +15,7 @@ Software de controle não oficial e de código aberto, para Windows e Linux, par
 - **OBS Studio** (obs-websocket 5, embutido no OBS 28+): trocar cena, transmitir, gravar, pausar, mudo de entrada, câmera virtual, buffer de replay. As teclas acompanham o OBS ao vivo: vermelhas gravando, no ar ou mudas; a cena atual acende.
 - **Teclas vivas:** relógio com hora e data; teclas do **aparelho** para subir e baixar o brilho.
 - **Visual:** 2000 ícones com busca ([Lucide](https://lucide.dev), em português ou inglês), suas imagens PNG/JPG/SVG/ICO (solte o arquivo sobre a tecla), rótulo de até três linhas no topo, no meio ou embaixo.
-- **Perfis automáticos:** um perfil entra quando o app dele ganha o foco (Windows e Hyprland) e o anterior volta quando você sai.
+- **Perfis automáticos:** um perfil entra quando o app dele ganha o foco (Windows, Hyprland, Sway e X11) e o anterior volta quando você sai.
 - **Exportar/importar perfil** num arquivo só, com as imagens das teclas dentro.
 - **Descanso da tela** após o tempo escolhido sem uso; o primeiro toque só acende.
 - Temas escuro, claro e Omarchy; português e inglês.

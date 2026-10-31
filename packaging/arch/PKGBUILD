@@ -9,7 +9,8 @@ license=('MIT')
 depends=('gtk3' 'libayatana-appindicator' 'systemd-libs' 'libxkbcommon' 'libpulse' 'ttf-dejavu')
 makedepends=('cargo' 'pkgconf')
 optdepends=('hyprland: foco do editor pelo hyprctl'
-            'wmctrl: foco do editor no X11')
+            'wmctrl: foco do editor no X11'
+            'xorg-xprop: perfil automático no X11')
 options=('!lto')
 
 _root="$startdir/../.."
