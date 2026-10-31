@@ -295,6 +295,7 @@ mod tests {
             volume: true,
             playing: true,
             system: true,
+            mic: true,
         };
         let mut sampler = Sampler::default();
         sampler.sample(all);

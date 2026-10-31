@@ -4,9 +4,9 @@ use windows::core::{Interface, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, BOOL, MAX_PATH, S_OK};
 use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::Media::Audio::{
-    eConsole, eRender, AudioSessionStateActive, AudioSessionStateExpired, IAudioSessionControl2,
-    IAudioSessionEnumerator, IAudioSessionManager2, IMMDevice, IMMDeviceEnumerator,
-    ISimpleAudioVolume, MMDeviceEnumerator,
+    eCapture, eConsole, eRender, AudioSessionStateActive, AudioSessionStateExpired, EDataFlow,
+    IAudioSessionControl2, IAudioSessionEnumerator, IAudioSessionManager2, IMMDevice,
+    IMMDeviceEnumerator, ISimpleAudioVolume, MMDeviceEnumerator,
 };
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED,
@@ -33,13 +33,40 @@ fn init_com() {
 }
 
 fn default_device() -> AudioResult<IMMDevice> {
+    default_endpoint(eRender)
+}
+
+/// Dispositivo padrão de saída (`eRender`) ou de entrada, o microfone (`eCapture`).
+fn default_endpoint(flow: EDataFlow) -> AudioResult<IMMDevice> {
     init_com();
     // SAFETY: cria o enumerador COM com o CLSID oficial; os objetos devolvidos são contados por referência.
     unsafe {
         let enumerator: IMMDeviceEnumerator =
             CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
-        enumerator.GetDefaultAudioEndpoint(eRender, eConsole)
+        enumerator.GetDefaultAudioEndpoint(flow, eConsole)
     }
+}
+
+/// O microfone padrão está mudo? `None` sem microfone.
+pub fn mic_muted() -> Option<bool> {
+    let device = default_endpoint(eCapture).ok()?;
+    // SAFETY: interfaces do Core Audio, contadas por referência; só leitura.
+    unsafe {
+        let endpoint: IAudioEndpointVolume = device.Activate(CLSCTX_ALL, None).ok()?;
+        Some(endpoint.GetMute().ok()?.as_bool())
+    }
+}
+
+/// Liga ou desliga o mudo do microfone padrão.
+pub fn toggle_mic_mute() -> AudioResult<()> {
+    let device = default_endpoint(eCapture)?;
+    // SAFETY: interfaces do Core Audio, contadas por referência; `SetMute` aceita contexto nulo.
+    unsafe {
+        let endpoint: IAudioEndpointVolume = device.Activate(CLSCTX_ALL, None)?;
+        let muted = endpoint.GetMute()?.as_bool();
+        endpoint.SetMute(BOOL::from(!muted), std::ptr::null())?;
+    }
+    Ok(())
 }
 
 /// Volume geral (0 a 1) e mudo do dispositivo de saída padrão.

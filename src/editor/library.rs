@@ -151,6 +151,7 @@ pub fn presets() -> Vec<Preset> {
         p("Mídia", "Vol +", "volup", MEDIA, media("volup")),
         p("Mídia", "Vol -", "voldown", MEDIA, media("voldown")),
         p("Mídia", "Mudo", "mute", MEDIA, media("mute")),
+        p("Mídia", "Mic mudo", "lucide:mic", MEDIA, media("micmute")),
         p("Mídia", "Mixer", "mixer", MEDIA, ButtonAction::OpenMixer),
         p(
             "Mídia",
@@ -369,6 +370,10 @@ mod tests {
         for p in presets() {
             let keys = match &p.action {
                 ButtonAction::Hotkey { keys } => keys.clone(),
+                // O mudo do microfone não passa pelo teclado: o serviço o trata à parte.
+                ButtonAction::MediaKey { key } if key == crate::config::schema::MIC_MUTE_KEY => {
+                    continue
+                }
                 ButtonAction::MediaKey { key } => vec![key.clone()],
                 _ => continue,
             };

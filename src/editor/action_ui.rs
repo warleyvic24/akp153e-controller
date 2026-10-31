@@ -68,13 +68,14 @@ pub(crate) fn media_label(key: &str) -> &str {
 const STEP_BUTTON: f32 = 24.0;
 const TYPE_TEXT_ROWS: usize = 3;
 
-const MEDIA_KEYS: [(&str, &str); 6] = [
+const MEDIA_KEYS: [(&str, &str); 7] = [
     ("playpause", "Play/Pause"),
     ("next", "Próxima"),
     ("prev", "Anterior"),
     ("volup", "Vol +"),
     ("voldown", "Vol −"),
     ("mute", "Mudo"),
+    ("micmute", "Mic mudo"),
 ];
 
 const BODY_ROWS: usize = 3;

@@ -51,6 +51,17 @@ pub fn master_volume() -> Option<(f32, bool)> {
     ))
 }
 
+/// O microfone padrão está mudo? `None` se não houver um (ou o servidor de som não responder).
+pub fn mic_muted() -> Option<bool> {
+    let out = pactl(&["get-source-mute", "@DEFAULT_SOURCE@"]).ok()?;
+    Some(out.contains("yes"))
+}
+
+/// Liga ou desliga o mudo do microfone padrão.
+pub fn toggle_mic_mute() -> AudioResult<()> {
+    pactl(&["set-source-mute", "@DEFAULT_SOURCE@", "toggle"]).map(|_| ())
+}
+
 /// Primeira porcentagem do texto do `pactl` ("front-left: 26214 /  40% / ...") -> 40.
 fn first_percent(text: &str) -> Option<u16> {
     text.split_whitespace()

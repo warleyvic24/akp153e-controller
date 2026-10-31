@@ -185,3 +185,26 @@ fn a_huge_title_is_cut_at_a_whole_word() {
         "6 Hacks do Hermes Desktop que me..."
     );
 }
+
+#[test]
+fn the_mic_key_turns_red_only_when_the_microphone_is_muted() {
+    let key = media("micmute");
+    let muted = Live {
+        mic_muted: Some(true),
+        ..Live::default()
+    };
+    let open = Live {
+        mic_muted: Some(false),
+        ..Live::default()
+    };
+    let red = render_live(&key, 100, 100, &muted);
+    let normal = render_live(&key, 100, 100, &open);
+    let corner = |img: &RgbaImage| *img.get_pixel(3, 50);
+    assert_ne!(corner(&red), corner(&normal));
+    assert!(corner(&red)[0] > corner(&red)[2], "fundo vermelho");
+    // Sem leitura do sistema, a tecla fica como foi configurada.
+    assert_eq!(
+        render_live(&key, 100, 100, &Live::default()),
+        render_rgba(&key, 100, 100)
+    );
+}

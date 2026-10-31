@@ -60,6 +60,12 @@ impl Executor {
             ButtonAction::Hotkey { keys } => {
                 run_blocking("hotkey", move || hotkey(&keys)).await;
             }
+            ButtonAction::MediaKey { key } if key == crate::config::schema::MIC_MUTE_KEY => {
+                run_blocking("microfone", || {
+                    crate::platform::audio::toggle_mic_mute().map_err(|e| e.to_string())
+                })
+                .await;
+            }
             ButtonAction::MediaKey { key } => {
                 run_blocking("media", move || hotkey(&[key])).await;
             }

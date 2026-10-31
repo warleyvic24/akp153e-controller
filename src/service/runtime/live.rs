@@ -50,11 +50,7 @@ pub(super) fn wants(sh: &Shared) -> Wants {
         .buttons
         .iter()
         .map(live_art::wants)
-        .fold(Wants::default(), |a, b| Wants {
-            volume: a.volume || b.volume,
-            playing: a.playing || b.playing,
-            system: a.system || b.system,
-        });
+        .fold(Wants::default(), Wants::or);
     all.system |= page.side == SideScreen::System;
     all.playing |= page.side == SideScreen::NowPlaying;
     all
@@ -66,6 +62,7 @@ fn changed(old: &Live, new: &Live) -> Wants {
         volume: old.volume != new.volume,
         playing: old.playing != new.playing,
         system: old.system != new.system,
+        mic: old.mic_muted != new.mic_muted,
     }
 }
 
@@ -91,6 +88,7 @@ pub fn spawn(state: SharedState, tx: Option<Sender<UsbCmd>>) {
                         (w.volume && diff.volume)
                             || (w.playing && diff.playing)
                             || (w.system && diff.system)
+                            || (w.mic && diff.mic)
                     });
                     let side = lock(&state).cfg.page().side.clone();
                     if (diff.system && side == SideScreen::System)

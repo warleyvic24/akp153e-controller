@@ -12,11 +12,23 @@ pub struct Wants {
     pub volume: bool,
     pub playing: bool,
     pub system: bool,
+    /// Se o microfone padrão está mudo (tecla "Mic mudo").
+    pub mic: bool,
 }
 
 impl Wants {
     pub fn any(self) -> bool {
-        self.volume || self.playing || self.system
+        self.volume || self.playing || self.system || self.mic
+    }
+
+    /// Junta o que cada tecla quer.
+    pub fn or(self, other: Self) -> Self {
+        Self {
+            volume: self.volume || other.volume,
+            playing: self.playing || other.playing,
+            system: self.system || other.system,
+            mic: self.mic || other.mic,
+        }
     }
 }
 
@@ -25,6 +37,8 @@ pub struct Live {
     pub volume: Option<Volume>,
     pub playing: Option<NowPlaying>,
     pub system: Option<SystemStats>,
+    /// O microfone padrão está mudo? `None` sem microfone ou sem resposta do sistema.
+    pub mic_muted: Option<bool>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -92,6 +106,7 @@ impl Sampler {
                 None
             },
             system: wants.system.then(|| self.system()).flatten(),
+            mic_muted: wants.mic.then(super::audio::mic_muted).flatten(),
         }
     }
 

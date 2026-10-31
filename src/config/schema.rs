@@ -132,6 +132,9 @@ pub enum ButtonAction {
     },
 }
 
+/// Tecla de mídia "Mic mudo": não é uma tecla do teclado; o serviço muda o microfone padrão.
+pub const MIC_MUTE_KEY: &str = "micmute";
+
 /// O que uma tecla do OBS faz.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

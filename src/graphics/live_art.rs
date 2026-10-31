@@ -12,6 +12,7 @@ use image::{imageops, RgbaImage};
 
 const VOLUME_KEYS: [&str; 3] = ["volup", "voldown", "mute"];
 const PLAY_KEY: &str = "playpause";
+use crate::config::schema::MIC_MUTE_KEY as MIC_KEY;
 
 const GREEN: RGBAColor = rgb(34, 197, 94);
 const AMBER: RGBAColor = rgb(245, 158, 11);
@@ -38,6 +39,7 @@ pub fn wants(button: &ButtonConfig) -> Wants {
             volume: VOLUME_KEYS.contains(&key.as_str()),
             playing: key == PLAY_KEY,
             system: false,
+            mic: key == MIC_KEY,
         },
         ButtonAction::Monitor { .. } => Wants {
             system: true,
@@ -56,6 +58,10 @@ pub fn render_live(button: &ButtonConfig, width: u32, height: u32, live: &Live) 
                 None => render_rgba(button, width, height),
             }
         }
+        ButtonAction::MediaKey { key } if key == MIC_KEY => match live.mic_muted {
+            Some(muted) => mic(button, muted, (width, height)),
+            None => render_rgba(button, width, height),
+        },
         ButtonAction::MediaKey { key } if key == PLAY_KEY => match &live.playing {
             Some(p) => now_playing(button, p, (width, height)),
             None => render_rgba(button, width, height),
@@ -145,6 +151,23 @@ fn volume(button: &ButtonConfig, mute_key: bool, v: Volume, (w, h): (u32, u32)) 
         color,
     );
     img
+}
+
+/// Mic mudo: vermelha, com o microfone riscado e "MIC MUDO"; ligado, a aparência da tecla com o
+/// microfone aberto. O estado é o do sistema: muda junto se o mudo vier de outro lugar (Discord, fone).
+fn mic(button: &ButtonConfig, muted: bool, (w, h): (u32, u32)) -> RgbaImage {
+    let mut shown = button.clone();
+    let ap = shown.current_appearance_mut();
+    if muted {
+        ap.background = MUTED_BG;
+        ap.text = t("MIC MUDO").to_string();
+        ap.icon = Some("lucide:mic-off".into());
+        ap.icon_path = None;
+        ap.gradient = false;
+    } else if ap.icon.is_none() && ap.icon_path.is_none() {
+        ap.icon = Some("lucide:mic".into());
+    }
+    render_rgba(&shown, w, h)
 }
 
 /// Quanto a capa escurece para o texto ficar legível.
