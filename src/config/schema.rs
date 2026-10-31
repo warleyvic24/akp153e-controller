@@ -320,6 +320,9 @@ pub struct UiSettings {
     /// Ausente em configs antigas: português, o idioma que a interface sempre teve.
     #[serde(default)]
     pub language: Language,
+    /// Minutos sem uso até o aparelho apagar a tela; 0 = nunca (o padrão, e o de configs antigas).
+    #[serde(default)]
+    pub sleep_minutes: u16,
 }
 
 fn default_brightness() -> u8 {
@@ -333,6 +336,7 @@ impl Default for UiSettings {
             accent: [0, 229, 255],
             brightness: default_brightness(),
             language: Language::default(),
+            sleep_minutes: 0,
         }
     }
 }
@@ -344,6 +348,9 @@ fn backup_path(config: &std::path::Path) -> PathBuf {
         .map_or(0, |d| d.as_secs());
     config.with_extension(format!("json.bak-{secs}"))
 }
+
+/// Opções de descanso da tela oferecidas nas Preferências (minutos; 0 = nunca).
+pub const SLEEP_CHOICES: [u16; 7] = [0, 1, 5, 10, 15, 30, 60];
 
 /// Permissão do `config.json` no Linux: leitura e escrita só para o dono.
 #[cfg(unix)]

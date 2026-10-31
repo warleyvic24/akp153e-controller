@@ -15,6 +15,7 @@ fn two_page_state(action: ButtonAction, long: Option<ButtonAction>) -> Shared {
         mixer: None,
         recent_apps: Vec::new(),
         obs: crate::obs::ObsState::default(),
+        sleep: crate::service::sleep::SleepState::default(),
     }
 }
 

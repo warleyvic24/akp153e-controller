@@ -300,7 +300,7 @@ fn old_config_without_ui_settings_gets_the_defaults() {
     let json = serde_json::to_string(&AppConfig::default())
         .unwrap()
         .replace(
-            ",\"ui\":{\"theme\":\"dark\",\"accent\":[0,229,255],\"brightness\":100,\"language\":\"pt\"}",
+            ",\"ui\":{\"theme\":\"dark\",\"accent\":[0,229,255],\"brightness\":100,\"language\":\"pt\",\"sleep_minutes\":0}",
             "",
         );
     assert!(!json.contains("\"ui\""));

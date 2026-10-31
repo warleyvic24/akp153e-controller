@@ -159,6 +159,29 @@ impl App {
             t("Sem aparelho conectado: vale a partir da próxima conexão.")
         };
         ui.label(RichText::new(note).size(text::CAPTION).color(pal.muted));
+        let label = widgets::section(ui, "Apagar a tela sem uso", pal);
+        let name = |m: u16| {
+            if m == 0 {
+                t("Nunca").to_string()
+            } else {
+                tf("Após {} min", &[&m])
+            }
+        };
+        let current = g.cfg.ui.sleep_minutes;
+        egui::ComboBox::from_id_salt("sleep-minutes")
+            .selected_text(name(current))
+            .show_ui(ui, |ui| {
+                for m in crate::config::schema::SLEEP_CHOICES {
+                    if ui.selectable_label(current == m, name(m)).clicked() {
+                        g.cfg.ui.sleep_minutes = m;
+                        self.dirty = true;
+                    }
+                }
+            })
+            .response
+            .labelled_by(label);
+        let hint = t("O primeiro toque só acende a tela, sem disparar a tecla.");
+        ui.label(RichText::new(hint).size(text::CAPTION).color(pal.muted));
     }
 
     fn about_section(&self, ui: &mut egui::Ui, pal: &Palette) {

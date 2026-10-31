@@ -4,6 +4,7 @@ mod auto_profile;
 pub(crate) mod mixer_runtime;
 mod obs_runtime;
 pub(crate) mod runtime;
+mod sleep;
 
 use crate::config::schema::AppConfig;
 use crate::engine::actions::Executor;
@@ -213,6 +214,8 @@ fn reload(state: &SharedState, tx: &Sender<UsbCmd>, cfg: Option<AppConfig>) {
         (changed, true)
     });
     usb::set_brightness(brightness);
+    // A mudança feita no editor tem de aparecer: acende a tela se ela estava em descanso.
+    runtime::lock(state).sleep.wake(brightness, tx);
     // O menu da bandeja só muda de idioma quando o serviço reinicia; o resto vale já.
     crate::strings::set_language(language);
     if brightness_changed {

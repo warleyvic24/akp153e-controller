@@ -28,6 +28,8 @@ pub struct Shared {
     pub recent_apps: Vec<String>,
     /// No serviço: o que se sabe do OBS (conexão, gravação, cena...), para as teclas do OBS.
     pub obs: crate::obs::ObsState,
+    /// No serviço: descanso da tela (apaga após um tempo sem uso).
+    pub sleep: super::sleep::SleepState,
 }
 
 pub type SharedState = Arc<Mutex<Shared>>;
@@ -41,6 +43,7 @@ pub fn new_state(cfg: AppConfig, icon_px: u32) -> SharedState {
         mixer: None,
         recent_apps: Vec::new(),
         obs: crate::obs::ObsState::default(),
+        sleep: super::sleep::SleepState::default(),
     }))
 }
 
@@ -538,10 +541,15 @@ pub fn spawn(state: SharedState, tx: Sender<UsbCmd>, rx: Receiver<UsbEvent>, exe
                 down = [None; MAX_KEYS];
                 hold = None;
             }
+            let sleep_due = {
+                let sh = lock(&state);
+                sh.sleep.deadline(sh.cfg.ui.sleep_minutes)
+            };
             let event = if mixer_open {
                 let wake = hold
                     .as_ref()
                     .map_or(next_refresh, |h| next_refresh.min(h.due()));
+                let wake = sleep_due.map_or(wake, |due| wake.min(due));
                 match rx.recv_timeout(wake.saturating_duration_since(Instant::now())) {
                     Ok(event) => Some(event),
                     Err(RecvTimeoutError::Timeout) => None,
@@ -549,23 +557,38 @@ pub fn spawn(state: SharedState, tx: Sender<UsbCmd>, rx: Receiver<UsbEvent>, exe
                 }
             } else {
                 hold = None;
-                // Com relógio na página, acorda na virada do minuto para redesenhá-lo.
-                if has_clock(&state) {
-                    match rx.recv_timeout(until_next_minute()) {
+                // Com relógio na página, acorda na virada do minuto para redesenhá-lo; com
+                // descanso ligado, na hora de apagar a tela.
+                let clock = has_clock(&state).then(|| Instant::now() + until_next_minute());
+                let wake = match (clock, sleep_due) {
+                    (Some(a), Some(b)) => Some(a.min(b)),
+                    (a, b) => a.or(b),
+                };
+                match wake {
+                    Some(at) => match rx.recv_timeout(at.saturating_duration_since(Instant::now()))
+                    {
                         Ok(event) => Some(event),
                         Err(RecvTimeoutError::Timeout) => {
-                            redraw_clocks(&state, &tx);
+                            if clock.is_some_and(|c| Instant::now() >= c) {
+                                redraw_clocks(&state, &tx);
+                            }
                             None
                         }
                         Err(RecvTimeoutError::Disconnected) => break,
-                    }
-                } else {
-                    match rx.recv() {
+                    },
+                    None => match rx.recv() {
                         Ok(event) => Some(event),
                         Err(_) => break,
-                    }
+                    },
                 }
             };
+            {
+                let mut sh = lock(&state);
+                let minutes = sh.cfg.ui.sleep_minutes;
+                if sh.sleep.sleep_if_due(Instant::now(), minutes, &tx) {
+                    log::info!("tela em descanso após {minutes} min sem uso");
+                }
+            }
             if mixer_open {
                 let now = Instant::now();
                 if now >= next_refresh {
@@ -583,6 +606,12 @@ pub fn spawn(state: SharedState, tx: Sender<UsbCmd>, rx: Receiver<UsbEvent>, exe
                     // Sem aparelho não chega a soltura da tecla que encerraria uma repetição.
                     hold = None;
                     down = [None; MAX_KEYS];
+                    {
+                        // Ao reconectar, o aparelho volta aceso: a contagem do descanso recomeça.
+                        let mut sh = lock(&state);
+                        let brightness = sh.cfg.ui.brightness;
+                        sh.sleep.wake(brightness, &tx);
+                    }
                     change_and_draw(&state, &tx, |sh| {
                         sh.connected = connected;
                         // Aparelho (re)conectado: o que estava desenhado se perdeu, então tudo volta.
@@ -593,6 +622,16 @@ pub fn spawn(state: SharedState, tx: Sender<UsbCmd>, rx: Receiver<UsbEvent>, exe
                     });
                 }
                 UsbEvent::Key { index, pressed } if index < MAX_KEYS => {
+                    let swallowed = {
+                        let mut sh = lock(&state);
+                        let brightness = sh.cfg.ui.brightness;
+                        sh.sleep.on_key(index, pressed, brightness, &tx)
+                    };
+                    if swallowed {
+                        // O toque que acordou a tela não age; também não deixa aperto pendente.
+                        down[index] = None;
+                        continue;
+                    }
                     if mixer_open {
                         // Com o mixer aberto +/− e o ícone agem ao apertar; só a tecla de sair espera a soltura.
                         if pressed {
