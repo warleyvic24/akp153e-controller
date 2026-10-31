@@ -2,6 +2,8 @@
 //! com prefixo "CRT", imagens JPEG. O que muda de um modelo para outro (ids, pacote, tamanho da
 //! imagem, ordem das teclas, tela lateral) vem do arquivo do aparelho (`crate::device`).
 use crate::device::DeviceModel;
+mod driver;
+use driver::{Driver, DriverResult};
 use hidapi::{HidApi, HidDevice, HidError};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
@@ -338,21 +340,76 @@ pub fn spawn(tx: Sender<UsbEvent>, rx: Receiver<UsbCmd>) {
                 icon_px: profile.icon_px,
             });
             let _ = tx.send(UsbEvent::Status(true));
-            if run_connection(&dev, profile, &tx, &rx).is_err() {
-                log::warn!("conexão perdida");
+            let mut driver = Mirabox {
+                dev: &dev,
+                profile,
+                buf: [0; MAX_PAYLOAD],
+            };
+            if let Err(e) = run_connection(&mut driver, &tx, &rx) {
+                log::warn!("conexão perdida: {e}");
             }
             let _ = tx.send(UsbEvent::Status(false));
         }
     });
 }
 
-fn run_connection(
-    dev: &HidDevice,
+/// Família AJAZZ/Mirabox: um aparelho aberto e o perfil que ele aceitou.
+struct Mirabox<'a> {
+    dev: &'a HidDevice,
     profile: Profile,
+    buf: [u8; MAX_PAYLOAD],
+}
+
+fn hid(e: HidError) -> String {
+    e.to_string()
+}
+
+impl Driver for Mirabox<'_> {
+    fn set_key(&mut self, key: usize, image: &[u8]) -> DriverResult<bool> {
+        send_image(self.dev, self.profile, key, image).map_err(hid)
+    }
+
+    fn set_side(&mut self, side: &SideFrame) -> DriverResult<bool> {
+        send_side(self.dev, self.profile, side).map_err(hid)
+    }
+
+    fn flush(&mut self) -> DriverResult<()> {
+        self.dev
+            .write(&command(self.profile.payload, b"STP"))
+            .map(drop)
+            .map_err(hid)
+    }
+
+    fn set_brightness(&mut self, level: u8) -> DriverResult<()> {
+        self.dev
+            .write(&brightness_command(self.profile.payload, level))
+            .map(drop)
+            .map_err(hid)
+    }
+
+    fn keepalive(&mut self) -> DriverResult<()> {
+        self.dev
+            .write(&command(self.profile.payload, b"CONNECT"))
+            .map(drop)
+            .map_err(hid)
+    }
+
+    fn poll(&mut self) -> DriverResult<Option<(usize, bool)>> {
+        read_key(self.dev, &mut self.buf, self.profile).map_err(hid)
+    }
+
+    fn reports_release(&self) -> bool {
+        self.profile.both_states
+    }
+}
+
+/// Laço de uma conexão: manda o que o serviço pediu e repassa os apertos. Volta ao cair a conexão
+/// (erro) ou quando o serviço pede para reconectar (`Ok`).
+fn run_connection(
+    dev: &mut dyn Driver,
     tx: &Sender<UsbEvent>,
     rx: &Receiver<UsbCmd>,
-) -> Result<(), HidError> {
-    let mut buf = [0u8; MAX_PAYLOAD];
+) -> DriverResult<()> {
     let mut last_keepalive = Instant::now();
     let mut down = [None; UI_KEYS];
     loop {
@@ -363,28 +420,28 @@ fn run_connection(
         }
         if let Some(level) = pending.brightness {
             set_brightness(level);
-            dev.write(&brightness_command(profile.payload, level))?;
+            dev.set_brightness(level)?;
         }
         for (index, data) in pending.frames.iter().enumerate() {
             if let Some(data) = data {
-                flush |= send_image(dev, profile, index, data)?;
+                flush |= dev.set_key(index, data)?;
             }
         }
         if let Some(side) = &pending.side {
-            flush |= send_side(dev, profile, side)?;
+            flush |= dev.set_side(side)?;
         }
         if flush {
-            dev.write(&command(profile.payload, b"STP"))?;
+            dev.flush()?;
         }
         if last_keepalive.elapsed() >= KEEPALIVE {
-            dev.write(&command(profile.payload, b"CONNECT"))?;
+            dev.keepalive()?;
             last_keepalive = Instant::now();
         }
         expire_held(&mut down, tx);
-        let Some((index, pressed)) = read_key(dev, &mut buf, profile)? else {
+        let Some((index, pressed)) = dev.poll()? else {
             continue;
         };
-        if profile.both_states {
+        if dev.reports_release() {
             let _ = tx.send(UsbEvent::Key { index, pressed });
             if let Some(slot) = down.get_mut(index) {
                 *slot = pressed.then(Instant::now);

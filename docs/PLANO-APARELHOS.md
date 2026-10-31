@@ -78,14 +78,15 @@ sem conflito de arquivos; `cargo test` e o teste do hook passam.
 
 ---
 
-## Fase 2: tradutores de protocolo (drivers)
+## Fase 2: tradutores de protocolo (drivers) (feita em 2026-10-31)
 
 **Passos**
 1. Trait `Driver`: `open`, `set_image(control, bytes)`, `clear`, `brightness`, `poll() -> Event`
    (`Press/Release(control)`, `Turn(control, delta)`, `Touch(x)`), `keepalive`.
 2. `drivers/mirabox.rs`: o código de `usb/mod.rs` de hoje, parametrizado por `protocol.version`, `packet`,
    `release_events`. Lista de comandos permitidos fixa no código (**nunca** `LOG`/gravação na flash).
-3. Estudar o crate `mirajazz` (licença, cobertura de AKP03/N3/N4, qualidade) e decidir: usar, copiar ideias ou não.
+3. **Decidido:** `mirajazz` 0.16 é MPL-2.0 e só assíncrono (tokio); fica como referência de fatos do protocolo
+   (versões 0 a 3: 293S, AKP153, N3/AKP03, N4), sem copiar código. Estudar o crate `mirajazz` (licença, cobertura de AKP03/N3/N4, qualidade) e decidir: usar, copiar ideias ou não.
 4. Aparelho falso (`FakeDriver`) para testes: grava o que recebeu e emite eventos programados.
 5. Detecção: ao plugar, casar VID/PID/usage page com o catálogo; sem casar, oferecer o assistente (Fase 5).
 
