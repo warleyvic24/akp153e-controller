@@ -102,7 +102,15 @@ sem conflito de arquivos; `cargo test` e o teste do hook passam.
 
 ---
 
-## Fase 3: config por controle (não por índice)
+## Fase 3: config por controle (não por índice) (feita em 2026-10-31)
+
+**Feito:** config versão 3; `buttons[i]` é a tecla `keys()[i]` do modelo (no AKP153E, `k{i}`: a migração é
+identidade) e a página guarda `model`; a lateral é o controle `side` (`Page::side`). Antes de migrar grava
+`config.v{N}.bak.json` (uma vez, só o dono lê). Config mais nova que o programa é lida mas nunca gravada.
+`Page::split_for` divide uma página para um aparelho menor (15 em 6 = 3 páginas, testado); quem chama é a
+Fase 4. Ações de giratório ficam para quando houver um aparelho com giratório (Fase 7, Stream Deck Plus):
+sem evento de giro no `Driver`, seriam campos sem uso. Conferido com uma cópia da config real
+(`AKP_CONFIG_COPY=.. cargo test real_config -- --ignored`).
 
 **Passos**
 1. Botão passa a ser ligado ao **id do controle** (`"k0"`, `"side"`, `"dial1"`), não à posição no vetor.

@@ -282,8 +282,13 @@ pub struct Page {
     pub name: String,
     pub rows: usize,
     pub cols: usize,
+    /// Um botão por tecla, na ordem de leitura das teclas do modelo (`DeviceModel::keys`):
+    /// `buttons[i]` é o controle `keys()[i]` (no AKP153E, `k{i}`).
     pub buttons: Vec<ButtonConfig>,
-    /// O que a tela lateral (a faixa à direita das teclas) mostra nesta página.
+    /// Modelo de aparelho para o qual a página foi feita (id de `devices/*.json`).
+    #[serde(default = "default_model")]
+    pub model: String,
+    /// O que a tela lateral (controle `side` do modelo) (a faixa à direita das teclas) mostra nesta página.
     #[serde(default)]
     pub side: SideScreen,
 }
@@ -313,8 +318,42 @@ impl Page {
             cols,
             buttons: (0..rows * cols).map(|_| ButtonConfig::blank()).collect(),
             side: SideScreen::Off,
+            model: default_model(),
         }
     }
+
+    /// Divide a página para um aparelho com `keys` teclas: as que sobram viram páginas seguintes
+    /// ("Nome (2)", "Nome (3)"), na mesma ordem; nenhum botão se perde. As novas ficam sem id
+    /// (`sanitized` dá um). Com teclas suficientes, devolve a página como está.
+    // Chamado quando o serviço abrir um aparelho de outro tamanho (Fase 4 do plano de aparelhos).
+    #[allow(dead_code)]
+    pub fn split_for(&self, keys: usize, rows: usize, cols: usize) -> Vec<Page> {
+        if keys == 0 || self.buttons.len() <= keys {
+            return vec![self.clone()];
+        }
+        self.buttons
+            .chunks(keys)
+            .enumerate()
+            .map(|(i, chunk)| {
+                let mut page = self.clone();
+                if i > 0 {
+                    page.id = 0;
+                    page.name = format!("{} ({})", self.name, i + 1);
+                }
+                page.rows = rows;
+                page.cols = cols;
+                page.buttons = chunk.to_vec();
+                page.buttons.resize_with(keys, ButtonConfig::blank);
+                page
+            })
+            .collect()
+    }
+}
+
+/// Modelo das configs feitas antes da Fase 3 (só existia o AKP153E).
+pub const DEFAULT_MODEL: &str = "ajazz-akp153e";
+fn default_model() -> String {
+    DEFAULT_MODEL.into()
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -413,7 +452,9 @@ const CONFIG_FILE_MODE: u32 = 0o600;
 const LOCK_FILE: &str = "config.lock";
 
 /// Versão 2: páginas e perfis têm identificador estável e as ações apontam para ele.
-pub const SCHEMA_VERSION: u32 = 2;
+/// Versão 3: cada página guarda o modelo de aparelho (`Page::model`) e a gravação recusa uma
+/// config de versão mais nova que esta (feita por um Keyforge mais novo).
+pub const SCHEMA_VERSION: u32 = 3;
 fn legacy_version() -> u32 {
     1
 }
@@ -486,25 +527,6 @@ impl Profile {
     }
 }
 
-/// v1 -> v2 de uma ação: posição de página/perfil vira id (0 = destino que não existe mais).
-/// Entra nos passos de uma multi-ação, que também guardavam a posição.
-fn retarget_by_index(a: &mut ButtonAction, page_ids: &[u64], profile_ids: &[u64]) {
-    match a {
-        ButtonAction::SwitchPage { page } => {
-            *page = page_ids.get(*page as usize).copied().unwrap_or(0)
-        }
-        ButtonAction::SwitchProfile { profile } => {
-            *profile = profile_ids.get(*profile as usize).copied().unwrap_or(0)
-        }
-        ButtonAction::MultiAction { steps } => {
-            for step in steps {
-                retarget_by_index(step, page_ids, profile_ids);
-            }
-        }
-        _ => {}
-    }
-}
-
 /// Dá um id novo (maior que todos) a cada item que ainda não tem.
 fn assign_ids<'a>(ids: impl Iterator<Item = &'a mut u64>) {
     let mut all: Vec<&mut u64> = ids.collect();
@@ -543,20 +565,6 @@ pub fn dev_var(name: &str) -> Option<std::ffi::OsString> {
         .or_else(|| std::env::var_os(format!("AKP153E_{name}")))
 }
 
-fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(to)?;
-    for entry in std::fs::read_dir(from)? {
-        let entry = entry?;
-        let target = to.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
-            copy_dir(&entry.path(), &target)?;
-        } else {
-            std::fs::copy(entry.path(), target)?;
-        }
-    }
-    Ok(())
-}
-
 impl AppConfig {
     pub fn path() -> Option<PathBuf> {
         // Os testes criam `App`s que gravam ao serem descartados: nunca no arquivo real do usuário.
@@ -572,48 +580,17 @@ impl AppConfig {
         }
         directories::BaseDirs::new().map(|d| d.config_dir().join(APP_DIR).join("config.json"))
     }
-
-    /// Pasta de antes da troca de nome (AKP153E -> Keyforge). Nunca é apagada: fica de cópia de segurança.
-    fn legacy_dir() -> Option<PathBuf> {
-        directories::BaseDirs::new().map(|d| d.config_dir().join("AJazz").join("AKP153E"))
-    }
-
-    /// Na primeira abertura com o nome novo, copia a pasta antiga (config, ícones) para a nova.
-    /// Só copia se a nova ainda não existe: nunca escreve por cima de uma config do Keyforge.
-    /// Roda antes do log existir (o arquivo de log fica na pasta nova): devolve o que registrar.
-    pub fn migrate_legacy_dir() -> Option<String> {
-        if cfg!(test) || (cfg!(debug_assertions) && dev_var("CONFIG_DIR").is_some()) {
-            return None;
-        }
-        let old = Self::legacy_dir()?;
-        let new = Self::path()?.parent()?.to_path_buf();
-        migrate_dir(&old, &new)
-    }
-}
-
-/// Copia `old` para `new` se `new` não existe e `old` tem uma config; devolve o que registrar.
-pub(super) fn migrate_dir(old: &std::path::Path, new: &std::path::Path) -> Option<String> {
-    if new.exists() || !old.join("config.json").is_file() {
-        return None;
-    }
-    Some(match copy_dir(old, new) {
-        Ok(()) => format!("config copiada de {} para {}", old.display(), new.display()),
-        Err(e) => {
-            // Pasta pela metade: melhor nenhuma (a próxima abertura tenta de novo).
-            let _ = std::fs::remove_dir_all(new);
-            format!("não foi possível copiar a config antiga: {e}")
-        }
-    })
 }
 
 impl AppConfig {
     /// A config do disco, ou `None` se faltar, não puder ser lida agora ou for inválida.
     /// Quem vai regravar o arquivo usa esta: `load()` cai na config padrão e a gravaria por cima.
     pub fn load_existing() -> Option<Self> {
-        let text = std::fs::read_to_string(Self::path()?).ok()?;
+        let path = Self::path()?;
+        let text = std::fs::read_to_string(&path).ok()?;
         serde_json::from_str::<Self>(&text)
             .ok()
-            .map(Self::sanitized)
+            .map(|c| c.backed_up(&path, &text).sanitized())
     }
 
     pub fn load() -> Self {
@@ -624,7 +601,7 @@ impl AppConfig {
             return Self::default();
         };
         match serde_json::from_str::<Self>(&text) {
-            Ok(c) => c.sanitized(),
+            Ok(c) => c.backed_up(&path, &text).sanitized(),
             Err(e) => {
                 let backup = backup_path(&path);
                 log::warn!("config inválida ({e}); backup em {}", backup.display());
@@ -664,28 +641,15 @@ impl AppConfig {
         }
         assign_ids(self.profiles.iter_mut().map(|p| &mut p.id));
         self.active_profile = self.active_profile.min(self.profiles.len() - 1);
-        if self.schema_version < SCHEMA_VERSION {
+        // v2 -> v3 não muda dados: `model` ausente já vira o AKP153E ao ler.
+        if self.schema_version < 2 {
             self.migrate_index_targets();
-            self.schema_version = SCHEMA_VERSION;
         }
+        // Mais nova que este programa: fica como está, e `save_to` se recusa a gravar.
+        self.schema_version = self.schema_version.max(SCHEMA_VERSION);
         self
     }
 
-    /// v1 -> v2: ações que apontavam para a posição passam a apontar para o id.
-    fn migrate_index_targets(&mut self) {
-        let profile_ids: Vec<u64> = self.profiles.iter().map(|p| p.id).collect();
-        for p in &mut self.profiles {
-            let page_ids: Vec<u64> = p.pages.iter().map(|pg| pg.id).collect();
-            for b in p.pages.iter_mut().flat_map(|pg| pg.buttons.iter_mut()) {
-                for a in std::iter::once(&mut b.action)
-                    .chain(b.long_press_action.as_mut())
-                    .chain(b.toggled_action.as_mut())
-                {
-                    retarget_by_index(a, &page_ids, &profile_ids);
-                }
-            }
-        }
-    }
     pub fn save(&self) -> std::io::Result<()> {
         let p = Self::path().ok_or_else(|| std::io::Error::other("sem diretório de config"))?;
         self.save_to(&p)
@@ -693,6 +657,12 @@ impl AppConfig {
 
     /// Grava em arquivo temporário e renomeia, para uma queda no meio nunca corromper o original.
     pub fn save_to(&self, path: &std::path::Path) -> std::io::Result<()> {
+        if self.schema_version > SCHEMA_VERSION {
+            return Err(std::io::Error::other(format!(
+                "a config é da versão {} e este Keyforge só conhece até a {SCHEMA_VERSION}: atualize o programa",
+                self.schema_version
+            )));
+        }
         if let Some(d) = path.parent() {
             std::fs::create_dir_all(d)?;
         }
@@ -814,5 +784,6 @@ impl AppConfig {
     }
 }
 
+mod migrate;
 #[cfg(test)]
 mod tests;

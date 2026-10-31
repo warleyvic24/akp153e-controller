@@ -378,7 +378,7 @@ fn the_old_folder_is_copied_once_and_never_over_a_new_one() {
     std::fs::create_dir_all(old.join("icons")).unwrap();
     std::fs::write(old.join("config.json"), "{\"antiga\":1}").unwrap();
     std::fs::write(old.join("icons/a.png"), "png").unwrap();
-    assert!(super::migrate_dir(&old, &new).is_some());
+    assert!(super::migrate::migrate_dir(&old, &new).is_some());
     assert_eq!(
         std::fs::read_to_string(new.join("icons/a.png")).unwrap(),
         "png"
@@ -389,10 +389,91 @@ fn the_old_folder_is_copied_once_and_never_over_a_new_one() {
     );
     // Já existe a nova: nada é copiado por cima.
     std::fs::write(new.join("config.json"), "{\"nova\":1}").unwrap();
-    assert!(super::migrate_dir(&old, &new).is_none());
+    assert!(super::migrate::migrate_dir(&old, &new).is_none());
     assert_eq!(
         std::fs::read_to_string(new.join("config.json")).unwrap(),
         "{\"nova\":1}"
     );
     let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_15_key_page_on_a_6_key_device_becomes_3_pages_without_losing_buttons() {
+    let mut page = Page::new("Live", 3, 5);
+    for (i, b) in page.buttons.iter_mut().enumerate() {
+        b.appearance.text = format!("b{i}");
+    }
+    let parts = page.split_for(6, 2, 3);
+    assert_eq!(parts.len(), 3);
+    assert_eq!(parts[0].id, page.id);
+    assert_eq!(parts[2].name, "Live (3)");
+    assert!(parts
+        .iter()
+        .all(|p| p.buttons.len() == 6 && p.rows * p.cols == 6));
+    let texts: Vec<&str> = parts
+        .iter()
+        .flat_map(|p| &p.buttons)
+        .map(|b| b.appearance.text.as_str())
+        .filter(|t| !t.is_empty())
+        .collect();
+    let expected: Vec<String> = (0..15).map(|i| format!("b{i}")).collect();
+    assert_eq!(texts, expected);
+    assert_eq!(page.split_for(15, 3, 5), vec![page.clone()]);
+}
+
+#[test]
+fn a_v2_config_opens_as_the_akp153e_and_is_backed_up_once() {
+    let dir = std::env::temp_dir().join(format!("keyforge-v2-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("config.json");
+    let mut old = serde_json::to_value(AppConfig::default()).unwrap();
+    old["schema_version"] = 2.into();
+    for page in old["profiles"][0]["pages"].as_array_mut().unwrap() {
+        page.as_object_mut().unwrap().remove("model");
+    }
+    let text = old.to_string();
+    let cfg: AppConfig = serde_json::from_str(&text).unwrap();
+    let cfg = cfg.backed_up(&path, &text).sanitized();
+    assert_eq!(cfg.schema_version, SCHEMA_VERSION);
+    assert_eq!(cfg.page().model, DEFAULT_MODEL);
+    let backup = dir.join("config.v2.bak.json");
+    assert_eq!(std::fs::read_to_string(&backup).unwrap(), text);
+    // Segunda abertura: o backup original fica intacto.
+    let again: AppConfig = serde_json::from_str("{\"profiles\":[]}").unwrap();
+    again.backed_up(&path, "outro");
+    assert_eq!(std::fs::read_to_string(&backup).unwrap(), text);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_newer_config_is_never_written_by_an_older_keyforge() {
+    let cfg = AppConfig {
+        schema_version: SCHEMA_VERSION + 1,
+        ..AppConfig::default()
+    }
+    .sanitized();
+    assert_eq!(cfg.schema_version, SCHEMA_VERSION + 1);
+    let dir = std::env::temp_dir().join(format!("keyforge-newer-{}", std::process::id()));
+    let path = dir.join("config.json");
+    assert!(cfg.save_to(&path).is_err());
+    assert!(!path.exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Confere uma cópia de uma config real: `AKP_CONFIG_COPY=<arquivo> cargo test real_config -- --ignored`.
+#[test]
+#[ignore]
+fn real_config_copy_migrates_without_changing_buttons() {
+    let path = std::env::var("AKP_CONFIG_COPY").expect("AKP_CONFIG_COPY");
+    let text = std::fs::read_to_string(path).unwrap();
+    let before: AppConfig = serde_json::from_str(&text).unwrap();
+    let after = before.clone().sanitized();
+    let saved: AppConfig = serde_json::from_str(&serde_json::to_string(&after).unwrap()).unwrap();
+    assert_eq!(saved, after);
+    for (old, new) in before.profiles.iter().zip(&after.profiles) {
+        for (a, b) in old.pages.iter().zip(&new.pages) {
+            assert_eq!(a.buttons, b.buttons);
+            assert_eq!(b.model, DEFAULT_MODEL);
+        }
+    }
 }
