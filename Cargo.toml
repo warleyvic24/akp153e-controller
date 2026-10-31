@@ -61,3 +61,6 @@ panic = "abort"
 [build-dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }
 winresource = "0.1"
+
+[dev-dependencies]
+egui_kittest = "0.37"

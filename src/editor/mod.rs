@@ -29,6 +29,8 @@ mod textlist;
 pub(crate) mod theme;
 mod toast;
 mod tokens;
+#[cfg(test)]
+mod ui_tests;
 mod widgets;
 
 use crate::config::schema::*;

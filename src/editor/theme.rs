@@ -245,19 +245,29 @@ fn system_fonts() -> Vec<(&'static str, std::path::PathBuf)> {
         ("ui", r"C:\Windows\Fonts\segoeui.ttf"),
         ("mono", r"C:\Windows\Fonts\consola.ttf"),
         ("display", r"C:\Windows\Fonts\bahnschrift.ttf"),
+        ("symbols", r"C:\Windows\Fonts\seguisym.ttf"),
     ]
     .map(|(name, path)| (name, path.into()))
     .into()
 }
 
+/// Uma fonte com os símbolos que a interface usa (▶ ▾ ↑ ↓ ● −): desde o egui 0.37 as fontes
+/// embutidas não têm mais esses símbolos, e sem ela eles viram um quadrado.
+#[cfg(not(windows))]
+const SYMBOL_PATTERN: &str = "sans-serif:charset=25b6 25be 2191 2193 25cf 2212";
+
 /// Fontes do Linux: o `fc-match` diz qual arquivo o sistema usa para sans-serif e monospace (no
 /// Omarchy, as fontes que o usuário escolheu). Sem fonte de títulos, eles usam a de texto.
 #[cfg(not(windows))]
 fn system_fonts() -> Vec<(&'static str, std::path::PathBuf)> {
-    [("ui", "sans-serif"), ("mono", "monospace")]
-        .into_iter()
-        .filter_map(|(name, family)| Some((name, crate::platform::fc_match_file(family)?)))
-        .collect()
+    [
+        ("ui", "sans-serif"),
+        ("mono", "monospace"),
+        ("symbols", SYMBOL_PATTERN),
+    ]
+    .into_iter()
+    .filter_map(|(name, family)| Some((name, crate::platform::fc_match_file(family)?)))
+    .collect()
 }
 
 /// Carrega as fontes do sistema; o que faltar cai nas fontes padrão do egui.
@@ -306,6 +316,12 @@ pub fn install_fonts(ctx: &Context) {
     fonts
         .families
         .insert(FontFamily::Name(DISPLAY_FAMILY.into()), display_stack);
+    // Por último em toda família: só entra quando a fonte do texto não tem o símbolo.
+    if has("symbols") {
+        for family in fonts.families.values_mut() {
+            family.push("symbols".into());
+        }
+    }
     ctx.set_fonts(fonts);
 }
 

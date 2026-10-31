@@ -488,9 +488,9 @@ pub fn search_field(ui: &mut Ui, query: &mut String, hint_text: &str, pal: &Pale
             })
             .desired_width(ui.available_width()),
     );
-    // O retângulo da resposta é o do texto, já sem a margem: a lupa vai na margem, à esquerda dele.
+    // No egui 0.37 o retângulo da resposta é o campo inteiro, com a margem: a lupa vai no meio dela.
     let center = pos2(
-        resp.rect.left() - f32::from(LEFT_PAD) / 2.0 + 1.0,
+        resp.rect.left() + f32::from(LEFT_PAD) / 2.0 + 1.0,
         resp.rect.center().y,
     );
     paint_icon(ui.painter(), center, ICON, "search", pal.muted);
