@@ -8,6 +8,18 @@ Software de controle não oficial e de código aberto, para Windows e Linux, par
 
 > **Sem afiliação.** Projeto independente, não feito, endossado nem suportado pela AJAZZ. "AJAZZ" e "AKP153E" são marcas ou nomes de produto dos respectivos donos e aparecem aqui só para dizer com qual aparelho o programa funciona.
 
+## Funções
+
+- **Editor** com prévia ao vivo de cada tecla (a mesma imagem que vai ao aparelho), arrastar e soltar, copiar/colar, desfazer/refazer, páginas e perfis.
+- **Ações:** atalho de teclado, texto, abrir app ou site, comando no shell, webhook, teclas de mídia, multi-ação com pausas, navegação entre páginas e perfis, mixer de volume no aparelho, teclas de dois estados e pressão longa.
+- **OBS Studio** (obs-websocket 5, embutido no OBS 28+): trocar cena, transmitir, gravar, pausar, mudo de entrada, câmera virtual, buffer de replay. As teclas acompanham o OBS ao vivo: vermelhas gravando, no ar ou mudas; a cena atual acende.
+- **Teclas vivas:** relógio com hora e data; teclas do **aparelho** para subir e baixar o brilho.
+- **Visual:** 2000 ícones com busca ([Lucide](https://lucide.dev), em português ou inglês), suas imagens PNG/JPG/SVG/ICO (solte o arquivo sobre a tecla), rótulo de até três linhas no topo, no meio ou embaixo.
+- **Perfis automáticos:** um perfil entra quando o app dele ganha o foco (Windows e Hyprland) e o anterior volta quando você sai.
+- **Exportar/importar perfil** num arquivo só, com as imagens das teclas dentro.
+- **Descanso da tela** após o tempo escolhido sem uso; o primeiro toque só acende.
+- Temas escuro, claro e Omarchy; português e inglês.
+
 ## Como funciona
 
 Um executável, dois modos:
@@ -39,7 +51,7 @@ No Windows, `cargo build --release` falha com "Acesso negado" enquanto o serviç
 
 ## Segurança
 
-A porta de controle escuta só em localhost (no Linux, conexões de outros usuários são recusadas), e o `config.json` guarda URLs de webhook e caminhos de programas em texto puro (no Linux, legível só pelo dono). Detalhes e como reportar estão em [SECURITY.md](SECURITY.md).
+A porta de controle escuta só em localhost (no Linux, conexões de outros usuários são recusadas), e o `config.json` guarda URLs de webhook, caminhos de programas e a senha do WebSocket do OBS em texto puro (no Linux, legível só pelo dono). Detalhes e como reportar estão em [SECURITY.md](SECURITY.md).
 
 ## Contribuir
 

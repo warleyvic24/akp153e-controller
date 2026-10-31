@@ -56,10 +56,14 @@ espaçamento artificial entre letras (só o logotipo "AKP153E" o tem).
 | `paint_key` | tecla do aparelho; selecionada = brilho do destaque + traço de 2,5 px. Vazia em repouso: só o "+" apagado (≥ 3:1 sobre o preto, teste em `theme.rs`); cantos e "+" no destaque ao passar o mouse ou selecionar |
 | botão "Testar" | única ação sólida da tela (cor de destaque + texto preto ou branco por contraste). Sem o que testar fica neutro (fundo de campo, borda, texto apagado), não um destaque esmaecido |
 | ícone de app ou site na tecla | se o contraste médio com o fundo da tecla ficar abaixo de 2:1 (o logo escuro do GitHub na tecla preta), ganha uma placa arredondada clara ou escura (`renderer::plate_for`) |
+| `search_field` | campo de busca com lupa na margem esquerda; a dica é o nome falado |
+| grade de ícones (`editor/icon_picker.rs`) | 2000 ícones Lucide com busca (português ou inglês); sem busca, 40 sugestões para live; o ícone atual fica sempre visível na grade |
 | linha da biblioteca | sem alça de arrastar em repouso; ao passar o mouse, o selo "+ Tecla N" e o cursor de arrastar |
 
 ## Retorno, orientação e preferências
 
+- **Rótulo da tecla**: até 3 linhas (Enter quebra), posição Topo/Meio/Base; no meio, por cima do ícone, leva sombra. O número da tecla só aparece em tecla vazia ou ao apontar, sobre plaqueta escura; a dica ao apontar diz nome e ação.
+- **Teclas vivas**: relógio (redesenhado na virada do minuto) e teclas do OBS, que mudam de cor com o estado do OBS.
 - **Toasts** (`editor/toast.rs`): ações sem resultado visível (copiar, colar, limpar, trocar teclas, excluir
   página ou perfil) avisam por 4 s; as que se desfazem trazem o botão "Desfazer".
 - **Estado vazio** (`editor/stage.rs::empty_guide`): página sem nenhuma tecla configurada mostra o passo a

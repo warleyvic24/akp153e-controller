@@ -8,6 +8,18 @@ Unofficial, open-source controller software for Windows and Linux for the AJAZZ 
 
 > **Not affiliated.** This is an independent project. It is not made, endorsed or supported by AJAZZ. "AJAZZ" and "AKP153E" are trademarks or product names of their respective owners and are used here only to say which device this software works with.
 
+## Features
+
+- **Editor** with a live preview of each key (the exact image the device shows), drag and drop, copy/paste, undo/redo, pages and profiles.
+- **Actions:** keyboard shortcut, text, open app or website, shell command, webhook, media keys, multi-action with delays, page and profile navigation, volume mixer on the device, two-state keys and long press.
+- **OBS Studio** (obs-websocket 5, built into OBS 28+): switch scene, stream, record, pause, mute an input, virtual camera, replay buffer. Keys follow OBS live: red while recording, streaming or muted; the current scene lights up.
+- **Live keys:** a clock with time and date; **device** keys for brightness up and down.
+- **Look:** 2,000 searchable icons ([Lucide](https://lucide.dev), search in English or Portuguese), your own PNG/JPG/SVG/ICO images (drop a file on a key), up to three label lines placed at the top, middle or bottom.
+- **Automatic profiles:** a profile switches in when its app gets focus (Windows and Hyprland) and the previous one returns when you leave.
+- **Profiles export/import** as one file with the key images inside.
+- **Screen sleep** after a chosen idle time; the first press only wakes it.
+- Dark, light and Omarchy themes; Portuguese and English.
+
 ## How it works
 
 One executable, two modes:
@@ -39,7 +51,7 @@ On Windows, `cargo build --release` fails with "access denied" while the service
 
 ## Security
 
-The control port listens on localhost (on Linux, connections from other users are refused), and `config.json` stores webhook URLs and program paths in plain text (owner-only on Linux). Details and reporting instructions are in [SECURITY.md](SECURITY.md).
+The control port listens on localhost (on Linux, connections from other users are refused), and `config.json` stores webhook URLs, program paths and the OBS WebSocket password in plain text (owner-only on Linux). Details and reporting instructions are in [SECURITY.md](SECURITY.md).
 
 ## Contributing
 
