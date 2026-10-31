@@ -295,6 +295,10 @@ pub struct Page {
     /// Modelo de aparelho para o qual a página foi feita (id de `devices/*.json`).
     #[serde(default = "default_model")]
     pub model: String,
+    /// Pasta: aberta por uma tecla, fora do "próxima página" e das abas (o editor a mostra só
+    /// enquanto ela está aberta). Configs antigas não têm o campo: página comum.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub folder: bool,
     /// O que a tela lateral (controle `side` do modelo) (a faixa à direita das teclas) mostra nesta página.
     #[serde(default)]
     pub side: SideScreen,
@@ -328,6 +332,7 @@ impl Page {
             buttons: (0..rows * cols).map(|_| ButtonConfig::blank()).collect(),
             side: SideScreen::Off,
             model: default_model(),
+            folder: false,
         }
     }
 
@@ -361,6 +366,9 @@ impl Page {
 
 /// Maior número de linhas ou colunas de uma página (8 x 8 = as 64 teclas que o serviço acompanha).
 pub const MAX_GRID_SIDE: usize = 8;
+
+/// Ícone da tecla "Voltar" de uma pasta.
+pub const BACK_ICON: &str = "lucide:corner-up-left";
 
 /// Modelo das configs feitas antes da Fase 3 (só existia o AKP153E).
 pub const DEFAULT_MODEL: &str = "ajazz-akp153e";
@@ -537,6 +545,36 @@ impl Profile {
         let mut page = Page::new(name, 3, 5);
         page.id = id;
         self.pages.push(page);
+    }
+
+    /// Cria uma pasta que volta para a página `parent` e devolve o id dela. A tecla "Voltar" já
+    /// nasce no primeiro lugar (o canto de cima, à esquerda, como no app da Elgato); é um botão
+    /// comum, então dá para mudar de lugar ou de cara.
+    pub fn add_folder(&mut self, name: &str, parent: u64, back_label: &str) -> u64 {
+        self.add_page(name);
+        let folder = self.pages.last_mut().expect("acabou de entrar");
+        folder.folder = true;
+        let back = &mut folder.buttons[0];
+        back.action = ButtonAction::SwitchPage { page: parent };
+        back.appearance.text = back_label.into();
+        back.appearance.icon = Some(BACK_ICON.into());
+        folder.id
+    }
+
+    /// Próxima (ou anterior) página que não é pasta, em volta; a atual se não houver outra.
+    pub fn step_page(&self, forward: bool) -> usize {
+        let count = self.pages.len();
+        let current = self.active_page.min(count.saturating_sub(1));
+        (1..count)
+            .map(|step| {
+                if forward {
+                    (current + step) % count
+                } else {
+                    (current + count - step) % count
+                }
+            })
+            .find(|&i| !self.pages[i].folder)
+            .unwrap_or(current)
     }
 }
 

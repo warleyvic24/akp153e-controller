@@ -1,6 +1,9 @@
 use crate::config::schema::{AppConfig, ButtonAction, Metric, ObsCommand};
 
 /// Ação pronta da biblioteca: aplicada a um botão define ação, ícone, rótulo e cor de fundo.
+/// Destino falso do preset "Pasta": aplicar cria a pasta e aponta a tecla para ela.
+pub(crate) const NEW_FOLDER: u64 = u64::MAX;
+
 #[derive(Clone, Debug)]
 pub struct Preset {
     pub category: &'static str,
@@ -101,6 +104,10 @@ fn open_url(url: &str) -> ButtonAction {
 
 impl Preset {
     /// "Aplicativo...": ação de abrir programa ainda sem caminho; quem escolhe o programa é o usuário.
+    pub fn creates_folder(&self) -> bool {
+        self.action == ButtonAction::SwitchPage { page: NEW_FOLDER }
+    }
+
     pub fn opens_app_picker(&self) -> bool {
         matches!(&self.action, ButtonAction::LaunchApp { path, .. } if path.is_empty())
     }
@@ -108,6 +115,7 @@ impl Preset {
     /// Presets de navegação guardam a ordem (0 = primeira); aqui viram o id real do destino.
     pub fn resolved_action(&self, cfg: &AppConfig) -> ButtonAction {
         match &self.action {
+            ButtonAction::SwitchPage { page: NEW_FOLDER } => self.action.clone(),
             ButtonAction::SwitchPage { page } => ButtonAction::SwitchPage {
                 page: cfg.profiles[cfg.active_profile]
                     .pages
@@ -218,6 +226,13 @@ pub fn presets() -> Vec<Preset> {
                 method: "POST".into(),
                 body: None,
             },
+        ),
+        p(
+            "Navegação",
+            "Pasta",
+            "folder",
+            NAV,
+            ButtonAction::SwitchPage { page: NEW_FOLDER },
         ),
         p(
             "Navegação",

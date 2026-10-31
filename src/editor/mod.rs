@@ -82,6 +82,8 @@ pub(crate) struct App {
     settings_open: bool,
     /// Seção aberta nas Preferências (`settings::SECTIONS`).
     settings_tab: usize,
+    /// Página pedida pelo botão "Abrir esta página" do inspetor (aplicada no fim do quadro).
+    open_page: Option<u64>,
     autostart: bool,
     rename: Option<bars::Rename>,
     /// Modo compacto (janela estreita): a biblioteca aberta no lugar do inspetor.
@@ -124,6 +126,7 @@ impl App {
             toasts: toast::Toasts::default(),
             settings_open: false,
             settings_tab: 0,
+            open_page: None,
             autostart: false,
             rename: None,
             library_open: false,
@@ -177,7 +180,16 @@ impl App {
             return;
         };
         self.memory.used(p.label);
-        let action = p.resolved_action(&g.cfg);
+        let mut action = p.resolved_action(&g.cfg);
+        if p.creates_folder() {
+            let prof = &mut g.cfg.profiles[g.cfg.active_profile];
+            let parent = prof.pages[prof.active_page].id;
+            let folders = prof.pages.iter().filter(|pg| pg.folder).count();
+            let name = strings::tf("Pasta {}", &[&(folders + 1)]);
+            let folder = prof.add_folder(&name, parent, strings::t("Voltar"));
+            action = ButtonAction::SwitchPage { page: folder };
+            self.toasts.push(strings::t(FOLDER_HINT), None);
+        }
         let slot = (
             g.cfg.active_profile,
             g.cfg.profiles[g.cfg.active_profile].active_page,
@@ -218,6 +230,16 @@ impl App {
         if replaced {
             let msg = strings::tf("Tecla {} substituída", &[&(button + 1)]);
             self.toasts.push(msg, Some("Desfazer"));
+        }
+    }
+
+    /// Abre a página `id` do perfil ativo no editor (e no aparelho), como entrar numa pasta.
+    fn go_to_page(&mut self, g: &mut runtime::Shared, id: u64) {
+        let prof = &mut g.cfg.profiles[g.cfg.active_profile];
+        if let Some(index) = prof.page_index(id) {
+            prof.active_page = index;
+            self.selected = 0;
+            self.touch_nav();
         }
     }
 
@@ -379,6 +401,10 @@ fn key_view(
         problem,
     }
 }
+
+/// Como se entra numa pasta para montá-la.
+const FOLDER_HINT: &str =
+    "Pasta criada. \"Abrir esta página\" (ou duplo clique na tecla) entra nela para montar as teclas.";
 
 /// Minuto atual (para a prévia da tecla de relógio mudar junto com a do aparelho).
 pub(crate) fn current_minute() -> u64 {

@@ -194,8 +194,18 @@ impl App {
                     self.rename_editor(ui, g, prof);
                     continue;
                 }
-                let name = display_name(&g.cfg.profiles[prof].pages[i].name);
+                let page = &g.cfg.profiles[prof].pages[i];
                 let active = g.cfg.profiles[prof].active_page == i;
+                // Pasta não é aba: aparece só enquanto está aberta, marcada como pasta.
+                if page.folder && !active {
+                    continue;
+                }
+                let plain = display_name(&page.name);
+                let name = if page.folder {
+                    tf("Pasta: {}", &[&plain])
+                } else {
+                    plain.clone()
+                };
                 let resp = widgets::segment(ui, &name, active, 0.0, pal);
                 if resp.clicked() {
                     g.cfg.profiles[prof].active_page = i;
@@ -203,7 +213,7 @@ impl App {
                     self.touch_nav();
                 }
                 if resp.double_clicked() {
-                    self.rename = Some(Rename::new(i, &name));
+                    self.rename = Some(Rename::new(i, &plain));
                 }
                 resp.on_hover_text(t("Duplo clique renomeia · clique direito abre o menu"))
                     .context_menu(|ui| self.page_menu(ui, g, prof, i, &name, pal));

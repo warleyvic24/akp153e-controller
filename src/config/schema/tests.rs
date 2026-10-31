@@ -507,3 +507,27 @@ fn an_old_open_site_becomes_open_url_even_inside_a_multi_action() {
     assert_eq!(b[1].action, ButtonAction::MultiAction { steps: vec![open] });
     assert!(matches!(b[2].action, ButtonAction::LaunchApp { .. }));
 }
+
+#[test]
+fn a_folder_comes_with_a_back_key_and_next_page_skips_it() {
+    let mut cfg = AppConfig::default();
+    let p = &mut cfg.profiles[0];
+    p.add_page("B");
+    let home = p.pages[0].id;
+    let folder = p.add_folder("Pasta", home, "Voltar");
+    let f = &p.pages[p.page_index(folder).unwrap()];
+    assert!(f.folder);
+    assert_eq!(f.buttons[0].action, ButtonAction::SwitchPage { page: home });
+    assert_eq!(f.buttons[0].appearance.text, "Voltar");
+    // Páginas: [Page 1, B, Pasta]. Da B para a frente volta à primeira, pulando a pasta.
+    p.active_page = 1;
+    assert_eq!(p.step_page(true), 0);
+    p.active_page = 0;
+    assert_eq!(p.step_page(false), 1);
+    // Dentro da pasta, "próxima" sai dela para uma página comum.
+    p.active_page = 2;
+    assert!(!p.pages[p.step_page(true)].folder);
+    // Uma config antiga (sem o campo) lê como página comum e não grava o campo à toa.
+    let json = serde_json::to_string(&AppConfig::default()).unwrap();
+    assert!(!json.contains("folder"));
+}

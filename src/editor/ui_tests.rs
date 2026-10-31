@@ -120,3 +120,32 @@ fn the_more_menu_clears_the_key_and_the_two_folds_start_closed() {
     h.run();
     assert_eq!(first_key(&h), ButtonAction::None);
 }
+
+#[test]
+fn a_folder_is_made_from_the_library_and_opened_from_the_key_panel() {
+    let mut u = under_test();
+    u.app.selected = 0;
+    // A biblioteca rola: buscar põe a "Pasta" à vista, como faria quem procura por ela.
+    u.app.query = "pasta".into();
+    let mut h = harness(u);
+    h.run();
+    h.get_by_label("Pasta").click();
+    h.run();
+    let folder = match first_key(&h) {
+        ButtonAction::SwitchPage { page } => page,
+        other => panic!("a tecla deveria abrir a pasta: {other:?}"),
+    };
+    // A pasta existe, mas não vira aba enquanto está fechada.
+    assert!(h.query_by_label_contains("Pasta: Pasta 1").is_none());
+    h.get_by_label("Abrir esta página").click();
+    // A troca de página tem animação: deixa ela terminar.
+    h.run_steps(60);
+    let sh = h.state().app.sh.clone();
+    {
+        let g = runtime::lock(&sh);
+        let p = &g.cfg.profiles[g.cfg.active_profile];
+        assert_eq!(p.pages[p.active_page].id, folder, "o botão abriu a pasta");
+        assert_eq!(p.pages[p.active_page].buttons[0].appearance.text, "Voltar");
+    }
+    h.get_by_label_contains("Pasta: Pasta 1");
+}

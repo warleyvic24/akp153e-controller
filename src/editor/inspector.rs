@@ -474,6 +474,9 @@ impl App {
                 if self.tab_body(ui, &cx, b, sel) {
                     self.touch();
                 }
+                if let Some(id) = self.open_page.take() {
+                    self.go_to_page(g, id);
+                }
             });
     }
 
@@ -549,7 +552,16 @@ impl App {
         // Um estado de rolagem por botão e aba: trocar de um para outro volta ao topo.
         let scroll = egui::ScrollArea::vertical().id_salt(("inspector", sel, self.tab));
         scroll.show(ui, |ui| match self.tab {
-            TAB_ACTION => changed |= action_pane(ui, cx, b, &mut self.recording, &mut self.picker),
+            TAB_ACTION => {
+                changed |= action_pane(
+                    ui,
+                    cx,
+                    b,
+                    &mut self.recording,
+                    &mut self.picker,
+                    &mut self.open_page,
+                )
+            }
             _ => changed |= appearance_pane(ui, b, cx.pal, cx.accent),
         });
         changed

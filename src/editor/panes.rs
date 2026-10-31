@@ -231,10 +231,17 @@ pub fn action_pane(
     b: &mut ButtonConfig,
     rec: &mut Option<&'static str>,
     picker: &mut AppPicker,
+    open_page: &mut Option<u64>,
 ) -> bool {
     let pal = cx.pal;
     widgets::section(ui, "Ao tocar", pal);
     let mut changed = action_editor(ui, cx, MAIN_ACTION_ID, &mut b.action, rec);
+    // Ir até a página (ou pasta) de destino para montar as teclas dela.
+    if let ButtonAction::SwitchPage { page } = b.action {
+        if cx.targets.has_page(page) && ui.button(t("Abrir esta página")).clicked() {
+            *open_page = Some(page);
+        }
+    }
     if matches!(b.action, ButtonAction::LaunchApp { .. }) {
         changed |= app_buttons(ui, b, picker);
         if let ButtonAction::LaunchApp { path, args } = &mut b.action {

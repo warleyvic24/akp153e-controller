@@ -379,16 +379,12 @@ fn dispatch(sh: &mut Shared, exec: &Executor, index: usize, action: ButtonAction
             let forward = matches!(action, ButtonAction::NextPage);
             let i = sh.cfg.active_profile;
             let profile = &mut sh.cfg.profiles[i];
-            let count = profile.pages.len();
-            if count < 2 {
+            // Pastas ficam de fora: abrem só pela tecla delas.
+            let next = profile.step_page(forward);
+            if next == profile.active_page {
                 return Followup::default();
             }
-            let current = profile.active_page;
-            profile.active_page = if forward {
-                (current + 1) % count
-            } else {
-                (current + count - 1) % count
-            };
+            profile.active_page = next;
         }
         ButtonAction::OpenMixer => {
             return Followup {

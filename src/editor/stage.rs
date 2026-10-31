@@ -1,7 +1,7 @@
 //! Palco central: as abas de página, o aparelho desenhado com as teclas e os atalhos.
 use super::device_view;
 use super::{checks, is_blank, key_view, widgets, App};
-use crate::config::schema::ButtonConfig;
+use crate::config::schema::{ButtonAction, ButtonConfig};
 use crate::editor::action_ui::Targets;
 use crate::editor::theme::{self, Palette};
 use crate::editor::tokens::{radius, space, text};
@@ -42,6 +42,8 @@ struct DeviceEvents {
     swapped: Option<(usize, usize)>,
     /// Tecla sob o ponteiro (para onde vai um arquivo de imagem solto na janela).
     under_pointer: Option<usize>,
+    /// Duplo clique numa tecla que leva a uma página: abrir essa página (é como se entra numa pasta).
+    open_page: Option<u64>,
 }
 
 /// Selo na ponta direita da fileira de páginas quando o modelo ainda não foi provado por ninguém.
@@ -461,6 +463,11 @@ impl App {
                 // O egui só dá foco por Tab; sem isto, as setas não funcionam após o clique.
                 resp.request_focus();
             }
+            if resp.double_clicked() {
+                if let ButtonAction::SwitchPage { page } = button.action {
+                    events.open_page = Some(page);
+                }
+            }
             if let Some(payload) = resp.dnd_release_payload::<Dragged>() {
                 match *payload {
                     Dragged::Preset(p) => events.dropped = Some((i, p)),
@@ -508,6 +515,9 @@ impl App {
     }
 
     fn apply_device_events(&mut self, g: &mut runtime::Shared, events: DeviceEvents) {
+        if let Some(id) = events.open_page {
+            self.go_to_page(g, id);
+        }
         if let Some((button, preset)) = events.dropped {
             self.selected = button;
             self.apply_preset(g, button, preset);
