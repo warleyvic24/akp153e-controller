@@ -15,6 +15,12 @@ Preparação: abra o editor, ponha uma ação visível em cada botão testado (p
 | 7 | Encerrar o serviço à mão | Encerre o processo `--background` no Gerenciador de Tarefas | Nada reinicia (isso não é pânico); abra de novo pela bandeja ou pelo início automático | não verificado |
 | 8 | Lateral sem teclas | Toque e aperte a faixa lateral, à direita das 15 teclas | Nada acontece: no AKP153E ela é só uma tela (ver abaixo) | não verificado |
 | 9 | Brilho | Preferências > Brilho do aparelho: arraste de 100% até 5% e volte | O aparelho escurece e clareia ao salvar, sem reiniciar nem apagar as imagens; após reconectar o cabo, volta ao último valor | não verificado |
+| 10 | Tecla afunda | Segure qualquer tecla com ação | Enquanto segura, a imagem fica menor sobre preto; ao soltar, volta ao normal | não verificado |
+| 11 | Descanso da tela | Preferências > Apagar a tela sem uso: 1 min; espere 1 min sem tocar | A tela apaga; o primeiro toque só acende (a ação não roda); o segundo roda | não verificado |
+| 12 | Teclas de brilho | Biblioteca > Aparelho > "Brilho −" numa tecla; aperte 3 vezes | O aparelho escurece 10% a cada toque; as Preferências mostram o valor novo | não verificado |
+| 13 | Relógio | Biblioteca > Aparelho > "Relógio" | A tecla mostra a hora e a data e muda sozinha na virada do minuto | não verificado |
+| 14 | OBS | Ligue o WebSocket do OBS (Ferramentas > Configurações do servidor WebSocket); tecla "Gravar" | O OBS começa a gravar e a tecla fica vermelha; outro toque para e ela volta | não verificado |
+| 15 | Perfil automático | Perfil e página > "Ativar sozinho quando este app estiver em foco": escolha um app recente | Ao focar o app, o aparelho troca de perfil; ao sair dele, volta ao anterior | não verificado |
 
 ## Tela lateral (pesquisa de 2026-10-24, sem teste no aparelho)
 
