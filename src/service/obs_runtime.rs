@@ -215,7 +215,9 @@ fn set_state(state: &SharedState, tx: &Sender<UsbCmd>, change: impl FnOnce(&mut 
         sh.obs != before
     };
     if changed {
-        runtime::redraw_where(state, tx, |b| matches!(b.action, ButtonAction::Obs { .. }));
+        runtime::redraw_where(state, tx, |_, b| {
+            matches!(b.action, ButtonAction::Obs { .. })
+        });
     }
 }
 

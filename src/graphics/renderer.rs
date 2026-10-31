@@ -512,6 +512,27 @@ pub fn render_button_frame(button: &ButtonConfig, width: u32, height: u32) -> Ve
     encode_frame(&render_rgba(button, width, height))
 }
 
+/// Quanto a imagem encolhe enquanto a tecla está apertada (a tecla "afunda").
+const PRESSED_SCALE: f32 = 0.86;
+
+/// A tecla apertada: a mesma imagem, menor e centrada sobre preto, como um botão que afundou.
+pub fn render_pressed_rgba(button: &ButtonConfig, width: u32, height: u32) -> RgbaImage {
+    let full = render_rgba(button, width, height);
+    let (w, h) = (
+        ((width as f32) * PRESSED_SCALE).round() as u32,
+        ((height as f32) * PRESSED_SCALE).round() as u32,
+    );
+    let small = imageops::resize(&full, w, h, imageops::FilterType::Triangle);
+    let mut img = RgbaImage::from_pixel(width, height, Rgba([0, 0, 0, 255]));
+    imageops::overlay(
+        &mut img,
+        &small,
+        i64::from((width - w) / 2),
+        i64::from((height - h) / 2),
+    );
+    img
+}
+
 /// Imagem de calibração: borda colorida por lado, régua de 10 em 10 px e cruz central.
 /// Mostra no aparelho quanto de cada lado aparece (deslocamento e recorte por tecla).
 pub fn calibration_rgba(size: u32) -> RgbaImage {

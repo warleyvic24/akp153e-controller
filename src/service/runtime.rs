@@ -441,11 +441,11 @@ fn shown(sh: &Shared, b: &ButtonConfig) -> ButtonConfig {
     }
 }
 
-/// Redesenha só as teclas da página que satisfazem `pick`, na ordem dos outros desenhos.
+/// Redesenha só as teclas da página que satisfazem `pick(índice, botão)`, na ordem dos outros desenhos.
 pub fn redraw_where(
     state: &SharedState,
     tx: &Sender<UsbCmd>,
-    pick: impl Fn(&ButtonConfig) -> bool,
+    pick: impl Fn(usize, &ButtonConfig) -> bool,
 ) {
     let _order = DRAW_ORDER
         .lock()
@@ -462,13 +462,43 @@ pub fn redraw_where(
                 .buttons
                 .iter()
                 .enumerate()
-                .filter(|(_, b)| pick(b))
+                .filter(|(i, b)| pick(*i, b))
                 .map(|(i, b)| (i, Frame::Button(Box::new(shown(&sh, b)))))
                 .collect(),
             px: sh.icon_px,
         }
     };
     snapshot.render(tx);
+}
+
+/// Desenha a tecla `index` "afundada" enquanto o dedo está nela.
+fn show_pressed(state: &SharedState, tx: &Sender<UsbCmd>, index: usize) {
+    let _order = DRAW_ORDER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (button, px) = {
+        let sh = lock(state);
+        if sh.mixer.is_some() {
+            return;
+        }
+        let Some(b) = sh.cfg.page().buttons.get(index) else {
+            return;
+        };
+        // Tecla vazia não reage: não há o que afundar.
+        if b.action == ButtonAction::None {
+            return;
+        }
+        (shown(&sh, b), sh.icon_px)
+    };
+    let data = encode_frame(&crate::graphics::renderer::render_pressed_rgba(
+        &button, px, px,
+    ));
+    let _ = tx.send(UsbCmd::Frame { index, data });
+}
+
+/// Redesenha só a tecla `index` da página ativa.
+fn redraw_key(state: &SharedState, tx: &Sender<UsbCmd>, index: usize) {
+    redraw_where(state, tx, |i, _| i == index);
 }
 
 /// Folga depois da virada do minuto, para a hora lida já ser a nova.
@@ -504,7 +534,7 @@ fn has_clock(state: &SharedState) -> bool {
 
 /// Redesenha só as teclas de relógio.
 fn redraw_clocks(state: &SharedState, tx: &Sender<UsbCmd>) {
-    redraw_where(state, tx, |b| b.action == ButtonAction::Clock);
+    redraw_where(state, tx, |_, b| b.action == ButtonAction::Clock);
 }
 
 /// No editor: consulta o serviço a cada segundo para mostrar o estado do aparelho.
@@ -654,8 +684,12 @@ pub fn spawn(state: SharedState, tx: Sender<UsbCmd>, rx: Receiver<UsbEvent>, exe
                         }
                     } else if pressed {
                         down[index] = Some(Instant::now());
+                        show_pressed(&state, &tx, index);
                     } else if let Some(since) = down[index].take() {
-                        if let Some(opener) = press(&state, &tx, &exec, index, since.elapsed()) {
+                        let opener = press(&state, &tx, &exec, index, since.elapsed());
+                        // Solta: a tecla volta ao desenho normal (o da página nova, se ela mudou).
+                        redraw_key(&state, &tx, index);
+                        if let Some(opener) = opener {
                             mixer_runtime::open(&state, &tx, opener);
                         }
                     }

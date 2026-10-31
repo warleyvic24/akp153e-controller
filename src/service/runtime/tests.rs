@@ -316,3 +316,39 @@ fn holding_plus_repeats_only_after_the_delay() {
     assert!(rx.try_iter().count() > 0 && after_press > 0);
     assert!(hold.due() > start + REPEAT_DELAY);
 }
+
+#[test]
+fn a_held_key_sinks_and_comes_back_on_release() {
+    let (tx, rx) = channel();
+    let state = Arc::new(Mutex::new(two_page_state(ButtonAction::None, None)));
+    show_pressed(&state, &tx, 0);
+    assert_eq!(rx.try_iter().count(), 0, "tecla sem ação não afunda");
+    lock(&state).cfg.page_mut().buttons[0].action = ButtonAction::Clock;
+    show_pressed(&state, &tx, 0);
+    redraw_key(&state, &tx, 0);
+    let sent: Vec<UsbCmd> = rx.try_iter().collect();
+    assert!(
+        matches!(
+            sent.as_slice(),
+            [
+                UsbCmd::Frame { index: 0, .. },
+                UsbCmd::Frame { index: 0, .. }
+            ]
+        ),
+        "afunda e volta, só a tecla 0"
+    );
+}
+
+#[test]
+fn the_pressed_image_is_smaller_and_framed_in_black() {
+    let mut b = ButtonConfig::blank();
+    b.appearance.background = crate::config::schema::RGBAColor {
+        r: 200,
+        g: 0,
+        b: 0,
+        a: 255,
+    };
+    let img = crate::graphics::renderer::render_pressed_rgba(&b, 100, 100);
+    assert_eq!(img.get_pixel(1, 1).0[0], 0, "borda preta");
+    assert_eq!(img.get_pixel(50, 50).0[0], 200, "centro com a imagem");
+}
