@@ -161,32 +161,32 @@ pub fn presets() -> Vec<Preset> {
                 path: String::new(),
             },
         ),
-        p("Atalhos", "Copiar", "copy", KEYS, hotkey(&["ctrl", "c"])),
-        p("Atalhos", "Colar", "paste", KEYS, hotkey(&["ctrl", "v"])),
+        p("Edição", "Copiar", "copy", KEYS, hotkey(&["ctrl", "c"])),
+        p("Edição", "Colar", "paste", KEYS, hotkey(&["ctrl", "v"])),
         p(
-            "Atalhos",
+            "Edição",
             "Recortar",
             "lucide:scissors",
             KEYS,
             hotkey(&["ctrl", "x"]),
         ),
-        p("Atalhos", "Desfazer", "undo", KEYS, hotkey(&["ctrl", "z"])),
+        p("Edição", "Desfazer", "undo", KEYS, hotkey(&["ctrl", "z"])),
         p(
-            "Atalhos",
+            "Edição",
             "Salvar",
             "lucide:save",
             KEYS,
             hotkey(&["ctrl", "s"]),
         ),
-        p("Atalhos", "Captura", "lucide:camera", KEYS, screenshot()),
+        p("Sistema", "Captura", "lucide:camera", KEYS, screenshot()),
         p(
-            "Atalhos",
+            "Sistema",
             "Área de trabalho",
             "page",
             KEYS,
             hotkey(&["meta", "d"]),
         ),
-        p("Atalhos", "Bloquear", "lock", KEYS, lock_screen()),
+        p("Sistema", "Bloquear", "lock", KEYS, lock_screen()),
         p("Aplicativos", "Calculadora", "calc", APPS, app("calc")),
         p(
             "Aplicativos",
@@ -287,12 +287,34 @@ pub fn presets() -> Vec<Preset> {
     // Calculadora, Bloco de notas e Explorador são programas do Windows (no Linux o nome muda
     // de uma distribuição para outra: o usuário escolhe em "Aplicativo..."), e Área de trabalho é o Win+D.
     #[cfg(not(windows))]
-    let list = list
+    let mut list: Vec<Preset> = list
         .into_iter()
         .filter(|preset| !WINDOWS_ONLY.contains(&preset.label))
         .collect();
+    #[cfg(windows)]
+    let mut list = list;
+    // O mais usado num stream deck primeiro; atalhos de edição (Ctrl+C...) por último.
+    list.sort_by_key(|p| {
+        CATEGORY_ORDER
+            .iter()
+            .position(|c| *c == p.category)
+            .unwrap_or(CATEGORY_ORDER.len())
+    });
     list
 }
+
+/// Ordem das seções da biblioteca (a ordenação é estável: dentro de cada uma, a da lista).
+const CATEGORY_ORDER: [&str; 9] = [
+    "Mídia",
+    "Aplicativos",
+    "Web",
+    "OBS",
+    "Navegação",
+    "Aparelho",
+    "Sistema",
+    "Edição",
+    "",
+];
 
 #[cfg(test)]
 mod tests {

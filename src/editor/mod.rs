@@ -15,6 +15,7 @@ mod kind_picker;
 mod layout;
 mod library;
 mod library_panel;
+mod memory;
 mod monitor_ui;
 mod obs_ui;
 pub(crate) mod omarchy;
@@ -72,6 +73,8 @@ pub(crate) struct App {
     recording: Option<&'static str>,
     key_tex: key_tex::KeyTextures,
     picker: AppPicker,
+    /// Recentes e número de aberturas (`editor.json`).
+    memory: memory::Memory,
     app_icons: app_icons::AppIcons,
     /// Busca dos ícones dos sites das teclas "Abrir site".
     favicons: favicon::Favicons,
@@ -115,6 +118,7 @@ impl App {
             recording: None,
             key_tex: key_tex::KeyTextures::default(),
             picker: AppPicker::default(),
+            memory: memory::Memory::open(),
             app_icons: app_icons::AppIcons::default(),
             favicons: favicon::Favicons::default(),
             toasts: toast::Toasts::default(),
@@ -172,6 +176,7 @@ impl App {
         let Some(p) = self.presets.get(preset).cloned() else {
             return;
         };
+        self.memory.used(p.label);
         let action = p.resolved_action(&g.cfg);
         let slot = (
             g.cfg.active_profile,

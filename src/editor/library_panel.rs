@@ -166,6 +166,26 @@ impl App {
         ui.spacing_mut().item_spacing.y = ROW_GAP;
         let mut picked = Picked::default();
         let q = fold(self.query.trim());
+        if q.is_empty() && !self.memory.recent.is_empty() {
+            widgets::section(ui, "Recentes", pal);
+            for name in &self.memory.recent {
+                let Some(i) = self.presets.iter().position(|p| p.label == name) else {
+                    continue;
+                };
+                // Mesma linha das seções: o id muda para não colidir com o item lá embaixo.
+                let resp = ui
+                    .push_id(("recent", i), |ui| {
+                        library_row(ui, &self.presets[i], self.selected, pal, accent)
+                    })
+                    .inner;
+                if resp.clicked() {
+                    picked.preset = Some(i);
+                }
+                if resp.drag_started() {
+                    egui::DragAndDrop::set_payload(ctx, Dragged::Preset(i));
+                }
+            }
+        }
         let mut shown = 0;
         let mut category = "";
         for (i, p) in self.presets.iter().enumerate() {

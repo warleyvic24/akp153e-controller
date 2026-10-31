@@ -179,15 +179,19 @@ impl PageSlide {
     }
 }
 
+/// Atalhos do palco (tecla e o que faz).
+const SHORTCUTS: [(&str, &str); 6] = [
+    ("Del", "limpar"),
+    ("Ctrl C", "copiar"),
+    ("Ctrl V", "colar"),
+    ("Arraste", "trocar teclas"),
+    ("Ctrl Z", "desfazer"),
+    ("Setas", "andar entre as teclas"),
+];
+
 /// Atalhos do palco em forma de tecla, para quem não sabe que eles existem.
 fn shortcut_hints(ui: &mut Ui, pal: &Palette) {
-    let hints = [
-        ("Del", "limpar"),
-        ("Ctrl C", "copiar"),
-        ("Ctrl V", "colar"),
-        ("Arraste", "trocar teclas"),
-    ];
-    for (key, what) in hints {
+    for (key, what) in SHORTCUTS {
         // Palco estreito: as dicas que não cabem ficam de fora em vez de sair cortadas.
         let font = egui::FontId::proportional(text::CAPTION);
         let need = ui.ctx().fonts_mut(|f| {
@@ -205,6 +209,25 @@ fn shortcut_hints(ui: &mut Ui, pal: &Palette) {
         ui.label(RichText::new(t(what)).size(text::CAPTION).color(pal.muted));
         ui.add_space(space::SM);
     }
+}
+
+/// Os atalhos do palco num balão, depois que a barra de dicas some.
+fn shortcuts_button(ui: &mut Ui, pal: &Palette) {
+    let resp = ui
+        .button(RichText::new("?").strong())
+        .on_hover_text(t("Atalhos do teclado"));
+    widgets::name(&resp, "Atalhos do teclado");
+    egui::Popup::from_toggle_button_response(&resp).show(|ui| {
+        egui::Grid::new("shortcuts")
+            .spacing(vec2(space::MD, space::SM))
+            .show(ui, |ui| {
+                for (key, what) in SHORTCUTS {
+                    widgets::kbd(ui, t(key), pal);
+                    ui.label(t(what));
+                    ui.end_row();
+                }
+            });
+    });
 }
 
 /// Passo a passo para quem abre uma página sem nenhuma tecla configurada.
@@ -337,13 +360,19 @@ impl App {
                         // O botão fica à direita; as dicas usam o que sobra à esquerda.
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             let clicked = ui
-                                .button(t("Embelezar página"))
+                                .button(t("Organizar cores"))
                                 .on_hover_text(t(BEAUTIFY_HINT))
                                 .clicked();
+                            let hints = self.memory.shows_hints();
                             ui.with_layout(
                                 egui::Layout::left_to_right(egui::Align::Center),
                                 |ui| {
-                                    shortcut_hints(ui, pal);
+                                    // Nas primeiras aberturas, as dicas à vista; depois, um "?".
+                                    if hints {
+                                        shortcut_hints(ui, pal);
+                                    } else {
+                                        shortcuts_button(ui, pal);
+                                    }
                                 },
                             );
                             clicked
