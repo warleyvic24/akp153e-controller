@@ -61,8 +61,14 @@ pub(crate) fn key_title(b: &ButtonConfig) -> Option<String> {
     }
 }
 
-/// Linha da lista de apps: inicial colorida, nome e o caminho ao passar o mouse.
-fn app_row(ui: &mut egui::Ui, app: &apps::InstalledApp, pal: &Palette) -> egui::Response {
+/// Linha da lista de apps: ícone (ou a inicial colorida enquanto ele não chega), nome e o
+/// caminho ao passar o mouse.
+fn app_row(
+    ui: &mut egui::Ui,
+    app: &apps::InstalledApp,
+    icon: Option<egui::TextureId>,
+    pal: &Palette,
+) -> egui::Response {
     let size = vec2(ui.available_width(), APP_ROW_HEIGHT);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, app.name.as_str()));
@@ -78,6 +84,33 @@ fn app_row(ui: &mut egui::Ui, app: &apps::InstalledApp, pal: &Palette) -> egui::
         rect.left() + tokens::space::SM + APP_BADGE / 2.0,
         rect.center().y,
     );
+    if let Some(tex) = icon {
+        let r = egui::Rect::from_center_size(center, vec2(APP_BADGE, APP_BADGE));
+        let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+        p.image(tex, r, uv, Color32::WHITE);
+    } else {
+        paint_initial(p, center, app, badge_color);
+    }
+    let name_at = egui::pos2(
+        center.x + APP_BADGE / 2.0 + tokens::space::SM,
+        rect.center().y,
+    );
+    p.with_clip_rect(rect).text(
+        name_at,
+        egui::Align2::LEFT_CENTER,
+        &app.name,
+        egui::FontId::proportional(tokens::text::BODY),
+        pal.fg,
+    );
+    resp.on_hover_text(&app.target)
+}
+
+fn paint_initial(
+    p: &egui::Painter,
+    center: egui::Pos2,
+    app: &apps::InstalledApp,
+    badge_color: Color32,
+) {
     p.circle_filled(center, APP_BADGE / 2.0, badge_color);
     let initial = app
         .name
@@ -93,18 +126,6 @@ fn app_row(ui: &mut egui::Ui, app: &apps::InstalledApp, pal: &Palette) -> egui::
         egui::FontId::proportional(tokens::text::BODY),
         theme::readable_on(badge_color),
     );
-    let name_at = egui::pos2(
-        center.x + APP_BADGE / 2.0 + tokens::space::SM,
-        rect.center().y,
-    );
-    p.with_clip_rect(rect).text(
-        name_at,
-        egui::Align2::LEFT_CENTER,
-        &app.name,
-        egui::FontId::proportional(tokens::text::BODY),
-        pal.fg,
-    );
-    resp.on_hover_text(&app.target)
 }
 
 /// Lista rolável dos apps que casam com a busca; devolve o app clicado, se houver.
@@ -112,6 +133,7 @@ fn app_list(
     ui: &mut egui::Ui,
     list: &[apps::InstalledApp],
     query: &str,
+    icons: &mut super::app_icons::AppIcons,
     pal: &Palette,
 ) -> Option<apps::InstalledApp> {
     let q = query.to_lowercase();
@@ -125,7 +147,13 @@ fn app_list(
                 .filter(|a| q.is_empty() || a.name.to_lowercase().contains(&q))
             {
                 shown += 1;
-                if app_row(ui, app, pal).clicked() {
+                // Só as linhas visíveis pedem o ícone (a lista pode ter centenas de apps).
+                let visible = ui.is_rect_visible(egui::Rect::from_min_size(
+                    ui.cursor().min,
+                    vec2(ui.available_width(), APP_ROW_HEIGHT),
+                ));
+                let icon = visible.then(|| icons.get(ui.ctx(), app)).flatten();
+                if app_row(ui, app, icon, pal).clicked() {
                     chosen = Some(app.clone());
                 }
             }
@@ -143,6 +171,8 @@ fn app_list(
 
 /// Id da janela da lista de apps (o título muda com o idioma).
 pub(crate) const APP_PICKER_ID: &str = "app-picker";
+const PICKER_WIDTH: f32 = 420.0;
+const PICKER_PADDING: i8 = 20;
 
 impl App {
     pub(crate) fn app_picker(&mut self, ctx: &egui::Context, g: &mut runtime::Shared) {
@@ -155,23 +185,42 @@ impl App {
         let mut open = true;
         let pal = theme::palette(g.cfg.ui.theme);
         let mut chosen: Option<apps::InstalledApp> = None;
-        egui::Window::new(
-            RichText::new(t("Apps instalados"))
-                .size(tokens::text::BODY)
-                .strong(),
-        )
-        .id(egui::Id::unique(APP_PICKER_ID))
-        .open(&mut open)
-        .collapsible(false)
-        .default_width(360.0)
-        .show(ctx, |ui| {
-            widgets::search_field(ui, &mut self.picker.query, "Buscar app", &pal);
-            let Some(list) = &self.picker.apps else {
-                ui.label(t("Procurando programas instalados…"));
-                return;
-            };
-            chosen = app_list(ui, list, &self.picker.query, &pal);
-        });
+        let frame = Frame::NONE
+            .fill(pal.raise)
+            .stroke(Stroke::new(1.0_f32, pal.control))
+            .corner_radius(CornerRadius::from(tokens::radius::CARD))
+            .inner_margin(Margin::same(PICKER_PADDING));
+        let modal = egui::Modal::new(egui::Id::unique(APP_PICKER_ID))
+            .frame(frame)
+            .show(ctx, |ui| {
+                ui.set_width(PICKER_WIDTH);
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(t("Escolha um app"))
+                            .size(tokens::text::TITLE)
+                            .strong(),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if widgets::icon_button(ui, "close", "Fechar", true, &pal).clicked() {
+                            open = false;
+                        }
+                    });
+                });
+                ui.add_space(tokens::space::SM);
+                let search = widgets::search_field(ui, &mut self.picker.query, "Buscar app", &pal);
+                if std::mem::take(&mut self.picker.focus_search) {
+                    search.request_focus();
+                }
+                ui.add_space(tokens::space::SM);
+                let Some(list) = &self.picker.apps else {
+                    ui.label(t("Procurando programas instalados…"));
+                    return;
+                };
+                chosen = app_list(ui, list, &self.picker.query, &mut self.app_icons, &pal);
+            });
+        if modal.should_close() {
+            open = false;
+        }
         if let Some(app) = chosen {
             let at = self.picker.at;
             if let Some(b) = g.cfg.page_mut().buttons.get_mut(at.2) {

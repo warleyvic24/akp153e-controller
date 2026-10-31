@@ -338,6 +338,7 @@ const EN: &[(&str, &str)] = &[
     ("Texto na tecla (ex.: Mudo). Enter quebra a linha", "Key text (e.g. Mute). Enter breaks the line"),
     ("Topo", "Top"),
     ("Tela lateral", "Side screen"),
+    ("Escolha um app", "Choose an app"),
     ("Muda no aparelho enquanto você arrasta.", "Changes on the device while you drag."),
     ("Problemas com o aparelho", "Device problems"),
     ("Keyforge {}", "Keyforge {}"),

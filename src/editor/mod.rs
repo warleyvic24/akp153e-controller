@@ -1,6 +1,7 @@
 //! Editor: a janela egui que edita a config e avisa o serviço. Não fala com o aparelho.
 mod action_kind;
 mod action_ui;
+mod app_icons;
 mod bars;
 mod beautify;
 mod checks;
@@ -71,6 +72,7 @@ pub(crate) struct App {
     recording: Option<&'static str>,
     key_tex: key_tex::KeyTextures,
     picker: AppPicker,
+    app_icons: app_icons::AppIcons,
     /// Busca dos ícones dos sites das teclas "Abrir site".
     favicons: favicon::Favicons,
     toasts: toast::Toasts,
@@ -113,6 +115,7 @@ impl App {
             recording: None,
             key_tex: key_tex::KeyTextures::default(),
             picker: AppPicker::default(),
+            app_icons: app_icons::AppIcons::default(),
             favicons: favicon::Favicons::default(),
             toasts: toast::Toasts::default(),
             settings_open: false,

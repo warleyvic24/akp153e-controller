@@ -12,6 +12,8 @@ pub struct AppPicker {
     pub apps: Option<Vec<apps::InstalledApp>>,
     pub scan: Option<Receiver<Vec<apps::InstalledApp>>>,
     pub query: String,
+    /// Recém-aberta: o cursor vai para a busca (já se digita o nome do app).
+    pub focus_search: bool,
     pub at: ButtonSlot,
     pub jobs: IconJobs,
 }
@@ -41,6 +43,7 @@ impl Default for IconJobs {
 impl AppPicker {
     pub fn show(&mut self) {
         self.open = true;
+        self.focus_search = true;
         if self.apps.is_some() || self.scan.is_some() {
             return;
         }
