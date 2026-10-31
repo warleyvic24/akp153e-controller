@@ -354,6 +354,9 @@ impl Page {
     }
 }
 
+/// Maior número de linhas ou colunas de uma página (8 x 8 = as 64 teclas que o serviço acompanha).
+pub const MAX_GRID_SIDE: usize = 8;
+
 /// Modelo das configs feitas antes da Fase 3 (só existia o AKP153E).
 pub const DEFAULT_MODEL: &str = "ajazz-akp153e";
 fn default_model() -> String {
@@ -629,8 +632,9 @@ impl AppConfig {
                 p.pages.push(Page::new("Page 1", 3, 5));
             }
             for pg in &mut p.pages {
-                pg.rows = pg.rows.clamp(1, 3);
-                pg.cols = pg.cols.clamp(1, 5);
+                // Até 8 x 8 (o Stream Deck XL tem 8 x 4); a grade real vem do modelo da página.
+                pg.rows = pg.rows.clamp(1, MAX_GRID_SIDE);
+                pg.cols = pg.cols.clamp(1, MAX_GRID_SIDE);
                 pg.buttons
                     .resize_with(pg.rows * pg.cols, ButtonConfig::blank);
                 for b in pg
