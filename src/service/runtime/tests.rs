@@ -144,6 +144,39 @@ async fn second_tap_of_a_two_state_key_runs_its_toggled_action() {
     );
 }
 
+#[test]
+fn brightness_steps_stay_between_the_useful_minimum_and_the_maximum() {
+    assert_eq!(stepped_brightness(50, 10), 60);
+    assert_eq!(stepped_brightness(95, 10), 100);
+    assert_eq!(stepped_brightness(10, -10), MIN_BRIGHTNESS);
+    assert_eq!(stepped_brightness(100, -300), MIN_BRIGHTNESS);
+}
+
+#[tokio::test]
+async fn a_brightness_key_changes_the_device_and_not_the_page() {
+    let (tx, rx) = channel();
+    let exec = Executor::new(tokio::runtime::Handle::current());
+    let mut sh = two_page_state(ButtonAction::Brightness { delta: -30 }, None);
+    sh.cfg.ui.brightness = 80;
+    trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);
+    assert_eq!(sh.cfg.ui.brightness, 50);
+    let sent: Vec<UsbCmd> = rx.try_iter().collect();
+    assert!(matches!(sent.as_slice(), [UsbCmd::Brightness(50)]));
+}
+
+#[test]
+fn only_clock_keys_are_redrawn_on_the_minute() {
+    let (tx, rx) = channel();
+    let state = Arc::new(Mutex::new(two_page_state(ButtonAction::None, None)));
+    assert!(!has_clock(&state));
+    lock(&state).cfg.page_mut().buttons[3].action = ButtonAction::Clock;
+    assert!(has_clock(&state));
+    redraw_clocks(&state, &tx);
+    let sent: Vec<UsbCmd> = rx.try_iter().collect();
+    assert!(matches!(sent.as_slice(), [UsbCmd::Frame { index: 3, .. }]));
+    assert!(until_next_minute() <= Duration::from_secs(60) + CLOCK_SLACK);
+}
+
 #[tokio::test]
 async fn a_long_press_with_its_own_action_does_not_flip_a_two_state_key() {
     let (tx, _rx) = channel();

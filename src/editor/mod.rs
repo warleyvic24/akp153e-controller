@@ -347,7 +347,14 @@ fn key_view(
 
 /// Texturas das teclas: a imagem exata que vai ao display, refeita só quando o botão muda.
 #[derive(Default)]
-struct KeyTextures(Vec<Option<(ButtonConfig, u32, egui::TextureHandle)>>);
+struct KeyTextures(Vec<Option<(ButtonConfig, u32, u64, egui::TextureHandle)>>);
+
+/// Minuto atual (para a prévia da tecla de relógio mudar junto com a do aparelho).
+fn current_minute() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() / 60)
+}
 
 impl KeyTextures {
     fn get(
@@ -364,19 +371,25 @@ impl KeyTextures {
             return None;
         }
         let slot = &mut self.0[index];
-        if slot
-            .as_ref()
-            .is_none_or(|(cached, cached_px, _)| cached != b || *cached_px != px)
-        {
+        // Só a tecla de relógio depende da hora; nas outras o minuto não conta.
+        let minute = if b.action == ButtonAction::Clock {
+            current_minute()
+        } else {
+            0
+        };
+        if slot.as_ref().is_none_or(|(cached, cached_px, at, _)| {
+            cached != b || *cached_px != px || *at != minute
+        }) {
             let rgba = graphics::renderer::render_rgba(b, px, px);
             let image = egui::ColorImage::from_rgba_unmultiplied([px as usize; 2], rgba.as_raw());
             *slot = Some((
                 b.clone(),
                 px,
+                minute,
                 ctx.load_texture(format!("key{index}"), image, egui::TextureOptions::LINEAR),
             ));
         }
-        slot.as_ref().map(|(_, _, t)| t.id())
+        slot.as_ref().map(|(_, _, _, t)| t.id())
     }
 }
 

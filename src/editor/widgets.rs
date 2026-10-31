@@ -19,6 +19,8 @@ const FOCUS_RING_OUTER: Color32 = Color32::from_rgb(20, 24, 36);
 const KEY_NUMBER_ALPHA: u8 = 130; // 4,5:1 sobre o preto da tecla
 const KEY_NUMBER_MIN_WIDTH: f32 = 56.0;
 const KEY_NUMBER_OFFSET: egui::Vec2 = egui::Vec2::new(7.0, 5.0);
+const KEY_NUMBER_PLATE_PAD: f32 = 3.0;
+const KEY_NUMBER_PLATE_ALPHA: u8 = 190;
 const KEY_SELECTED_STROKE: f32 = 2.5;
 const KEY_HOVER_STROKE: f32 = 1.5;
 const PROBLEM_BADGE_RADIUS: f32 = 8.0;
@@ -116,16 +118,26 @@ pub fn paint_key(
     } else {
         paint_plain_key(p, rect, k, hovered);
     }
-    // Numa tecla configurada o número cobriria o ícone: só aparece ao apontar ou selecionar.
-    let number = k.number.filter(|_| k.off || hovered || selected);
+    // Numa tecla configurada o número cobriria o desenho: só aparece ao apontar, sobre uma
+    // plaqueta escura (o inspetor já diz o número da selecionada).
+    let number = k.number.filter(|_| k.off || hovered);
     if let Some(number) = number.filter(|_| rect.width() >= KEY_NUMBER_MIN_WIDTH) {
-        p.text(
-            rect.min + KEY_NUMBER_OFFSET,
-            Align2::LEFT_TOP,
-            number,
-            FontId::monospace(text::CAPTION),
+        let font = FontId::monospace(text::CAPTION);
+        let galley = p.layout_no_wrap(
+            number.to_string(),
+            font,
             Color32::from_white_alpha(KEY_NUMBER_ALPHA),
         );
+        let at = rect.min + KEY_NUMBER_OFFSET;
+        if !k.off {
+            let plate = Rect::from_min_size(at, galley.size()).expand(KEY_NUMBER_PLATE_PAD);
+            p.rect_filled(
+                plate,
+                Rounding::same(KEY_NUMBER_PLATE_PAD),
+                Color32::from_black_alpha(KEY_NUMBER_PLATE_ALPHA),
+            );
+        }
+        p.galley(at, galley, Color32::WHITE);
     }
     if !k.off && k.tex.is_none() {
         paint_key_content(p, rect, k);
@@ -457,6 +469,30 @@ pub fn name(resp: &Response, label: &str) {
 
 /// Placeholder de campo. O tema força a cor do texto (`override_text_color`), o que deixava a dica
 /// idêntica a um valor digitado; com cor própria (`muted`, 4,5:1) ela se distingue sem sumir.
+/// Campo de busca: lupa à esquerda, dica apagada e o nome falado igual à dica.
+pub fn search_field(ui: &mut Ui, query: &mut String, hint_text: &str, pal: &Palette) -> Response {
+    const ICON: f32 = 14.0;
+    const LEFT_PAD: f32 = 26.0;
+    let resp = ui.add(
+        egui::TextEdit::singleline(query)
+            .hint_text(hint(hint_text, pal))
+            .margin(egui::Margin {
+                left: LEFT_PAD,
+                right: 6.0,
+                top: 4.0,
+                bottom: 4.0,
+            })
+            .desired_width(ui.available_width()),
+    );
+    let center = pos2(
+        resp.rect.left() + LEFT_PAD / 2.0 + 1.0,
+        resp.rect.center().y,
+    );
+    paint_icon(ui.painter(), center, ICON, "search", pal.muted);
+    name(&resp, hint_text);
+    resp
+}
+
 pub fn hint(text: &str, pal: &Palette) -> RichText {
     RichText::new(crate::strings::t(text)).color(pal.muted)
 }

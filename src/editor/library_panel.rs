@@ -131,12 +131,7 @@ impl App {
                         .size(text::CAPTION),
                 );
                 ui.add_space(space::SM);
-                let search = ui.add(
-                    egui::TextEdit::singleline(&mut self.query)
-                        .hint_text(widgets::hint("Buscar ação", pal))
-                        .desired_width(ui.available_width()),
-                );
-                widgets::name(&search, "Buscar ação");
+                widgets::search_field(ui, &mut self.query, "Buscar ação", pal);
                 ui.add_space(space::XS);
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])

@@ -64,7 +64,7 @@ pub(crate) fn media_label(key: &str) -> &str {
         .map_or(key, |(_, label)| label)
 }
 
-const ACTION_KINDS: [(&str, &str); 12] = [
+const ACTION_KINDS: [(&str, &str); 15] = [
     ("none", "Nenhuma"),
     ("hotkey", "Atalho"),
     ("launch-app", "App"),
@@ -77,11 +77,15 @@ const ACTION_KINDS: [(&str, &str); 12] = [
     ("previous-page", "Pág. −"),
     ("switch-profile", "Perfil"),
     ("open-mixer", "Mixer"),
+    ("run-command", "Comando"),
+    ("brightness", "Brilho"),
+    ("clock", "Relógio"),
 ];
 
 /// Tipos que podem ser passo de uma multi-ação (navegação não cabe: o serviço a ignora lá dentro).
-const STEP_KINDS: [(&str, &str); 6] = [
+const STEP_KINDS: [(&str, &str); 7] = [
     ("hotkey", "Atalho"),
+    ("run-command", "Comando"),
     ("type-text", "Texto"),
     ("launch-app", "App"),
     ("http-webhook", "Web"),
@@ -130,6 +134,9 @@ fn action_name(a: &ButtonAction) -> &'static str {
         ButtonAction::Delay { .. } => "delay",
         ButtonAction::NextPage => "next-page",
         ButtonAction::PreviousPage => "previous-page",
+        ButtonAction::RunCommand { .. } => "run-command",
+        ButtonAction::Brightness { .. } => "brightness",
+        ButtonAction::Clock => "clock",
     }
 }
 
@@ -160,6 +167,13 @@ fn default_action(kind: &str) -> ButtonAction {
         },
         "next-page" => ButtonAction::NextPage,
         "previous-page" => ButtonAction::PreviousPage,
+        "run-command" => ButtonAction::RunCommand {
+            command: String::new(),
+        },
+        "brightness" => ButtonAction::Brightness {
+            delta: BRIGHTNESS_STEP,
+        },
+        "clock" => ButtonAction::Clock,
         _ => ButtonAction::None,
     }
 }
@@ -292,7 +306,7 @@ fn kind_tile(
         p.rect_stroke(rect, round, egui::Stroke::new(1.5_f32, ink));
     }
     let icon_at = egui::pos2(rect.center().x, rect.top() + KIND_ICON_TOP);
-    widgets::paint_icon(p, icon_at, KIND_ICON, kind_icon(kind), fg);
+    super::icon_picker::paint_any(p, cx.ctx, icon_at, KIND_ICON, kind_icon(kind), fg);
     p.text(
         egui::pos2(rect.center().x, rect.bottom() - KIND_LABEL_BOTTOM),
         egui::Align2::CENTER_CENTER,
@@ -316,6 +330,9 @@ fn kind_icon(kind: &str) -> &'static str {
         "multi-action" => "plus",
         "next-page" => "next",
         "previous-page" => "prev",
+        "run-command" => "lucide:terminal",
+        "brightness" => "lucide:sun",
+        "clock" => "lucide:clock",
         _ => "ban",
     }
 }
@@ -351,8 +368,68 @@ pub fn action_editor(
         ButtonAction::TypeText { text } => type_text_editor(ui, cx, text),
         ButtonAction::MultiAction { steps } => multi_editor(ui, cx, id, steps),
         ButtonAction::Delay { ms } => delay_editor(ui, cx, ms),
+        ButtonAction::RunCommand { command } => command_editor(ui, cx, command),
+        ButtonAction::Brightness { delta } => brightness_editor(ui, cx, delta),
+        ButtonAction::Clock => {
+            ui.label(widgets::hint(t(CLOCK_HINT), cx.pal));
+            false
+        }
         ButtonAction::None | ButtonAction::NextPage | ButtonAction::PreviousPage => false,
     };
+    changed
+}
+
+/// Passo padrão da tecla de brilho (e o que o editor oferece de cara).
+const BRIGHTNESS_STEP: i32 = 10;
+const CLOCK_HINT: &str =
+    "Mostra a hora e a data na tecla, atualizadas a cada minuto (no fuso do sistema).";
+#[cfg(windows)]
+const COMMAND_HINT: &str =
+    "Roda no cmd (ex.: start ms-settings:). Sem janela; a saída não aparece.";
+#[cfg(not(windows))]
+const COMMAND_HINT: &str =
+    "Roda no sh (ex.: playerctl play-pause, notify-send oi). A saída não aparece.";
+
+fn command_editor(ui: &mut egui::Ui, cx: &PaneCtx, command: &mut String) -> bool {
+    let label = widgets::section(ui, "Linha de comando", cx.pal);
+    let changed = ui
+        .add(
+            egui::TextEdit::multiline(command)
+                .code_editor()
+                .desired_width(ui.available_width())
+                .desired_rows(2),
+        )
+        .labelled_by(label)
+        .changed();
+    ui.label(widgets::hint(t(COMMAND_HINT), cx.pal));
+    changed
+}
+
+/// Aumentar ou diminuir, e de quanto.
+fn brightness_editor(ui: &mut egui::Ui, cx: &PaneCtx, delta: &mut i32) -> bool {
+    let mut changed = false;
+    widgets::section(ui, "Cada toque", cx.pal);
+    let up = *delta >= 0;
+    ui.horizontal(|ui| {
+        if widgets::pill(ui, "Mais claro", up, cx.accent, cx.pal).clicked() && !up {
+            *delta = delta.abs();
+            changed = true;
+        }
+        if widgets::pill(ui, "Mais escuro", !up, cx.accent, cx.pal).clicked() && up {
+            *delta = -delta.abs();
+            changed = true;
+        }
+    });
+    let mut step = delta.unsigned_abs().clamp(1, 50);
+    let label = widgets::section(ui, "Passo (%)", cx.pal);
+    if ui
+        .add(egui::Slider::new(&mut step, 1..=50).suffix(" %"))
+        .labelled_by(label)
+        .changed()
+    {
+        *delta = if up { step as i32 } else { -(step as i32) };
+        changed = true;
+    }
     changed
 }
 
@@ -397,6 +474,7 @@ fn step_editor(ui: &mut egui::Ui, cx: &PaneCtx, step: &mut ButtonAction) -> bool
         ButtonAction::MediaKey { key } => media_editor(ui, cx, key),
         ButtonAction::TypeText { text } => type_text_editor(ui, cx, text),
         ButtonAction::Delay { ms } => delay_editor(ui, cx, ms),
+        ButtonAction::RunCommand { command } => command_editor(ui, cx, command),
         _ => false,
     }
 }

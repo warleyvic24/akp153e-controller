@@ -14,6 +14,15 @@ pub fn set_language(lang: Language) {
     LANGUAGE.store(lang as u8, Ordering::Relaxed);
 }
 
+/// Idioma atual da interface.
+pub fn language() -> Language {
+    if english() {
+        Language::En
+    } else {
+        Language::Pt
+    }
+}
+
 fn english() -> bool {
     LANGUAGE.load(Ordering::Relaxed) == Language::En as u8
 }
@@ -330,6 +339,26 @@ const EN: &[(&str, &str)] = &[
     ("Procurar programa", "Browse program"),
     ("Texto na tecla (ex.: Mudo). Enter quebra a linha", "Key text (e.g. Mute). Enter breaks the line"),
     ("Topo", "Top"),
+    ("Aparelho", "Device"),
+    ("Brilho +", "Brightness +"),
+    ("Brilho −", "Brightness −"),
+    ("Comando", "Command"),
+    ("Brilho", "Brightness"),
+    ("Relógio", "Clock"),
+    ("Mostra a hora e a data na tecla, atualizadas a cada minuto (no fuso do sistema).", "Shows the time and date on the key, updated every minute (system time zone)."),
+    ("Roda no cmd (ex.: start ms-settings:). Sem janela; a saída não aparece.", "Runs in cmd (e.g. start ms-settings:). No window; output is not shown."),
+    ("Roda no sh (ex.: playerctl play-pause, notify-send oi). A saída não aparece.", "Runs in sh (e.g. playerctl play-pause, notify-send hi). Output is not shown."),
+    ("Linha de comando", "Command line"),
+    ("Cada toque", "Each press"),
+    ("Mais claro", "Brighter"),
+    ("Mais escuro", "Dimmer"),
+    ("Passo (%)", "Step (%)"),
+    ("Comando vazio", "Empty command"),
+    ("Roda: {}", "Runs: {}"),
+    ("Brilho +{}%", "Brightness +{}%"),
+    ("Brilho {}%", "Brightness {}%"),
+    ("Relógio (hora e data)", "Clock (time and date)"),
+    ("Digite o comando que a tecla roda", "Type the command this key runs"),
     ("Perfil e página", "Profile & page"),
     ("Ativar sozinho quando este app estiver em foco", "Switch to it when this app is focused"),
     ("ex.: obs, firefox", "e.g. obs, firefox"),

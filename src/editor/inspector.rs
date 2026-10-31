@@ -43,6 +43,9 @@ pub(crate) fn key_title(b: &ButtonConfig) -> Option<String> {
         }
         ButtonAction::Hotkey { keys } if !keys.is_empty() => Some(summary::chord(keys)),
         ButtonAction::OpenMixer => Some(t("Mixer").to_string()),
+        ButtonAction::Clock => Some(t("Relógio").to_string()),
+        ButtonAction::Brightness { delta } if *delta >= 0 => Some(t("Brilho +").to_string()),
+        ButtonAction::Brightness { .. } => Some(t("Brilho −").to_string()),
         ButtonAction::NextPage => Some(t("Próxima página").to_string()),
         ButtonAction::PreviousPage => Some(t("Página anterior").to_string()),
         _ => None,
@@ -151,12 +154,7 @@ impl App {
         .collapsible(false)
         .default_width(360.0)
         .show(ctx, |ui| {
-            let search = ui.add(
-                egui::TextEdit::singleline(&mut self.picker.query)
-                    .hint_text(widgets::hint("Buscar app", &pal))
-                    .desired_width(ui.available_width()),
-            );
-            widgets::name(&search, "Buscar app");
+            widgets::search_field(ui, &mut self.picker.query, "Buscar app", &pal);
             let Some(list) = &self.picker.apps else {
                 ui.label(t("Procurando programas instalados…"));
                 return;

@@ -24,6 +24,8 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 # Ícones em SVG (temas de ícones do Linux e favicons de sites) viram PNG para a tecla.
 resvg = "0.45"
 ab_glyph = "0.2"
+# Hora local (fuso do sistema) da tecla de relógio; já vinha pelo env_logger.
+jiff = "0.2"
 tray-icon = "0.26"
 rfd = "0.17"
 

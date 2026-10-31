@@ -15,6 +15,8 @@ const KEYS: [u8; 3] = [68, 105, 159];
 const APPS: [u8; 3] = [63, 138, 106];
 const WEB: [u8; 3] = [168, 120, 44];
 const NAV: [u8; 3] = [111, 88, 184];
+/// Teclas que mexem no próprio aparelho (brilho) ou mostram algo vivo (relógio).
+const DEVICE: [u8; 3] = [52, 60, 78];
 /// Cores oferecidas no seletor do inspetor (a última é o grafite neutro).
 pub const SWATCHES: [[u8; 3]; 7] = [MEDIA, KEYS, APPS, WEB, NAV, [42, 47, 58], [0, 0, 0]];
 
@@ -154,6 +156,15 @@ pub fn presets() -> Vec<Preset> {
         ),
         p("Aplicativos", "Explorador", "folder", APPS, app("explorer")),
         p("Aplicativos", "Aplicativo...", "app", APPS, app("")),
+        p(
+            "Aplicativos",
+            "Comando",
+            "lucide:terminal",
+            APPS,
+            ButtonAction::RunCommand {
+                command: String::new(),
+            },
+        ),
         p("Web", "Abrir site", "globe", WEB, open_url("https://")),
         p(
             "Web",
@@ -193,6 +204,27 @@ pub fn presets() -> Vec<Preset> {
             "user",
             NAV,
             ButtonAction::SwitchProfile { profile: 1 },
+        ),
+        p(
+            "Aparelho",
+            "Brilho +",
+            "lucide:sun",
+            DEVICE,
+            ButtonAction::Brightness { delta: 10 },
+        ),
+        p(
+            "Aparelho",
+            "Brilho −",
+            "lucide:sun-dim",
+            DEVICE,
+            ButtonAction::Brightness { delta: -10 },
+        ),
+        p(
+            "Aparelho",
+            "Relógio",
+            "lucide:clock",
+            DEVICE,
+            ButtonAction::Clock,
         ),
     ];
     // Calculadora, Bloco de notas e Explorador são programas do Windows (no Linux o nome muda

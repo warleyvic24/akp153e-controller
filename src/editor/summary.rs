@@ -36,6 +36,13 @@ pub(crate) fn action_summary(a: &ButtonAction, targets: &Targets) -> Option<Stri
         ButtonAction::MultiAction { steps } => tf("Multi-ação: {} passos", &[&steps.len()]),
         ButtonAction::NextPage => t("Vai para a próxima página").to_string(),
         ButtonAction::PreviousPage => t("Volta à página anterior").to_string(),
+        ButtonAction::RunCommand { command } if command.trim().is_empty() => {
+            t("Comando vazio").to_string()
+        }
+        ButtonAction::RunCommand { command } => tf("Roda: {}", &[&preview(command)]),
+        ButtonAction::Brightness { delta } if *delta >= 0 => tf("Brilho +{}%", &[delta]),
+        ButtonAction::Brightness { delta } => tf("Brilho {}%", &[delta]),
+        ButtonAction::Clock => t("Relógio (hora e data)").to_string(),
     };
     Some(text)
 }

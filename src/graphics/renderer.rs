@@ -308,11 +308,62 @@ fn text_place(position: TextPosition, has_icon: bool) -> TextPosition {
     }
 }
 
+/// Hora (grande) e data (pequena) da tecla de relógio, em fração da altura da tecla.
+const CLOCK_TIME_PX: f32 = 0.34;
+const CLOCK_DATE_PX: f32 = 0.16;
+const CLOCK_TIME_TOP: f32 = 0.24;
+const CLOCK_DATE_TOP: f32 = 0.62;
+
+/// Texto da tecla de relógio para `now`: ("14:05", "sáb 31/10").
+pub fn clock_text(now: &jiff::Zoned) -> (String, String) {
+    const WEEKDAYS: [&str; 7] = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"];
+    const WEEKDAYS_EN: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    let day = usize::from(now.weekday().to_monday_zero_offset() as u8);
+    let english = crate::strings::language() == crate::config::schema::Language::En;
+    let (name, date) = if english {
+        (WEEKDAYS_EN[day], now.strftime("%m/%d").to_string())
+    } else {
+        (WEEKDAYS[day], now.strftime("%d/%m").to_string())
+    };
+    (now.strftime("%H:%M").to_string(), format!("{name} {date}"))
+}
+
+/// Tecla de relógio: a hora agora e a data, na cor do texto da tecla.
+fn draw_clock(img: &mut RgbaImage, color: RGBAColor) {
+    let Some(font) = font() else { return };
+    let h = img.height() as f32;
+    let (time, date) = clock_text(&jiff::Zoned::now());
+    let time_px = h * CLOCK_TIME_PX;
+    let date_px = h * CLOCK_DATE_PX;
+    let bold = bold_font().unwrap_or(font);
+    draw_line(
+        img,
+        bold,
+        &time,
+        (time_px, MIN_FONT_PX),
+        color,
+        h * CLOCK_TIME_TOP,
+    );
+    draw_line(
+        img,
+        font,
+        &date,
+        (date_px, MIN_FONT_PX),
+        color,
+        h * CLOCK_DATE_TOP,
+    );
+}
+
 /// Renderiza o botão em RGBA (usado na prévia da UI e como base do frame de hardware).
 pub fn render_rgba(button: &ButtonConfig, width: u32, height: u32) -> RgbaImage {
     let ap = button.current_appearance();
     let bg = ap.background;
     let mut img = RgbaImage::from_pixel(width, height, Rgba([bg.r, bg.g, bg.b, 255]));
+    // Tecla viva: o relógio ocupa a tecla toda (rótulo e ícone ficam de fora).
+    if button.action == crate::config::schema::ButtonAction::Clock {
+        draw_clock(&mut img, ap.text_color);
+        return img;
+    }
     let has_text = !ap.text.trim().is_empty();
     let (band_top, band_h) = icon_band(ap.text_position, has_text, height as f32);
     let center_x = width as f32 / 2.0;
@@ -526,6 +577,82 @@ mod tests {
         b: 0,
         a: 255,
     };
+
+    /// Linhas (y) da imagem com algum pixel claro (texto branco sobre o preto).
+    fn inked_rows(img: &RgbaImage) -> Vec<u32> {
+        (0..img.height())
+            .filter(|&y| (0..img.width()).any(|x| img.get_pixel(x, y)[0] > 128))
+            .collect()
+    }
+
+    fn labelled(text: &str, position: TextPosition) -> ButtonConfig {
+        let mut b = ButtonConfig::blank();
+        b.appearance.text = text.into();
+        b.appearance.text_position = position;
+        b
+    }
+
+    #[test]
+    fn the_label_goes_where_it_is_told() {
+        if font().is_none() {
+            return; // sem fonte do sistema (CI mínimo), não há texto a medir
+        }
+        let top = inked_rows(&render_rgba(&labelled("Oi", TextPosition::Top), 100, 100));
+        let bottom = inked_rows(&render_rgba(
+            &labelled("Oi", TextPosition::Bottom),
+            100,
+            100,
+        ));
+        let middle = inked_rows(&render_rgba(
+            &labelled("Oi", TextPosition::Middle),
+            100,
+            100,
+        ));
+        assert!(*top.last().unwrap() < 40, "{top:?}");
+        assert!(*bottom.first().unwrap() > 60, "{bottom:?}");
+        assert!(middle.first().unwrap() > top.first().unwrap());
+        assert!(middle.last().unwrap() < bottom.last().unwrap());
+    }
+
+    #[test]
+    fn a_label_with_two_lines_is_taller_than_one() {
+        if font().is_none() {
+            return;
+        }
+        let one = inked_rows(&render_rgba(
+            &labelled("Live", TextPosition::Middle),
+            100,
+            100,
+        ));
+        let two = inked_rows(&render_rgba(
+            &labelled("Live\nOBS", TextPosition::Middle),
+            100,
+            100,
+        ));
+        let span = |rows: &[u32]| rows.last().unwrap() - rows.first().unwrap();
+        assert!(
+            span(&two) > span(&one) + 8,
+            "{} vs {}",
+            span(&two),
+            span(&one)
+        );
+    }
+
+    #[test]
+    fn the_clock_shows_hour_minute_and_weekday() {
+        let at: jiff::Zoned = "2026-10-31T09:05:00-03:00[America/Sao_Paulo]"
+            .parse()
+            .unwrap();
+        crate::strings::set_language(crate::config::schema::Language::Pt);
+        assert_eq!(clock_text(&at), ("09:05".into(), "sáb 31/10".into()));
+    }
+
+    #[test]
+    fn a_library_icon_is_drawn_on_the_key() {
+        let mut b = ButtonConfig::blank();
+        b.appearance.icon = Some("lucide:mic".into());
+        assert!(!inked_rows(&render_rgba(&b, 100, 100)).is_empty());
+    }
 
     #[test]
     fn a_dark_icon_on_a_black_key_gets_a_light_plate() {

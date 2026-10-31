@@ -81,7 +81,15 @@ impl Executor {
             ButtonAction::Delay { ms } => {
                 tokio::time::sleep(std::time::Duration::from_millis(ms.min(MAX_DELAY_MS))).await;
             }
+            ButtonAction::RunCommand { command } => {
+                let spawned = tokio::task::spawn_blocking(move || run_command(&command)).await;
+                if let Ok(Err(e)) = spawned {
+                    log::error!("comando: {e}");
+                }
+            }
             ButtonAction::None
+            | ButtonAction::Brightness { .. }
+            | ButtonAction::Clock
             | ButtonAction::SwitchPage { .. }
             | ButtonAction::SwitchProfile { .. }
             | ButtonAction::NextPage
@@ -89,6 +97,35 @@ impl Executor {
             | ButtonAction::OpenMixer => {}
         }
     }
+}
+
+/// Maior linha de comando aceita (a config é editável à mão; um limite evita surpresas).
+pub const MAX_COMMAND_CHARS: usize = 4_000;
+
+/// Roda a linha no shell do sistema sem esperar terminar (um comando longo não trava as teclas).
+fn run_command(command: &str) -> Result<(), String> {
+    let command = command.trim();
+    if command.is_empty() {
+        return Err("comando vazio".into());
+    }
+    if command.chars().count() > MAX_COMMAND_CHARS {
+        return Err(format!("comando maior que {MAX_COMMAND_CHARS} caracteres"));
+    }
+    #[cfg(windows)]
+    let mut cmd = {
+        let mut cmd = std::process::Command::new("cmd");
+        cmd.args(["/C", command]);
+        cmd
+    };
+    #[cfg(not(windows))]
+    let mut cmd = {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args(["-c", command]);
+        cmd
+    };
+    spawn_detached(hide_console(&mut cmd))
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 /// Roda código bloqueante (teclado) fora das threads async e registra o erro, se houver.

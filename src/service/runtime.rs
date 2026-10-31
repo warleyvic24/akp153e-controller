@@ -12,6 +12,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 const MAX_KEYS: usize = 64;
+/// Brilho mínimo que uma tecla de brilho deixa (abaixo disso a tela parece desligada).
+pub const MIN_BRIGHTNESS: u8 = 5;
 const STATUS_POLL: Duration = Duration::from_secs(1);
 
 pub struct Shared {
@@ -214,6 +216,8 @@ pub struct Followup {
     snapshot: Option<Snapshot>,
     /// A ação pediu o mixer; guarda a tecla que o abriu, que vira "sair/mais".
     open_mixer: Option<usize>,
+    /// A ação mudou o brilho: vai ao aparelho e ao arquivo depois de soltar o lock.
+    brightness: Option<u8>,
 }
 
 impl Followup {
@@ -226,6 +230,11 @@ impl Followup {
         if let Some(nav) = &self.nav {
             persist(nav);
         }
+        if let Some(level) = self.brightness {
+            crate::usb::set_brightness(level);
+            let _ = tx.send(UsbCmd::Brightness(level));
+            persist_brightness(level);
+        }
         if let Some(snapshot) = &self.snapshot {
             snapshot.render(tx);
         }
@@ -237,6 +246,30 @@ impl Followup {
 /// apagaria uma edição do editor cujo "reload" ainda não chegou ao serviço.
 fn persist(nav: &Nav) {
     AppConfig::locked(|| persist_unlocked(nav));
+}
+
+/// Grava o brilho mudado por uma tecla, para o editor e o próximo início do serviço o verem.
+fn persist_brightness(level: u8) {
+    AppConfig::locked(|| {
+        let Some(mut disk) = AppConfig::load_existing() else {
+            return;
+        };
+        if disk.ui.brightness != level {
+            disk.ui.brightness = level;
+            if let Err(e) = disk.save() {
+                log::error!("salvar brilho: {e}");
+            }
+        }
+    });
+}
+
+/// Brilho depois de somar `delta`, entre o mínimo útil e o máximo do aparelho.
+pub fn stepped_brightness(current: u8, delta: i32) -> u8 {
+    let level = i32::from(current) + delta;
+    level.clamp(
+        i32::from(MIN_BRIGHTNESS),
+        i32::from(crate::usb::MAX_BRIGHTNESS),
+    ) as u8
 }
 
 fn persist_unlocked(nav: &Nav) {
@@ -315,6 +348,14 @@ fn dispatch(sh: &mut Shared, exec: &Executor, index: usize, action: ButtonAction
                 ..Followup::default()
             };
         }
+        ButtonAction::Brightness { delta } => {
+            let level = stepped_brightness(sh.cfg.ui.brightness, delta);
+            sh.cfg.ui.brightness = level;
+            return Followup {
+                brightness: Some(level),
+                ..Followup::default()
+            };
+        }
         other => {
             exec.run(other);
             return Followup::default();
@@ -324,6 +365,7 @@ fn dispatch(sh: &mut Shared, exec: &Executor, index: usize, action: ButtonAction
         nav: Nav::capture(sh),
         snapshot: Some(Snapshot::take(sh)),
         open_mixer: None,
+        brightness: None,
     }
 }
 
@@ -384,6 +426,56 @@ fn press(
     mixer_home
 }
 
+/// Folga depois da virada do minuto, para a hora lida já ser a nova.
+const CLOCK_SLACK: Duration = Duration::from_millis(50);
+
+/// Tempo até o próximo minuto cheio do relógio do sistema.
+fn until_next_minute() -> Duration {
+    let since_epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let into_minute = Duration::from_millis((since_epoch.as_millis() % 60_000) as u64);
+    Duration::from_secs(60).saturating_sub(into_minute) + CLOCK_SLACK
+}
+
+/// Teclas de relógio da página ativa (nenhuma com o mixer aberto, que ocupa as teclas).
+fn clock_keys(sh: &Shared) -> Vec<usize> {
+    if sh.mixer.is_some() {
+        return Vec::new();
+    }
+    sh.cfg
+        .page()
+        .buttons
+        .iter()
+        .enumerate()
+        .filter(|(_, b)| b.action == ButtonAction::Clock)
+        .map(|(i, _)| i)
+        .collect()
+}
+
+fn has_clock(state: &SharedState) -> bool {
+    !clock_keys(&lock(state)).is_empty()
+}
+
+/// Redesenha só as teclas de relógio, na ordem dos outros desenhos.
+fn redraw_clocks(state: &SharedState, tx: &Sender<UsbCmd>) {
+    let _order = DRAW_ORDER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let snapshot = {
+        let sh = lock(state);
+        let keys = clock_keys(&sh);
+        Snapshot {
+            frames: keys
+                .into_iter()
+                .map(|i| (i, Frame::Button(Box::new(sh.cfg.page().buttons[i].clone()))))
+                .collect(),
+            px: sh.icon_px,
+        }
+    };
+    snapshot.render(tx);
+}
+
 /// No editor: consulta o serviço a cada segundo para mostrar o estado do aparelho.
 pub fn spawn_status_poll(state: SharedState) {
     std::thread::spawn(move || loop {
@@ -429,9 +521,21 @@ pub fn spawn(state: SharedState, tx: Sender<UsbCmd>, rx: Receiver<UsbEvent>, exe
                 }
             } else {
                 hold = None;
-                match rx.recv() {
-                    Ok(event) => Some(event),
-                    Err(_) => break,
+                // Com relógio na página, acorda na virada do minuto para redesenhá-lo.
+                if has_clock(&state) {
+                    match rx.recv_timeout(until_next_minute()) {
+                        Ok(event) => Some(event),
+                        Err(RecvTimeoutError::Timeout) => {
+                            redraw_clocks(&state, &tx);
+                            None
+                        }
+                        Err(RecvTimeoutError::Disconnected) => break,
+                    }
+                } else {
+                    match rx.recv() {
+                        Ok(event) => Some(event),
+                        Err(_) => break,
+                    }
                 }
             };
             if mixer_open {

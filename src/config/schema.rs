@@ -86,6 +86,16 @@ pub enum ButtonAction {
     NextPage,
     /// Página anterior do perfil (antes da primeira vai à última).
     PreviousPage,
+    /// Roda uma linha de comando no shell do sistema (`sh -c` no Linux, `cmd /C` no Windows).
+    RunCommand {
+        command: String,
+    },
+    /// Muda o brilho do aparelho em `delta` pontos (de 5 a 100 %).
+    Brightness {
+        delta: i32,
+    },
+    /// Tecla viva: mostra a hora e a data, redesenhada a cada minuto. Tocar não faz nada.
+    Clock,
 }
 fn get() -> String {
     "GET".into()

@@ -27,6 +27,9 @@ pub(crate) fn action_problem(a: &ButtonAction, targets: &Targets) -> Option<&'st
         ButtonAction::Hotkey { keys } if !keys.iter().all(|k| engine::actions::is_valid_key(k)) => {
             Some("O atalho tem uma tecla desconhecida")
         }
+        ButtonAction::RunCommand { command } if command.trim().is_empty() => {
+            Some("Digite o comando que a tecla roda")
+        }
         ButtonAction::LaunchApp { path, .. } if path.trim().is_empty() => {
             Some("Escolha o programa que a tecla abre")
         }

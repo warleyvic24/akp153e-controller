@@ -131,12 +131,7 @@ pub fn icon_section(
     let ink = theme::ink(accent, pal);
     let query_id = egui::Id::new("icon-picker-query");
     let mut query: String = ui.data_mut(|d| d.get_temp(query_id).unwrap_or_default());
-    let field = ui
-        .add(
-            egui::TextEdit::singleline(&mut query)
-                .hint_text(widgets::hint("Buscar ícone (ex.: microfone, câmera)", pal))
-                .desired_width(ui.available_width()),
-        )
+    let field = widgets::search_field(ui, &mut query, "Buscar ícone (ex.: microfone, câmera)", pal)
         .labelled_by(label);
     if field.changed() {
         ui.data_mut(|d| d.insert_temp(query_id, query.clone()));
