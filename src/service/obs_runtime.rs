@@ -197,6 +197,10 @@ fn set_state(state: &SharedState, tx: &Sender<UsbCmd>, change: impl FnOnce(&mut 
         runtime::redraw_where(state, tx, |_, b| {
             matches!(b.action, ButtonAction::Obs { .. })
         });
+        // "Ao vivo" e "Gravando" aparecem na lateral automática.
+        if runtime::lock(state).cfg.page().side == crate::config::schema::SideScreen::NowPlaying {
+            runtime::redraw_side(state, tx);
+        }
     }
 }
 

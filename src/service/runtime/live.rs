@@ -53,6 +53,8 @@ pub(super) fn wants(sh: &Shared) -> Wants {
         .fold(Wants::default(), Wants::or);
     all.system |= page.side == SideScreen::System;
     all.playing |= page.side == SideScreen::NowPlaying;
+    // O mic mudo é um dos alertas da lateral automática.
+    all.mic |= page.side == SideScreen::NowPlaying;
     all
 }
 
@@ -109,7 +111,8 @@ pub fn spawn(state: SharedState, tx: Option<Sender<UsbCmd>>) {
                         )
                     };
                     if (diff.system && side == SideScreen::System)
-                        || ((diff.playing || progressed) && side == SideScreen::NowPlaying)
+                        || ((diff.playing || diff.mic || progressed)
+                            && side == SideScreen::NowPlaying)
                     {
                         redraw_side(&state, tx);
                     }

@@ -11,7 +11,7 @@ use eframe::egui::{self, Color32, CornerRadius, RichText, Sense, Stroke};
 
 const WINDOW_WIDTH: f32 = 380.0;
 const OFF_LABEL_ALPHA: f32 = 0.55;
-const NOW_PLAYING_HINT: &str = "Muda sozinha: a música enquanto toca; sem música, ou em pausa há mais de um minuto e meio, o relógio. Voltou a tocar, a música volta.";
+const NOW_PLAYING_HINT: &str = "Muda sozinha: a música enquanto toca; sem música, ou em pausa há mais de um minuto e meio, o relógio. No ar, gravando ou com o microfone mudo, um aviso vermelho aparece no alto.";
 
 /// Prévia da tela lateral, refeita só quando o conteúdo (ou o minuto, no relógio) muda.
 #[derive(Default)]
@@ -30,6 +30,10 @@ fn info(g: &runtime::Shared) -> SideInfo {
             g: gr,
             b,
             a: 255,
+        },
+        alerts: crate::graphics::side::SideAlerts {
+            mic_muted: g.live.mic_muted == Some(true),
+            ..Default::default()
         },
     }
 }

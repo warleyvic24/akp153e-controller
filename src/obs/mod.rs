@@ -130,7 +130,8 @@ impl ObsState {
     }
 }
 
-/// Alguma tecla (ou passo de multi-ação) de qualquer perfil usa o OBS?
+/// Alguma tecla (ou passo de multi-ação) de qualquer perfil usa o OBS? A lateral automática
+/// também conta: ela mostra "Ao vivo" e "Gravando".
 pub fn uses_obs(cfg: &AppConfig) -> bool {
     fn any_obs(a: &ButtonAction) -> bool {
         match a {
@@ -149,6 +150,11 @@ pub fn uses_obs(cfg: &AppConfig) -> bool {
                 .chain(b.toggled_action.as_ref())
         })
         .any(any_obs)
+        || cfg
+            .profiles
+            .iter()
+            .flat_map(|p| &p.pages)
+            .any(|pg| pg.side == crate::config::schema::SideScreen::NowPlaying)
 }
 
 /// Resposta da autenticação: base64(sha256(base64(sha256(senha + sal)) + desafio)).

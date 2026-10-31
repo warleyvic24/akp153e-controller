@@ -29,7 +29,26 @@ pub struct SideInfo {
     pub page_index: usize,
     pub page_count: usize,
     pub accent: RGBAColor,
+    pub alerts: SideAlerts,
 }
+
+/// O que é urgente e passa na frente de tudo no modo "Tocando agora": no ar, gravando, mic mudo.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SideAlerts {
+    pub live: bool,
+    pub recording: bool,
+    pub mic_muted: bool,
+}
+
+const ALERT_HEIGHT: u32 = 26;
+const ALERT_GAP: u32 = 2;
+const ALERT_TEXT_PX: f32 = 13.0;
+const ALERT_RED: RGBAColor = RGBAColor {
+    r: 200,
+    g: 30,
+    b: 40,
+    a: 255,
+};
 
 const WHITE: RGBAColor = RGBAColor {
     r: 255,
@@ -58,10 +77,13 @@ pub fn render(side: &SideScreen, info: &SideInfo, live: &Live) -> Option<RgbaIma
         SideScreen::Clock => clock(&mut img),
         SideScreen::System => super::live_art::side_system(&mut img, live.system, MUTED),
         // Inteligente: a música enquanto toca (ou pausou há pouco); fora isso, o relógio.
-        SideScreen::NowPlaying => match live.playing.as_ref().filter(|p| p.worth_showing()) {
-            Some(p) => super::live_art::side_now_playing(&mut img, Some(p), MUTED),
-            None => clock(&mut img),
-        },
+        SideScreen::NowPlaying => {
+            match live.playing.as_ref().filter(|p| p.worth_showing()) {
+                Some(p) => super::live_art::side_now_playing(&mut img, Some(p), MUTED),
+                None => clock(&mut img),
+            }
+            alerts(&mut img, info.alerts);
+        }
         SideScreen::Image { path } => {
             if let Ok(picture) = image::open(path) {
                 let filled = picture
@@ -111,6 +133,35 @@ fn page_name(img: &mut RgbaImage, info: &SideInfo) {
             MUTED
         };
         dot(img, WIDTH as f32 / 2.0, y, DOT_RADIUS, color);
+    }
+}
+
+/// Faixas vermelhas no alto, por cima do resto: o que não pode passar despercebido numa live.
+fn alerts(img: &mut RgbaImage, a: SideAlerts) {
+    let Some(bold) = bold_font() else { return };
+    let labels = [
+        (a.live, "AO VIVO"),
+        (a.recording, "GRAVANDO"),
+        (a.mic_muted, "MIC MUDO"),
+    ];
+    let mut top = 0;
+    for (_, label) in labels.iter().filter(|(on, _)| *on) {
+        let band = RgbaImage::from_pixel(
+            WIDTH,
+            ALERT_HEIGHT,
+            Rgba([ALERT_RED.r, ALERT_RED.g, ALERT_RED.b, 255]),
+        );
+        imageops::overlay(img, &band, 0, i64::from(top));
+        let text_top = top as f32 + (ALERT_HEIGHT as f32 - ALERT_TEXT_PX) / 2.0 - 2.0;
+        draw_line(
+            img,
+            bold,
+            crate::strings::t(label),
+            (ALERT_TEXT_PX, MIN_TEXT_PX),
+            WHITE,
+            text_top,
+        );
+        top += ALERT_HEIGHT + ALERT_GAP;
     }
 }
 
@@ -165,6 +216,7 @@ mod tests {
                 b: 255,
                 a: 255,
             },
+            alerts: SideAlerts::default(),
         }
     }
 
@@ -274,11 +326,44 @@ mod tests {
         assert!(at(Some((5, 60))) > at(None));
     }
 
+    #[test]
+    fn alerts_go_on_top_in_red_only_when_something_is_on() {
+        let mut with = info();
+        let quiet = render(&SideScreen::NowPlaying, &with, &Live::default()).unwrap();
+        with.alerts = SideAlerts {
+            live: true,
+            recording: false,
+            mic_muted: true,
+        };
+        let loud = render(&SideScreen::NowPlaying, &with, &Live::default()).unwrap();
+        let top = |img: &RgbaImage| *img.get_pixel(1, 1);
+        assert_eq!(top(&loud)[0], ALERT_RED.r, "faixa vermelha no alto");
+        assert_ne!(top(&quiet), top(&loud));
+        // A segunda faixa (mic mudo) vem logo abaixo da primeira.
+        assert_eq!(
+            loud.get_pixel(1, ALERT_HEIGHT + ALERT_GAP + 1)[0],
+            ALERT_RED.r
+        );
+        // Nos outros modos, nada de alerta.
+        let clock = render(&SideScreen::Clock, &with, &Live::default()).unwrap();
+        assert_ne!(top(&clock)[0], ALERT_RED.r);
+    }
+
     /// Grava a faixa de cada modo em PNG para olhar: `AKP_SIDE_OUT=/pasta cargo test side_previews -- --ignored`.
     #[test]
     #[ignore = "gera arquivos para inspeção visual"]
     fn side_previews() {
         let dir = std::path::PathBuf::from(std::env::var("AKP_SIDE_OUT").unwrap());
+        let mut loud = info();
+        loud.alerts = SideAlerts {
+            live: true,
+            recording: true,
+            mic_muted: true,
+        };
+        render(&SideScreen::NowPlaying, &loud, &Live::default())
+            .unwrap()
+            .save(dir.join("alertas.png"))
+            .unwrap();
         for (name, mode) in [
             ("pagina", SideScreen::PageName),
             ("relogio", SideScreen::Clock),
@@ -346,6 +431,7 @@ mod tests {
                 b: 255,
                 a: 255,
             },
+            alerts: SideAlerts::default(),
         };
         let mode = match &page.side {
             SideScreen::Off => SideScreen::PageName,

@@ -91,6 +91,11 @@ fn side_of(sh: &Shared) -> (SideScreen, SideInfo) {
         page_index,
         page_count: profile.pages.len(),
         accent: RGBAColor { r, g, b, a: 255 },
+        alerts: crate::graphics::side::SideAlerts {
+            live: sh.obs.streaming,
+            recording: sh.obs.recording,
+            mic_muted: sh.live.mic_muted == Some(true),
+        },
     };
     (sh.cfg.page().side.clone(), info)
 }
@@ -511,7 +516,7 @@ pub fn redraw_where(
 }
 
 /// Redesenha só a tela lateral (relógio dela na virada do minuto).
-fn redraw_side(state: &SharedState, tx: &Sender<UsbCmd>) {
+pub(super) fn redraw_side(state: &SharedState, tx: &Sender<UsbCmd>) {
     let _order = DRAW_ORDER
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
