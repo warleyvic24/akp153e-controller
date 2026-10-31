@@ -44,6 +44,8 @@ pub(crate) enum Dragged {
 struct DeviceEvents {
     dropped: Option<(usize, usize)>,
     swapped: Option<(usize, usize)>,
+    /// Tecla sob o ponteiro (para onde vai um arquivo de imagem solto na janela).
+    under_pointer: Option<usize>,
 }
 
 /// Lado da tecla que cabe no espaço livre (entre `KEY_MIN` e `KEY_MAX`).
@@ -83,6 +85,20 @@ fn key_widget_info(
         name = format!("{name}. {}", t(problem));
     }
     egui::WidgetInfo::selected(egui::WidgetType::Button, true, selected, name)
+}
+
+/// Dica ao apontar uma tecla configurada: o nome e o que ela faz (teclas só com ícone não dizem).
+fn key_tooltip(b: &ButtonConfig, targets: &Targets) -> Option<String> {
+    if is_blank(b) {
+        return None;
+    }
+    let name = super::inspector::key_title(b);
+    let what = super::summary::action_summary(&b.action, targets);
+    match (name, what) {
+        (Some(name), Some(what)) if name != what => Some(format!("{name}\n{what}")),
+        (Some(one), _) | (None, Some(one)) => Some(one),
+        (None, None) => None,
+    }
 }
 
 /// Corpo do aparelho: moldura, tela, aro interno e o LED de conexão.
@@ -195,6 +211,7 @@ impl App {
                     })
                 });
         });
+        self.apply_dropped_files(ctx, g, events.under_pointer);
         self.apply_device_events(g, events);
     }
 
@@ -283,14 +300,25 @@ impl App {
             if resp.drag_started() && !is_blank(button) {
                 egui::DragAndDrop::set_payload(ctx, Dragged::Key(i));
             }
-            let drop_target = resp.dnd_hover_payload::<Dragged>().is_some();
+            let file_over = ctx.input(|inp| !inp.raw.hovered_files.is_empty())
+                && ctx
+                    .input(|inp| inp.pointer.hover_pos())
+                    .is_some_and(|p| kr.contains(p));
+            if ctx
+                .input(|inp| inp.pointer.hover_pos())
+                .is_some_and(|p| kr.contains(p))
+            {
+                events.under_pointer = Some(i);
+            }
+            let drop_target = resp.dnd_hover_payload::<Dragged>().is_some() || file_over;
             let tex = self.key_tex.get(ctx, i, button, g.icon_px);
-            let view = key_view(button, i + 1, tex, problem.is_some());
+            let view = key_view(button, Some(i + 1), tex, problem.is_some());
             let hot = resp.hovered() || drop_target;
             widgets::paint_key(&painter, kr, &view, hot, i == self.selected, pal, accent);
-            let resp = match problem {
-                Some(problem) => resp.on_hover_text(t(problem)),
-                None => resp,
+            let resp = match (problem, key_tooltip(button, &targets)) {
+                (Some(problem), _) => resp.on_hover_text(t(problem)),
+                (None, Some(tip)) => resp.on_hover_text(tip),
+                (None, None) => resp,
             };
             if resp.clicked() {
                 self.selected = i;
@@ -306,6 +334,41 @@ impl App {
             }
         }
         events
+    }
+
+    /// Arquivo de imagem solto na janela: vira a imagem da tecla sob o ponteiro (ou a selecionada,
+    /// quando o sistema não informa onde o arquivo caiu).
+    fn apply_dropped_files(
+        &mut self,
+        ctx: &egui::Context,
+        g: &mut runtime::Shared,
+        under: Option<usize>,
+    ) {
+        let files: Vec<std::path::PathBuf> = ctx.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .filter_map(|f| f.path.clone())
+                .collect()
+        });
+        let Some(path) = files.first() else {
+            return;
+        };
+        let target = under.unwrap_or(self.selected);
+        let Some(image) = super::panes::import_image(path) else {
+            self.toasts
+                .push(t("Solte uma imagem PNG, JPG, SVG ou ICO"), None);
+            return;
+        };
+        let Some(b) = g.cfg.page_mut().buttons.get_mut(target) else {
+            return;
+        };
+        b.appearance.icon_path = Some(image);
+        b.appearance.icon = None;
+        self.selected = target;
+        self.touch();
+        self.toasts
+            .push(tf("Imagem na tecla {}", &[&(target + 1)]), Some("Desfazer"));
     }
 
     fn apply_device_events(&mut self, g: &mut runtime::Shared, events: DeviceEvents) {

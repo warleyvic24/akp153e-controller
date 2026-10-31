@@ -4,6 +4,7 @@ mod bars;
 mod checks;
 mod favicon;
 mod history;
+mod icon_picker;
 mod inspector;
 mod layout;
 mod library;
@@ -97,6 +98,31 @@ impl App {
             rename: None,
             library_open: false,
         }
+        .with_preview_state()
+    }
+
+    /// Só em debug: `AKP153E_PREVIEW_UI=key=5,tab=1,settings,picker,library` abre o editor já
+    /// numa tela, para conferir (e fotografar) cada uma sem clicar. O release ignora.
+    fn with_preview_state(mut self) -> Self {
+        if !cfg!(debug_assertions) {
+            return self;
+        }
+        let Ok(spec) = std::env::var("AKP153E_PREVIEW_UI") else {
+            return self;
+        };
+        for item in spec.split(',').map(str::trim) {
+            match item.split_once('=') {
+                Some(("key", n)) => {
+                    self.selected = n.parse::<usize>().unwrap_or(1).saturating_sub(1)
+                }
+                Some(("tab", n)) => self.tab = n.parse().unwrap_or(0),
+                _ if item == "settings" => self.settings_open = true,
+                _ if item == "picker" => self.picker.show(),
+                _ if item == "library" => self.library_open = true,
+                _ => {}
+            }
+        }
+        self
     }
 
     /// Marca uma edição de conteúdo: grava, avisa o serviço e entra no histórico de desfazer.
@@ -298,7 +324,7 @@ fn is_blank(b: &ButtonConfig) -> bool {
 
 fn key_view(
     b: &ButtonConfig,
-    number: usize,
+    number: Option<usize>,
     tex: Option<egui::TextureId>,
     problem: bool,
 ) -> widgets::KeyView<'_> {

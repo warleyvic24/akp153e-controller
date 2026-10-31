@@ -75,7 +75,7 @@ fn preview(text: &str) -> String {
 }
 
 /// "ctrl", "shift", "m" vira "Ctrl + Shift + M".
-fn chord(keys: &[String]) -> String {
+pub(crate) fn chord(keys: &[String]) -> String {
     keys.iter()
         .map(|k| {
             let mut chars = k.chars();

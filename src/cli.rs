@@ -65,10 +65,14 @@ pub(crate) fn run_action_cli(json: Option<&String>) {
 
 /// Editor: janela comum, sem hardware próprio; conversa com o serviço pela rede local.
 pub(crate) fn run_editor() -> eframe::Result {
-    let Some(_editor_lock) = shell::acquire_editor_lock() else {
+    // Só em debug, com `AKP153E_CONFIG_DIR`: um segundo editor sobre a cópia da config pode abrir ao
+    // lado do editor real (para conferir a interface), porque não grava no mesmo arquivo.
+    let preview_copy = cfg!(debug_assertions) && std::env::var_os("AKP153E_CONFIG_DIR").is_some();
+    let editor_lock = shell::acquire_editor_lock();
+    if editor_lock.is_none() && !preview_copy {
         shell::show_window();
         return Ok(());
-    };
+    }
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
         .enable_all()

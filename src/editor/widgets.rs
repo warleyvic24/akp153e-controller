@@ -40,7 +40,8 @@ const GLOW_LAYERS: [(f32, f32, f32); 3] = [(7.0, 5.0, 0.10), (4.5, 3.5, 0.22), (
 
 /// O que uma tecla do aparelho mostra (fundo, ícone vetorial e rótulo).
 pub struct KeyView<'a> {
-    pub number: usize,
+    /// Número da tecla no aparelho; `None` na miniatura do inspetor (o título já diz qual é).
+    pub number: Option<usize>,
     pub bg: Color32,
     pub icon: Option<&'a str>,
     pub label: &'a str,
@@ -115,11 +116,13 @@ pub fn paint_key(
     } else {
         paint_plain_key(p, rect, k, hovered);
     }
-    if rect.width() >= KEY_NUMBER_MIN_WIDTH {
+    // Numa tecla configurada o número cobriria o ícone: só aparece ao apontar ou selecionar.
+    let number = k.number.filter(|_| k.off || hovered || selected);
+    if let Some(number) = number.filter(|_| rect.width() >= KEY_NUMBER_MIN_WIDTH) {
         p.text(
             rect.min + KEY_NUMBER_OFFSET,
             Align2::LEFT_TOP,
-            k.number,
+            number,
             FontId::monospace(text::CAPTION),
             Color32::from_white_alpha(KEY_NUMBER_ALPHA),
         );

@@ -117,13 +117,25 @@ pub fn presets() -> Vec<Preset> {
         p("Mídia", "Vol +", "volup", MEDIA, media("volup")),
         p("Mídia", "Vol -", "voldown", MEDIA, media("voldown")),
         p("Mídia", "Mudo", "mute", MEDIA, media("mute")),
-        p("Mídia", "Mixer", "volup", MEDIA, ButtonAction::OpenMixer),
+        p("Mídia", "Mixer", "mixer", MEDIA, ButtonAction::OpenMixer),
         p("Atalhos", "Copiar", "copy", KEYS, hotkey(&["ctrl", "c"])),
         p("Atalhos", "Colar", "paste", KEYS, hotkey(&["ctrl", "v"])),
-        p("Atalhos", "Recortar", "bolt", KEYS, hotkey(&["ctrl", "x"])),
-        p("Atalhos", "Desfazer", "bolt", KEYS, hotkey(&["ctrl", "z"])),
-        p("Atalhos", "Salvar", "bolt", KEYS, hotkey(&["ctrl", "s"])),
-        p("Atalhos", "Captura", "bolt", KEYS, screenshot()),
+        p(
+            "Atalhos",
+            "Recortar",
+            "lucide:scissors",
+            KEYS,
+            hotkey(&["ctrl", "x"]),
+        ),
+        p("Atalhos", "Desfazer", "undo", KEYS, hotkey(&["ctrl", "z"])),
+        p(
+            "Atalhos",
+            "Salvar",
+            "lucide:save",
+            KEYS,
+            hotkey(&["ctrl", "s"]),
+        ),
+        p("Atalhos", "Captura", "lucide:camera", KEYS, screenshot()),
         p(
             "Atalhos",
             "Área de trabalho",
@@ -146,7 +158,7 @@ pub fn presets() -> Vec<Preset> {
         p(
             "Web",
             "Webhook",
-            "bolt",
+            "lucide:webhook",
             WEB,
             ButtonAction::HttpWebhook {
                 url: String::new(),
@@ -235,12 +247,9 @@ mod tests {
     #[test]
     fn every_preset_uses_a_known_icon() {
         for p in presets() {
-            assert!(
-                !crate::graphics::icons::strokes(p.icon).is_empty(),
-                "{}: ícone {} desconhecido",
-                p.label,
-                p.icon
-            );
+            let known = !crate::graphics::icons::strokes(p.icon).is_empty()
+                || crate::graphics::icon_library::find(p.icon).is_some();
+            assert!(known, "{}: ícone {} desconhecido", p.label, p.icon);
         }
     }
 

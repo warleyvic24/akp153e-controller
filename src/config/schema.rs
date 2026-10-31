@@ -18,9 +18,26 @@ pub struct ButtonAppearance {
     pub font: String,
     pub font_size: f32,
     pub icon_path: Option<String>,
-    /// Ícone vetorial embutido (ver `icons.rs`); tem prioridade sobre `icon_path`.
+    /// Ícone vetorial: embutido (ver `icons.rs`) ou da biblioteca (`lucide:nome`); tem
+    /// prioridade sobre `icon_path`.
     #[serde(default)]
     pub icon: Option<String>,
+    /// Onde fica o rótulo. Ausente em configs antigas: `Auto` (embaixo do ícone, ou no meio).
+    #[serde(default)]
+    pub text_position: TextPosition,
+}
+
+/// Posição do rótulo na tecla; o ícone ocupa o espaço que sobra.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TextPosition {
+    /// Embaixo quando há ícone; no meio quando é só texto.
+    #[default]
+    Auto,
+    Top,
+    /// No meio, por cima do ícone.
+    Middle,
+    Bottom,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -126,6 +143,7 @@ impl ButtonConfig {
                 font_size: 14.0,
                 icon_path: None,
                 icon: None,
+                text_position: TextPosition::Auto,
             },
             action: ButtonAction::None,
             long_press_action: None,

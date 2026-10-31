@@ -72,7 +72,14 @@ fn library_row(
     );
     let badge_fill = if hot { pal.panel } else { pal.raise };
     painter.rect_filled(badge, Rounding::same(radius::CONTROL - 1.0), badge_fill);
-    widgets::paint_icon(painter, badge.center(), BADGE_ICON, p.icon, pal.fg);
+    super::icon_picker::paint_any(
+        painter,
+        ui.ctx(),
+        badge.center(),
+        BADGE_ICON,
+        p.icon,
+        pal.fg,
+    );
     painter.text(
         pos2(badge.right() + space::MD, rect.center().y),
         egui::Align2::LEFT_CENTER,

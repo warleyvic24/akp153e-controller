@@ -1,4 +1,5 @@
-use crate::config::schema::{ButtonConfig, RGBAColor};
+use crate::config::schema::{ButtonConfig, RGBAColor, TextPosition};
+use crate::graphics::icon_library;
 use ab_glyph::{point, Font, FontArc, PxScale, ScaleFont};
 use image::{imageops, Rgba, RgbaImage};
 use std::sync::OnceLock;
@@ -49,6 +50,17 @@ fn font_dirs() -> Vec<std::path::PathBuf> {
 }
 
 const MIN_FONT_PX: f32 = 6.0;
+/// Linhas que cabem numa tecla de 100 px com fonte legível.
+const MAX_TEXT_LINES: usize = 3;
+/// Folga entre o rótulo e a borda da tecla (topo ou base).
+const TEXT_EDGE: f32 = 2.0;
+/// Sombra do texto sobre ícone ou imagem.
+const SHADOW: RGBAColor = RGBAColor {
+    r: 0,
+    g: 0,
+    b: 0,
+    a: 200,
+};
 const JPEG_QUALITY: u8 = 90;
 const ICON_STEP_PX: f32 = 0.35;
 
@@ -103,23 +115,54 @@ pub(super) fn text_width(font: &FontArc, scale: PxScale, text: &str) -> f32 {
     text.chars().map(|c| s.h_advance(s.glyph_id(c))).sum()
 }
 
-fn draw_text(img: &mut RgbaImage, text: &str, size: f32, color: RGBAColor, bottom_aligned: bool) {
+/// Rótulo da tecla: até `MAX_TEXT_LINES` linhas (quebra com Enter), cada uma centrada e encolhida
+/// junto com as outras até a mais larga caber; o bloco vai ao topo, ao meio ou embaixo.
+fn draw_text(
+    img: &mut RgbaImage,
+    text: &str,
+    size: f32,
+    color: RGBAColor,
+    place: TextPosition,
+    shadow: bool,
+) {
     let Some(font) = font() else { return };
     let (w, h) = img.dimensions();
+    let lines: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .take(MAX_TEXT_LINES)
+        .collect();
+    if lines.is_empty() {
+        return;
+    }
+    let widest = |px: f32| {
+        lines
+            .iter()
+            .map(|l| text_width(font, PxScale::from(px), l))
+            .fold(0.0_f32, f32::max)
+    };
     let mut px = size.max(MIN_FONT_PX);
-    while px > MIN_FONT_PX && text_width(font, PxScale::from(px), text) > w as f32 - 4.0 {
+    while px > MIN_FONT_PX && widest(px) > w as f32 - 4.0 {
         px -= 1.0;
     }
     let scale = PxScale::from(px);
     let scaled = font.as_scaled(scale);
-    let x0 = (w as f32 - text_width(font, scale, text)) / 2.0;
     let line_h = scaled.ascent() - scaled.descent();
-    let top = if bottom_aligned {
-        h as f32 - line_h - 2.0
-    } else {
-        (h as f32 - line_h) / 2.0
+    let block_h = line_h * lines.len() as f32;
+    let top = match place {
+        TextPosition::Top => TEXT_EDGE,
+        TextPosition::Bottom => h as f32 - block_h - TEXT_EDGE,
+        _ => (h as f32 - block_h) / 2.0,
     };
-    draw_glyphs(img, font, scale, text, (x0, top + scaled.ascent()), color);
+    for (i, line) in lines.iter().enumerate() {
+        let x0 = (w as f32 - text_width(font, scale, line)) / 2.0;
+        let baseline = top + line_h * i as f32 + scaled.ascent();
+        if shadow {
+            draw_glyphs(img, font, scale, line, (x0 + 1.0, baseline + 1.0), SHADOW);
+        }
+        draw_glyphs(img, font, scale, line, (x0, baseline), color);
+    }
 }
 
 /// Uma linha de `text` centrada na horizontal com o topo em `top`; encolhe (até `min_px`) para caber
@@ -237,50 +280,84 @@ pub(super) fn draw_icon(
     }
 }
 
+/// Fração da altura da tecla que o ícone ocupa quando divide o espaço com o rótulo.
+const ICON_SHARE_WITH_TEXT: f32 = 0.68;
+/// Lado do ícone vetorial em relação à faixa reservada para ele.
+const VECTOR_ICON_FILL: f32 = 0.62;
+/// Lado da imagem (PNG/JPG) em relação à faixa reservada para ela.
+const IMAGE_ICON_FILL: f32 = 0.8;
+
+/// Faixa vertical (topo, altura) reservada ao ícone, conforme a posição do rótulo.
+fn icon_band(position: TextPosition, has_text: bool, height: f32) -> (f32, f32) {
+    if !has_text || position == TextPosition::Middle {
+        return (0.0, height);
+    }
+    let band = height * ICON_SHARE_WITH_TEXT;
+    match position {
+        TextPosition::Top => (height - band, band),
+        _ => (0.0, band),
+    }
+}
+
+/// Posição efetiva do rótulo: `Auto` vira embaixo com ícone e meio sem ele.
+fn text_place(position: TextPosition, has_icon: bool) -> TextPosition {
+    match position {
+        TextPosition::Auto if has_icon => TextPosition::Bottom,
+        TextPosition::Auto => TextPosition::Middle,
+        other => other,
+    }
+}
+
 /// Renderiza o botão em RGBA (usado na prévia da UI e como base do frame de hardware).
 pub fn render_rgba(button: &ButtonConfig, width: u32, height: u32) -> RgbaImage {
     let ap = button.current_appearance();
     let bg = ap.background;
     let mut img = RgbaImage::from_pixel(width, height, Rgba([bg.r, bg.g, bg.b, 255]));
-    let mut has_icon = false;
+    let has_text = !ap.text.trim().is_empty();
+    let (band_top, band_h) = icon_band(ap.text_position, has_text, height as f32);
+    let center_x = width as f32 / 2.0;
+    let center_y = band_top + band_h / 2.0 + 1.0;
+    let vector_size = (band_h * VECTOR_ICON_FILL).min(width as f32 * VECTOR_ICON_FILL);
 
     let builtin = ap
         .icon
         .as_deref()
         .filter(|n| !crate::graphics::icons::strokes(n).is_empty());
-    if let Some(name) = builtin {
-        let box_h = if ap.text.is_empty() {
-            height as f32
-        } else {
-            height as f32 * 0.68
-        };
-        let size = (box_h * 0.62).min(width as f32 * 0.62);
+    let library = ap
+        .icon
+        .as_deref()
+        .filter(|id| id.starts_with(icon_library::PREFIX));
+    let mut has_icon = false;
+    if let Some(id) = library {
+        let size = vector_size.round() as u32;
+        if let Some(icon) = icon_library::render(id, size, ap.text_color) {
+            let x = (center_x - size as f32 / 2.0).round() as i64;
+            let y = (center_y - size as f32 / 2.0).round() as i64;
+            imageops::overlay(&mut img, &icon, x, y);
+            has_icon = true;
+        }
+    } else if let Some(name) = builtin {
         draw_icon(
             &mut img,
             name,
-            width as f32 / 2.0,
-            box_h / 2.0 + 1.0,
-            size,
+            center_x,
+            center_y,
+            vector_size,
             ap.text_color,
         );
         has_icon = true;
     } else if let Some(path) = ap.icon_path.as_deref().filter(|p| !p.is_empty()) {
         match image::open(path) {
             Ok(icon) => {
-                let box_h = if ap.text.is_empty() {
-                    height
-                } else {
-                    height * 7 / 10
-                };
                 let icon = icon
                     .resize(
-                        width * 8 / 10,
-                        box_h * 8 / 10,
+                        (width as f32 * IMAGE_ICON_FILL) as u32,
+                        (band_h * IMAGE_ICON_FILL) as u32,
                         imageops::FilterType::Triangle,
                     )
                     .to_rgba8();
-                let x = (width.saturating_sub(icon.width()) / 2) as i64;
-                let y = (box_h.saturating_sub(icon.height()) / 2) as i64;
+                let x = (center_x - icon.width() as f32 / 2.0).round() as i64;
+                let y = (band_top + (band_h - icon.height() as f32) / 2.0).round() as i64;
                 if let Some(plate) = plate_for(&icon, bg) {
                     let pad = (icon.width().max(icon.height()) as f32 * PLATE_PAD) as i64;
                     let (w, h) = (
@@ -295,8 +372,18 @@ pub fn render_rgba(button: &ButtonConfig, width: u32, height: u32) -> RgbaImage 
             Err(e) => log::warn!("ícone inválido {path}: {e}"),
         }
     }
-    if !ap.text.is_empty() {
-        draw_text(&mut img, &ap.text, ap.font_size, ap.text_color, has_icon);
+    if has_text {
+        let place = text_place(ap.text_position, has_icon);
+        // Texto por cima de ícone ou imagem ganha sombra para continuar legível.
+        let shadow = has_icon && place == TextPosition::Middle;
+        draw_text(
+            &mut img,
+            &ap.text,
+            ap.font_size,
+            ap.text_color,
+            place,
+            shadow,
+        );
     }
     img
 }

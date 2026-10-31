@@ -4,15 +4,9 @@ use crate::config::schema::*;
 use crate::editor::action_ui::{action_editor, PaneCtx};
 use crate::editor::picker::{app_buttons, AppPicker};
 use crate::editor::theme::Palette;
-use crate::graphics::icons;
 use crate::strings::t;
-use eframe::egui::{self, vec2, Color32, Rounding, Sense, Stroke};
-const IMAGE_FIELD_RESERVED: f32 = 172.0;
+use eframe::egui::{self, vec2, Color32};
 const SWATCH_SIZE: f32 = 26.0;
-const ICON_GAP: f32 = 6.0;
-const ICON_CELL: f32 = 40.0;
-const ICON_GLYPH: f32 = 20.0;
-const NO_ICON_FONT: f32 = 16.0;
 const SWATCH_RADIUS: f32 = 8.0;
 const SWATCH_GAP: f32 = 8.0;
 const SLIDER_VALUE_RESERVED: f32 = 72.0; // caixa numérica à direita do slider
@@ -24,11 +18,28 @@ fn fill_slider_width(ui: &mut egui::Ui) {
         (ui.available_width() - SLIDER_VALUE_RESERVED).max(SLIDER_MIN_WIDTH);
 }
 
+/// Extensões de imagem aceitas para a tecla. PNG e JPG são usados como estão; SVG e ICO viram PNG
+/// na pasta de ícones (o desenho da tecla só lê PNG e JPG).
+pub(crate) const IMAGE_EXTENSIONS: [&str; 5] = ["png", "jpg", "jpeg", "svg", "ico"];
+
 fn pick_icon() -> Option<String> {
     rfd::FileDialog::new()
-        .add_filter(t("Imagem (PNG, JPG)"), &["png", "jpg", "jpeg"])
+        .add_filter(t("Imagem (PNG, JPG, SVG, ICO)"), &IMAGE_EXTENSIONS)
         .pick_file()
-        .map(|p| p.display().to_string())
+        .and_then(|p| import_image(&p))
+}
+
+/// Caminho da imagem a gravar na tecla, convertendo SVG e ICO para PNG; `None` se não for imagem.
+pub(crate) fn import_image(path: &std::path::Path) -> Option<String> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    if !IMAGE_EXTENSIONS.contains(&ext.as_str()) {
+        return None;
+    }
+    if matches!(ext.as_str(), "png" | "jpg" | "jpeg") {
+        return Some(path.display().to_string());
+    }
+    let bytes = std::fs::read(path).ok()?;
+    crate::platform::save_icon(&path.display().to_string(), &bytes)
 }
 
 /// Aparência inicial do estado "ligado": a mesma, com o fundo mais claro.
@@ -55,17 +66,44 @@ fn color_picker(ui: &mut egui::Ui, label: &str, c: &mut RGBAColor) -> bool {
     changed
 }
 
+/// Rótulo (até 3 linhas, Enter quebra) e onde ele fica na tecla.
 fn label_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette) -> bool {
     let mut changed = false;
     let label = widgets::section(ui, "Rótulo", pal);
     changed |= ui
         .add(
-            egui::TextEdit::singleline(&mut b.appearance.text)
-                .hint_text(widgets::hint("Texto na tecla (ex.: Mudo)", pal))
+            egui::TextEdit::multiline(&mut b.appearance.text)
+                .hint_text(widgets::hint(
+                    "Texto na tecla (ex.: Mudo). Enter quebra a linha",
+                    pal,
+                ))
+                .desired_rows(1)
                 .desired_width(ui.available_width()),
         )
         .labelled_by(label)
         .changed();
+    let positions = [
+        (TextPosition::Top, "Topo"),
+        (TextPosition::Middle, "Meio"),
+        (TextPosition::Bottom, "Base"),
+    ];
+    // `Auto` aparece como a posição que ele produz (base com ícone, meio sem).
+    let has_icon = b.appearance.icon.is_some() || b.appearance.icon_path.is_some();
+    let shown = match b.appearance.text_position {
+        TextPosition::Auto if has_icon => TextPosition::Bottom,
+        TextPosition::Auto => TextPosition::Middle,
+        other => other,
+    };
+    let width =
+        (ui.available_width() - 6.0 - 2.0 * (positions.len() - 1) as f32) / positions.len() as f32;
+    widgets::segmented(ui, pal, |ui| {
+        for (position, name) in positions {
+            if widgets::segment(ui, name, shown == position, width, pal).clicked() {
+                b.appearance.text_position = position;
+                changed = true;
+            }
+        }
+    });
     changed
 }
 
@@ -106,99 +144,51 @@ fn color_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette) -> bool
     changed
 }
 
-/// Uma célula da grade de ícones. `id` vazio é "sem ícone".
-fn icon_cell(
-    ui: &mut egui::Ui,
-    (id, name): (&str, &str),
-    on: bool,
-    pal: &Palette,
-    ink: Color32,
-) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(vec2(ICON_CELL, ICON_CELL), Sense::click());
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, t(name)));
-    let p = ui.painter();
-    let round = Rounding::same(crate::editor::tokens::radius::CONTROL);
-    p.rect_filled(rect, round, pal.field);
-    let width = if on { 2.0_f32 } else { 1.0_f32 };
-    let border = if on { ink } else { pal.control };
-    p.rect_stroke(rect, round, Stroke::new(width, border));
-    if id.is_empty() {
-        let font = egui::FontId::monospace(NO_ICON_FONT);
-        p.text(
-            rect.center(),
-            egui::Align2::CENTER_CENTER,
-            "–",
-            font,
-            pal.muted,
-        );
-    } else {
-        let color = if on { ink } else { pal.fg };
-        widgets::paint_icon(p, rect.center(), ICON_GLYPH, id, color);
-    }
-    resp.on_hover_text(t(name))
-}
-
-fn icon_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette, accent: Color32) -> bool {
-    let mut changed = false;
-    widgets::section(ui, "Ícone", pal);
-    let ink = crate::editor::theme::ink(accent, pal);
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = vec2(ICON_GAP, ICON_GAP);
-        let none_on = b.appearance.icon.is_none();
-        let options = std::iter::once(("", "Sem ícone")).chain(icons::ICONS);
-        for (id, name) in options {
-            let on = if id.is_empty() {
-                none_on
-            } else {
-                b.appearance.icon.as_deref() == Some(id)
-            };
-            if icon_cell(ui, (id, name), on, pal, ink).clicked() {
-                b.appearance.icon = (!id.is_empty()).then(|| id.to_string());
-                if !id.is_empty() {
-                    b.appearance.icon_path = None;
-                }
-                changed = true;
-            }
-        }
-    });
-    changed
-}
-
 fn image_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette) -> bool {
     let mut changed = false;
-    let image_label = widgets::section(ui, "Imagem (PNG ou JPG)", pal);
-    let mut path = b.appearance.icon_path.clone().unwrap_or_default();
+    widgets::section(ui, "Imagem", pal);
+    let path = b.appearance.icon_path.clone().unwrap_or_default();
     ui.horizontal(|ui| {
-        let mut edited = ui
-            .add(
-                egui::TextEdit::singleline(&mut path)
-                    .desired_width((ui.available_width() - IMAGE_FIELD_RESERVED).max(60.0)),
-            )
-            .labelled_by(image_label)
-            .changed();
-        if ui.button(t("Escolher")).clicked() {
-            if let Some(p) = pick_icon() {
-                path = p;
-                edited = true;
+        // O nome do arquivo, não o caminho inteiro (que fica na dica): o campo cabe no painel.
+        let shown = std::path::Path::new(&path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned());
+        match shown {
+            Some(name) => {
+                ui.label(egui::RichText::new(name).color(pal.fg))
+                    .on_hover_text(&path);
+            }
+            None => {
+                ui.label(egui::RichText::new(t("Nenhuma")).color(pal.muted));
             }
         }
-        let clear = ui.button(t("Limpar"));
-        // O nome falado contém o texto visível (WCAG 2.5.3) e diz o que será limpo.
-        clear.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, t("Limpar imagem"))
-        });
-        if clear.clicked() {
-            path.clear();
-            edited = true;
-        }
-        if edited {
-            b.appearance.icon_path = (!path.is_empty()).then(|| path.clone());
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if !path.is_empty() {
-                b.appearance.icon = None;
+                let clear = ui.button(t("Limpar"));
+                // O nome falado contém o texto visível (WCAG 2.5.3) e diz o que será limpo.
+                clear.widget_info(|| {
+                    egui::WidgetInfo::labeled(egui::WidgetType::Button, true, t("Limpar imagem"))
+                });
+                if clear.clicked() {
+                    b.appearance.icon_path = None;
+                    changed = true;
+                }
             }
-            changed = true;
-        }
+            if ui.button(t("Escolher")).clicked() {
+                if let Some(p) = pick_icon() {
+                    b.appearance.icon_path = Some(p);
+                    b.appearance.icon = None;
+                    changed = true;
+                }
+            }
+        });
     });
+    let hint = t("PNG, JPG, SVG ou ICO. Também dá para soltar o arquivo sobre a tecla.");
+    ui.label(
+        egui::RichText::new(hint)
+            .size(crate::editor::tokens::text::CAPTION)
+            .color(pal.muted),
+    );
     changed
 }
 
@@ -207,10 +197,12 @@ fn font_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette) -> bool 
     let label = widgets::section(ui, "Tamanho da fonte", pal);
     fill_slider_width(ui);
     changed |= ui
-        .add(egui::Slider::new(
-            &mut b.appearance.font_size,
-            8.0_f32..=48.0,
-        ))
+        .add(
+            egui::Slider::new(&mut b.appearance.font_size, 8.0_f32..=48.0)
+                .step_by(1.0)
+                .fixed_decimals(0)
+                .suffix(" px"),
+        )
         .labelled_by(label)
         .changed();
     changed
@@ -224,7 +216,7 @@ pub fn appearance_pane(
 ) -> bool {
     let mut changed = label_section(ui, b, pal);
     changed |= color_section(ui, b, pal);
-    changed |= icon_section(ui, b, pal, accent);
+    changed |= super::icon_picker::icon_section(ui, b, pal, accent);
     changed |= image_section(ui, b, pal);
     changed |= font_section(ui, b, pal);
     changed

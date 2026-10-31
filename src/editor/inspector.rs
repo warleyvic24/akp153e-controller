@@ -23,14 +23,28 @@ pub(crate) const TAB_ACTION: usize = 0;
 const TAB_LOOK: usize = 1;
 const TEST_HEIGHT: f32 = 34.0;
 
-/// Título do inspetor: o rótulo; sem ele, o nome do programa que a tecla abre. `None` quando a
-/// tecla não tem nenhum dos dois (o cabeçalho mostra um marcador apagado, não um nome).
-fn key_title(b: &ButtonConfig) -> Option<String> {
-    if !b.appearance.text.is_empty() {
-        return Some(b.appearance.text.clone());
+/// Título do inspetor: o rótulo (numa linha só); sem ele, um nome curto do que a tecla faz (o
+/// programa, a tecla de mídia, o atalho). `None` quando não há nada a dizer (o cabeçalho mostra
+/// um marcador apagado, não um nome).
+pub(crate) fn key_title(b: &ButtonConfig) -> Option<String> {
+    let text = b
+        .appearance
+        .text
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if !text.is_empty() {
+        return Some(text);
     }
     match &b.action {
         ButtonAction::LaunchApp { path, .. } => summary::program_name(path),
+        ButtonAction::MediaKey { key } => {
+            Some(t(crate::editor::action_ui::media_label(key)).to_string())
+        }
+        ButtonAction::Hotkey { keys } if !keys.is_empty() => Some(summary::chord(keys)),
+        ButtonAction::OpenMixer => Some(t("Mixer").to_string()),
+        ButtonAction::NextPage => Some(t("Próxima página").to_string()),
+        ButtonAction::PreviousPage => Some(t("Página anterior").to_string()),
         _ => None,
     }
 }
@@ -107,7 +121,7 @@ fn app_list(
             }
             if shown == 0 {
                 let msg = if list.is_empty() {
-                    t("Nenhum programa encontrado. Use “Procurar .exe”.").to_string()
+                    t(crate::editor::picker::NO_APPS_FOUND).to_string()
                 } else {
                     tf("Nada encontrado para “{}”.", &[&query])
                 };
@@ -422,7 +436,7 @@ impl App {
         ui.horizontal(|ui| {
             let (rect, _) = ui.allocate_exact_size(vec2(PREVIEW_KEY, PREVIEW_KEY), Sense::hover());
             let tex = self.key_tex.get(ctx, sel, b, icon_px);
-            let view = key_view(b, sel + 1, tex, false);
+            let view = key_view(b, None, tex, false);
             widgets::paint_key(ui.painter(), rect, &view, false, false, pal, accent);
             ui.vertical(|ui| {
                 let number = RichText::new(tf("TECLA {}", &[&(sel + 1)]))

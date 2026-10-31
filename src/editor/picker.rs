@@ -77,13 +77,24 @@ pub fn apply_app(b: &mut ButtonConfig, app: &apps::InstalledApp, at: ButtonSlot,
     });
 }
 
+/// Botão de escolher o programa no disco: no Linux programas não têm extensão.
+#[cfg(windows)]
+pub const BROWSE_PROGRAM: &str = "Procurar .exe";
+#[cfg(not(windows))]
+pub const BROWSE_PROGRAM: &str = "Procurar programa";
+/// Lista de apps vazia: aponta para o botão acima.
+#[cfg(windows)]
+pub const NO_APPS_FOUND: &str = "Nenhum programa encontrado. Use “Procurar .exe”.";
+#[cfg(not(windows))]
+pub const NO_APPS_FOUND: &str = "Nenhum programa encontrado. Use “Procurar programa”.";
+
 pub fn app_buttons(ui: &mut egui::Ui, b: &mut ButtonConfig, picker: &mut AppPicker) -> bool {
     let mut changed = false;
     ui.horizontal_wrapped(|ui| {
         if ui.button(t("Escolher app instalado")).clicked() {
             picker.show();
         }
-        if ui.button(t("Procurar .exe")).clicked() {
+        if ui.button(t(BROWSE_PROGRAM)).clicked() {
             let dialog = rfd::FileDialog::new();
             // Programas do Linux não têm extensão: sem filtro, qualquer arquivo pode ser escolhido.
             #[cfg(windows)]
