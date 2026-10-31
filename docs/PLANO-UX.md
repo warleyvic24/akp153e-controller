@@ -4,6 +4,8 @@ Data: 2026-10-31. Base: avaliação das telas reais (temas claro e escuro, apare
 Preferências, lista de apps, as três abas do inspetor). Referências: o app da Elgato (Stream Deck),
 Loupedeck/Logi Options+, Bitfocus Companion.
 
+**Ordem geral:** `docs/ROTEIRO.md` (intercala este plano com o outro e a checklist do aparelho).
+
 ## Diagnóstico honesto
 
 Nota de hoje: **5,5**. A engenharia é boa: testes de contraste e de alvo mínimo, desfazer, busca, arrastar,

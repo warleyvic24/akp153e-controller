@@ -4,6 +4,8 @@ Data: 2026-10-31. Base: pesquisa sobre Bitfocus Companion (módulos de superfíc
 JSON + catálogo da comunidade), mirajazz/OpenDeck (família AJAZZ/Mirabox em versões de protocolo) e
 StreamController (selo "experimental"). Princípio: **o aparelho é descrito por dados; o código só traduz.**
 
+**Ordem geral:** `docs/ROTEIRO.md` (intercala este plano com o outro e a checklist do aparelho).
+
 Cada fase tem: passos, como saber que terminou (aceite) e o que pode dar errado (risco → correção).
 Nenhuma fase começa sem a anterior estar verde no CI (Windows e Linux).
 
