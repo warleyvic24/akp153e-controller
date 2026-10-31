@@ -486,7 +486,7 @@ mod tests {
             .clone()
             .expect("o ícone deveria ter sido extraído");
         assert!(std::path::Path::new(&icon).is_file());
-        let rendered = graphics::renderer::render_rgba(&g.cfg.page().buttons[0], 95, 95);
+        let rendered = crate::graphics::renderer::render_rgba(&g.cfg.page().buttons[0], 95, 95);
         let first = *rendered.get_pixel(0, 0);
         assert!(
             rendered.pixels().any(|p| *p != first),
