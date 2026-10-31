@@ -57,9 +57,11 @@ pub fn render(side: &SideScreen, info: &SideInfo, live: &Live) -> Option<RgbaIma
         SideScreen::PageName => page_name(&mut img, info),
         SideScreen::Clock => clock(&mut img),
         SideScreen::System => super::live_art::side_system(&mut img, live.system, MUTED),
-        SideScreen::NowPlaying => {
-            super::live_art::side_now_playing(&mut img, live.playing.as_ref(), MUTED)
-        }
+        // Inteligente: a música enquanto toca (ou pausou há pouco); fora isso, o relógio.
+        SideScreen::NowPlaying => match live.playing.as_ref().filter(|p| p.worth_showing()) {
+            Some(p) => super::live_art::side_now_playing(&mut img, Some(p), MUTED),
+            None => clock(&mut img),
+        },
         SideScreen::Image { path } => {
             if let Ok(picture) = image::open(path) {
                 let filled = picture
@@ -225,6 +227,28 @@ mod tests {
             SLOT_TOP.windows(2).all(|w| w[1] - w[0] < SLOT_HEIGHT),
             "sem buraco entre faixas"
         );
+    }
+
+    #[test]
+    fn now_playing_turns_into_the_clock_without_music_or_after_a_long_pause() {
+        let song = |playing, idle| Live {
+            playing: Some(crate::platform::live::NowPlaying {
+                title: "Música".into(),
+                artist: String::new(),
+                playing,
+                art: None,
+                idle,
+            }),
+            ..Live::default()
+        };
+        let now = |live: &Live| render(&SideScreen::NowPlaying, &info(), live).unwrap();
+        let clock = render(&SideScreen::Clock, &info(), &Live::default()).unwrap();
+        assert_eq!(now(&Live::default()), clock, "sem música");
+        assert_eq!(now(&song(false, true)), clock, "em pausa há muito tempo");
+        if font().is_some() {
+            assert_ne!(now(&song(true, false)), clock, "tocando");
+            assert_ne!(now(&song(false, false)), clock, "pausa curta");
+        }
     }
 
     /// Grava a faixa de cada modo em PNG para olhar: `AKP_SIDE_OUT=/pasta cargo test side_previews -- --ignored`.

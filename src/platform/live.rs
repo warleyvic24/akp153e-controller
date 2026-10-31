@@ -41,6 +41,18 @@ pub struct NowPlaying {
     pub playing: bool,
     /// Capa já em PNG na pasta de ícones (baixada uma vez por endereço).
     pub art: Option<String>,
+    /// Em pausa há mais de `IDLE_AFTER`: quem mostra a música pode dar lugar a outra coisa.
+    pub idle: bool,
+}
+
+/// Pausa curta (atender alguém, pular de faixa) não conta; depois disto a música está parada.
+pub const IDLE_AFTER: std::time::Duration = std::time::Duration::from_secs(90);
+
+impl NowPlaying {
+    /// Vale mostrar a música: tocando, ou em pausa há pouco.
+    pub fn worth_showing(&self) -> bool {
+        self.playing || !self.idle
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -59,6 +71,8 @@ pub struct Sampler {
     cpu_before: Option<(u64, u64)>,
     #[cfg_attr(windows, allow(dead_code))]
     art: HashMap<String, Option<String>>,
+    /// Desde quando a música está em pausa (para saber quando ela ficou parada de vez).
+    paused_since: Option<std::time::Instant>,
 }
 
 /// Maior capa baixada (as do Spotify têm ~60 KB).
@@ -72,12 +86,24 @@ impl Sampler {
         Live {
             volume: wants.volume.then(read_volume).flatten(),
             playing: if wants.playing {
-                self.now_playing()
+                let now = std::time::Instant::now();
+                self.now_playing().map(|p| self.mark_idle(p, now))
             } else {
                 None
             },
             system: wants.system.then(|| self.system()).flatten(),
         }
+    }
+
+    /// Marca `idle` quando a pausa já passou de `IDLE_AFTER`.
+    fn mark_idle(&mut self, mut p: NowPlaying, now: std::time::Instant) -> NowPlaying {
+        if p.playing {
+            self.paused_since = None;
+        } else {
+            let since = *self.paused_since.get_or_insert(now);
+            p.idle = now.saturating_duration_since(since) >= IDLE_AFTER;
+        }
+        p
     }
 
     fn system(&mut self) -> Option<SystemStats> {
@@ -350,9 +376,39 @@ mod mpris {
                 artist,
                 playing,
                 art: None,
+                idle: false,
             },
             art,
         ))
+    }
+}
+
+#[cfg(test)]
+mod idle_tests {
+    use super::*;
+
+    fn song(playing: bool) -> NowPlaying {
+        NowPlaying {
+            title: "Música".into(),
+            artist: String::new(),
+            playing,
+            art: None,
+            idle: false,
+        }
+    }
+
+    #[test]
+    fn a_short_pause_still_shows_the_song_and_a_long_one_does_not() {
+        let mut s = Sampler::default();
+        let t0 = std::time::Instant::now();
+        assert!(s.mark_idle(song(false), t0).worth_showing());
+        let later = t0 + IDLE_AFTER;
+        assert!(!s.mark_idle(song(false), later).worth_showing());
+        // Voltou a tocar: a contagem da pausa recomeça do zero.
+        assert!(s.mark_idle(song(true), later).worth_showing());
+        assert!(s
+            .mark_idle(song(false), later + IDLE_AFTER / 2)
+            .worth_showing());
     }
 }
 

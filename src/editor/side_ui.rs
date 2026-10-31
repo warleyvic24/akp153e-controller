@@ -11,6 +11,7 @@ use eframe::egui::{self, Color32, CornerRadius, RichText, Sense, Stroke};
 
 const WINDOW_WIDTH: f32 = 380.0;
 const OFF_LABEL_ALPHA: f32 = 0.55;
+const NOW_PLAYING_HINT: &str = "Muda sozinha: a música enquanto toca; sem música, ou em pausa há mais de um minuto e meio, o relógio. Voltou a tocar, a música volta.";
 
 /// Prévia da tela lateral, refeita só quando o conteúdo (ou o minuto, no relógio) muda.
 #[derive(Default)]
@@ -49,7 +50,7 @@ impl App {
         let round = CornerRadius::from(tokens::radius::KEY);
         p.rect_filled(rect, round, pal.keyoff);
         let side = g.cfg.page().side.clone();
-        let minute = if side == SideScreen::Clock {
+        let minute = if matches!(side, SideScreen::Clock | SideScreen::NowPlaying) {
             super::current_minute()
         } else {
             0
@@ -159,6 +160,9 @@ impl App {
                     }
                 }
             });
+            if *side == SideScreen::NowPlaying {
+                ui.label(widgets::hint(t(NOW_PLAYING_HINT), pal));
+            }
             if let SideScreen::Image { path } = side {
                 let name = std::path::Path::new(path.as_str())
                     .file_name()

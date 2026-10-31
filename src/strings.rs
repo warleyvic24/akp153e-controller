@@ -338,6 +338,7 @@ const EN: &[(&str, &str)] = &[
     ("Texto na tecla (ex.: Mudo). Enter quebra a linha", "Key text (e.g. Mute). Enter breaks the line"),
     ("Topo", "Top"),
     ("Tela lateral", "Side screen"),
+    ("Muda sozinha: a música enquanto toca; sem música, ou em pausa há mais de um minuto e meio, o relógio. Voltou a tocar, a música volta.", "Switches on its own: the song while it plays; with no music, or paused for more than a minute and a half, the clock. When it plays again, the song comes back."),
     ("Nada tocando", "Nothing playing"),
     ("Tocando agora", "Now playing"),
     ("Ctrl Z", "Ctrl Z"),

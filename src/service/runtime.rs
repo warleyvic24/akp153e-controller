@@ -594,7 +594,13 @@ fn has_clock(state: &SharedState) -> bool {
 
 /// A tela lateral da página mostra o relógio (e o mixer não está por cima)?
 fn side_clock(sh: &Shared) -> bool {
-    sh.mixer.is_none() && sh.cfg.page().side == SideScreen::Clock
+    let showing_clock = match sh.cfg.page().side {
+        SideScreen::Clock => true,
+        // "Tocando agora" sem música vira relógio: também precisa da virada do minuto.
+        SideScreen::NowPlaying => !sh.live.playing.as_ref().is_some_and(|p| p.worth_showing()),
+        _ => false,
+    };
+    sh.mixer.is_none() && showing_clock
 }
 
 /// Redesenha só as teclas de relógio (e a tela lateral, se ela for um relógio).
