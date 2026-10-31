@@ -22,6 +22,7 @@ const TAB_NAMES: [&str; 3] = ["Ação", "Aparência", "Alternar"];
 pub(crate) const TAB_ACTION: usize = 0;
 const TAB_LOOK: usize = 1;
 const TEST_HEIGHT: f32 = 34.0;
+const CLOCK_UNTESTABLE: &str = "A tecla de relógio só mostra a hora; não há o que testar";
 
 /// Título do inspetor: o rótulo (numa linha só); sem ele, um nome curto do que a tecla faz (o
 /// programa, a tecla de mídia, o atalho). `None` quando não há nada a dizer (o cabeçalho mostra
@@ -296,7 +297,12 @@ impl App {
     }
 
     fn test_key(&mut self, g: &mut runtime::Shared, sel: usize) {
+        let brightness = g.cfg.ui.brightness;
         runtime::trigger(g, &self.tx, &self.exec, sel, Duration::ZERO);
+        // O brilho é do aparelho: muda aqui e vai a ele pelo salvamento (o "reload" do serviço).
+        if g.cfg.ui.brightness != brightness {
+            self.touch();
+        }
         let msg = tf("Tecla {} testada", &[&(sel + 1)]);
         self.toasts.push(msg, None);
     }
@@ -401,6 +407,7 @@ impl App {
                 }
                 let untestable = match b.action {
                     ButtonAction::None => Some(checks::NO_ACTION),
+                    ButtonAction::Clock => Some(CLOCK_UNTESTABLE),
                     _ => checks::action_problem(&b.action, &targets),
                 };
                 ui.add_space(tokens::space::XS);
@@ -497,7 +504,7 @@ impl App {
         scroll.show(ui, |ui| match self.tab {
             TAB_ACTION => changed |= action_pane(ui, cx, b, &mut self.recording, &mut self.picker),
             TAB_LOOK => changed |= appearance_pane(ui, b, cx.pal, cx.accent),
-            _ => changed |= states_pane(ui, b, cx.pal),
+            _ => changed |= states_pane(ui, cx, b, &mut self.recording),
         });
         changed
     }

@@ -216,7 +216,7 @@ pub fn appearance_pane(
 ) -> bool {
     let mut changed = label_section(ui, b, pal);
     changed |= color_section(ui, b, pal);
-    changed |= super::icon_picker::icon_section(ui, b, pal, accent);
+    changed |= super::icon_picker::icon_section(ui, &mut b.appearance, "normal", pal, accent);
     changed |= image_section(ui, b, pal);
     changed |= font_section(ui, b, pal);
     changed
@@ -257,29 +257,72 @@ pub fn action_pane(
     changed
 }
 
-pub fn states_pane(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette) -> bool {
+/// Aba "Alternar": tecla de dois estados. Cada toque troca entre o normal e o ligado; o ligado
+/// tem aparência própria (rótulo, cores, ícone) e, se quiser, outra ação no segundo toque.
+pub fn states_pane(
+    ui: &mut egui::Ui,
+    cx: &PaneCtx,
+    b: &mut ButtonConfig,
+    rec: &mut Option<&'static str>,
+) -> bool {
+    let pal = cx.pal;
     let mut changed = false;
-    widgets::section(ui, "Alternar entre dois estados", pal);
+    widgets::section(ui, "Dois estados", pal);
     let mut has_toggle = b.toggled_appearance.is_some();
     if ui
-        .checkbox(&mut has_toggle, t("Cada toque troca a aparência"))
+        .checkbox(
+            &mut has_toggle,
+            t("Cada toque alterna entre normal e ligado"),
+        )
         .changed()
     {
         b.toggled_appearance = has_toggle.then(|| lit_variant(&b.appearance));
+        if !has_toggle {
+            b.toggled_action = None;
+        }
         b.toggle_state = false;
         changed = true;
     }
-    if let Some(lit) = b.toggled_appearance.as_mut() {
-        ui.horizontal(|ui| {
-            ui.label(t("Ligado:"));
-            changed |= ui
-                .add(egui::TextEdit::singleline(&mut lit.text).desired_width(120.0))
-                .changed();
-            changed |= color_picker(ui, "Fundo", &mut lit.background);
-        });
-        changed |= ui
-            .checkbox(&mut b.toggle_state, t("Ver o estado ligado na prévia"))
-            .changed();
+    let Some(lit) = b.toggled_appearance.as_mut() else {
+        let hint = t("Ex.: microfone ligado/desligado, live no ar/fora do ar. Teclas do OBS já acendem sozinhas com o estado do OBS.");
+        ui.label(widgets::hint(hint, pal));
+        return changed;
+    };
+    changed |= ui
+        .checkbox(&mut b.toggle_state, t("Mostrar o estado ligado na prévia"))
+        .changed();
+    let label = widgets::section(ui, "Rótulo ligado", pal);
+    changed |= ui
+        .add(
+            egui::TextEdit::multiline(&mut lit.text)
+                .desired_rows(1)
+                .desired_width(ui.available_width()),
+        )
+        .labelled_by(label)
+        .changed();
+    ui.horizontal(|ui| {
+        changed |= color_picker(ui, "Fundo", &mut lit.background);
+        ui.add_space(SWATCH_GAP);
+        changed |= color_picker(ui, "Texto", &mut lit.text_color);
+    });
+    changed |= super::icon_picker::icon_section(ui, lit, "lit", pal, cx.accent);
+    widgets::section(ui, "Segundo toque", pal);
+    let mut other = b.toggled_action.is_some();
+    if ui
+        .checkbox(&mut other, t("Fazer outra ação ao desligar"))
+        .changed()
+    {
+        b.toggled_action = other.then_some(ButtonAction::None);
+        changed = true;
+    }
+    match b.toggled_action.as_mut() {
+        Some(a) => changed |= action_editor(ui, cx, "tact", a, rec),
+        None => {
+            ui.label(widgets::hint(
+                t("Sem isso, os dois toques fazem a ação da aba Ação."),
+                pal,
+            ));
+        }
     }
     changed
 }

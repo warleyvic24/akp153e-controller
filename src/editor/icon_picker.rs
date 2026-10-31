@@ -1,7 +1,7 @@
 //! Escolha do ícone da tecla: busca na biblioteca Lucide (2000 ícones, em português ou inglês) e
 //! grade com os resultados. Sem busca, mostra os ícones mais usados num controlador de live.
 use super::{theme, tokens, widgets};
-use crate::config::schema::{ButtonConfig, RGBAColor};
+use crate::config::schema::{ButtonAppearance, RGBAColor};
 use crate::editor::theme::Palette;
 use crate::graphics::{icon_library, icons};
 use crate::strings::{t, tf};
@@ -119,17 +119,19 @@ fn display_name(id: &str) -> String {
         .map_or_else(|| id.to_string(), |(_, n)| t(n).to_string())
 }
 
-/// Seção "Ícone" da aba Aparência; devolve `true` se o ícone mudou.
+/// Seção "Ícone" de uma aparência (a normal ou a do estado ligado); `salt` separa a busca de cada
+/// uma. Devolve `true` se o ícone mudou.
 pub fn icon_section(
     ui: &mut egui::Ui,
-    b: &mut ButtonConfig,
+    ap: &mut ButtonAppearance,
+    salt: &str,
     pal: &Palette,
     accent: Color32,
 ) -> bool {
     let mut changed = false;
     let label = widgets::section(ui, "Ícone", pal);
     let ink = theme::ink(accent, pal);
-    let query_id = egui::Id::new("icon-picker-query");
+    let query_id = egui::Id::new(("icon-picker-query", salt));
     let mut query: String = ui.data_mut(|d| d.get_temp(query_id).unwrap_or_default());
     let field = widgets::search_field(ui, &mut query, "Buscar ícone (ex.: microfone, câmera)", pal)
         .labelled_by(label);
@@ -137,7 +139,7 @@ pub fn icon_section(
         ui.data_mut(|d| d.insert_temp(query_id, query.clone()));
     }
     let results = icon_library::search(&query, MAX_RESULTS);
-    let current = b.appearance.icon.clone();
+    let current = ap.icon.clone();
     ui.add_space(tokens::space::XS);
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = vec2(GAP, GAP);
@@ -168,9 +170,9 @@ pub fn icon_section(
                 display_name(&id)
             };
             if cell(ui, &id, &name, on, pal, ink).clicked() {
-                b.appearance.icon = (!id.is_empty()).then(|| id.clone());
+                ap.icon = (!id.is_empty()).then(|| id.clone());
                 if !id.is_empty() {
-                    b.appearance.icon_path = None;
+                    ap.icon_path = None;
                 }
                 changed = true;
             }
