@@ -264,6 +264,15 @@ fn handle(
             let recent = runtime::lock(state).recent_apps.join("\t");
             let _ = writeln!(conn, "{recent}");
         }
+        // Brilho ao vivo enquanto o usuário arrasta nas Preferências (a config grava depois).
+        other if other.starts_with("brightness ") => {
+            match other["brightness ".len()..].trim().parse::<u8>() {
+                Ok(level) if level <= crate::usb::MAX_BRIGHTNESS => {
+                    let _ = tx.send(UsbCmd::Brightness(level));
+                }
+                _ => log::warn!("brilho inválido: {other}"),
+            }
+        }
         // Autoteste guiado no aparelho; responde "ok" ou o motivo de não começar.
         "selftest" => {
             let reply = selftest::start(state, tx);
@@ -418,6 +427,19 @@ mod tests {
             let (reply, sent) = command(request, true);
             assert_eq!(reply, "", "{request:?}");
             assert!(sent.is_empty(), "{request:?}");
+        }
+    }
+
+    #[test]
+    fn live_brightness_reaches_the_device_only_with_a_valid_level() {
+        let sent = command(b"brightness 40\n", true).1;
+        assert!(matches!(sent.as_slice(), [UsbCmd::Brightness(40)]));
+        for bad in [
+            &b"brightness 101\n"[..],
+            b"brightness -1\n",
+            b"brightness x\n",
+        ] {
+            assert!(command(bad, true).1.is_empty(), "{bad:?}");
         }
     }
 

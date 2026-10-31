@@ -193,6 +193,10 @@ fn ui_strokes(name: &str) -> Vec<Polyline> {
             .iter()
             .flat_map(|&y| [dot(9.0, y), dot(15.0, y)])
             .collect(),
+        "close" => vec![
+            vec![(6.0, 6.0), (18.0, 18.0)],
+            vec![(18.0, 6.0), (6.0, 18.0)],
+        ],
         "plus" => vec![
             vec![(5.0, 12.0), (19.0, 12.0)],
             vec![(12.0, 5.0), (12.0, 19.0)],

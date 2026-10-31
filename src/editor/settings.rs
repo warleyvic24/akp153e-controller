@@ -3,13 +3,24 @@ use super::{widgets, App};
 use crate::config::schema::{AppConfig, Language, Theme};
 use crate::editor::omarchy;
 use crate::editor::theme::{self, Palette};
-use crate::editor::tokens::{text, TARGET_MIN};
+use crate::editor::tokens::{self, text, TARGET_MIN};
 use crate::platform::shell;
 use crate::service::runtime;
 use crate::strings::{t, tf};
 use eframe::egui::{self, Color32, RichText};
 
-const WINDOW_WIDTH: f32 = 360.0;
+/// Seções das Preferências, na ordem da lista à esquerda.
+const SECTIONS: [&str; 4] = ["Geral", "Aparelho", "Integrações", "Sobre"];
+const SECTION_GENERAL: usize = 0;
+const SECTION_DEVICE: usize = 1;
+const SECTION_INTEGRATIONS: usize = 2;
+const MODAL_WIDTH: f32 = 620.0;
+const MODAL_BODY_HEIGHT: f32 = 420.0;
+const MODAL_PADDING: i8 = 20;
+const NAV_WIDTH: f32 = 150.0;
+const NAV_MARK: f32 = 3.0;
+const NAV_ON_TINT: f32 = 0.14;
+const NAV_HOVER_TINT: f32 = 0.08;
 const SWATCH_GAP: f32 = 10.0;
 const BRIGHTNESS_MIN: u8 = 5;
 const BRIGHTNESS_MAX: u8 = crate::usb::MAX_BRIGHTNESS;
@@ -67,24 +78,105 @@ impl App {
         if !self.settings_open {
             return;
         }
-        let mut open = true;
-        let title = RichText::new(t("Preferências")).size(text::BODY).strong();
-        egui::Window::new(title)
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .default_width(WINDOW_WIDTH)
+        let frame = egui::Frame::NONE
+            .fill(pal.raise)
+            .stroke(egui::Stroke::new(1.0_f32, pal.control))
+            .corner_radius(egui::CornerRadius::from(tokens::radius::CARD))
+            .inner_margin(egui::Margin::same(MODAL_PADDING));
+        // Modal de verdade: no centro, com o fundo escurecido; Esc ou um clique fora fecha.
+        let modal = egui::Modal::new(egui::Id::unique("settings"))
+            .frame(frame)
             .show(ctx, |ui| {
+                ui.set_width(MODAL_WIDTH);
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(t("Preferências")).size(text::TITLE).strong());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if widgets::icon_button(ui, "close", "Fechar", true, pal).clicked() {
+                            self.settings_open = false;
+                        }
+                    });
+                });
+                ui.add_space(tokens::space::MD);
+                ui.horizontal_top(|ui| {
+                    self.settings_nav(ui, g, pal);
+                    ui.separator();
+                    ui.vertical(|ui| {
+                        ui.set_min_height(MODAL_BODY_HEIGHT);
+                        egui::ScrollArea::vertical()
+                            .max_height(MODAL_BODY_HEIGHT)
+                            .show(ui, |ui| self.settings_body(ui, g, pal));
+                    });
+                });
+            });
+        if modal.should_close() {
+            self.settings_open = false;
+        }
+    }
+
+    /// Lista das seções à esquerda do modal.
+    fn settings_nav(&mut self, ui: &mut egui::Ui, g: &runtime::Shared, pal: &Palette) {
+        let accent = theme::accent_color(&g.cfg.ui);
+        ui.vertical(|ui| {
+            ui.set_width(NAV_WIDTH);
+            for (i, name) in SECTIONS.iter().enumerate() {
+                let on = self.settings_tab == i;
+                let name = t(name);
+                let (rect, resp) = ui.allocate_exact_size(
+                    egui::vec2(NAV_WIDTH, TARGET_MIN + tokens::space::SM),
+                    egui::Sense::click(),
+                );
+                resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Tab, true, on, name));
+                let hot = resp.hovered() || resp.has_focus();
+                let round = egui::CornerRadius::from(tokens::radius::CONTROL);
+                if on {
+                    ui.painter()
+                        .rect_filled(rect, round, accent.gamma_multiply(NAV_ON_TINT));
+                    // Barra de destaque à esquerda da seção aberta.
+                    let bar = egui::Rect::from_min_size(
+                        rect.left_top(),
+                        egui::vec2(NAV_MARK, rect.height()),
+                    );
+                    ui.painter().rect_filled(bar, round, accent);
+                } else if hot {
+                    ui.painter().rect_filled(
+                        rect,
+                        round,
+                        theme::mix(pal.raise, pal.fg, NAV_HOVER_TINT),
+                    );
+                }
+                let ink = if on { theme::ink(accent, pal) } else { pal.fg };
+                ui.painter().text(
+                    egui::pos2(rect.left() + tokens::space::MD, rect.center().y),
+                    egui::Align2::LEFT_CENTER,
+                    name,
+                    egui::FontId::proportional(text::BODY),
+                    ink,
+                );
+                if resp.clicked() {
+                    self.settings_tab = i;
+                }
+            }
+        });
+    }
+
+    fn settings_body(&mut self, ui: &mut egui::Ui, g: &mut runtime::Shared, pal: &Palette) {
+        match self.settings_tab {
+            SECTION_GENERAL => {
                 self.theme_section(ui, g, pal);
                 self.language_section(ui, g, pal);
                 self.startup_section(ui, pal);
+            }
+            SECTION_DEVICE => {
                 self.device_section(ui, g, pal);
+                self.device_tools(ui, pal);
+            }
+            SECTION_INTEGRATIONS => {
                 if super::obs_ui::settings_section(ui, &mut g.cfg.obs, pal) {
                     self.touch();
                 }
-                self.about_section(ui, pal);
-            });
-        self.settings_open = open;
+            }
+            _ => self.about_section(ui, pal),
+        }
     }
 
     fn theme_section(&mut self, ui: &mut egui::Ui, g: &mut runtime::Shared, pal: &Palette) {
@@ -169,9 +261,11 @@ impl App {
             .suffix("%");
         if ui.add(slider).labelled_by(label).changed() {
             self.dirty = true;
+            // Ao vivo: o aparelho muda enquanto arrasta (gravar na config vem depois, sozinho).
+            let _ = shell::send(&format!("brightness {}", g.cfg.ui.brightness));
         }
         let note = if g.connected {
-            t("Aplica no aparelho ao salvar.")
+            t("Muda no aparelho enquanto você arrasta.")
         } else {
             t("Sem aparelho conectado: vale a partir da próxima conexão.")
         };
@@ -202,16 +296,20 @@ impl App {
     }
 
     fn about_section(&mut self, ui: &mut egui::Ui, pal: &Palette) {
+        widgets::section(ui, "Versão", pal);
+        ui.label(tf("Keyforge {}", &[&env!("CARGO_PKG_VERSION")]));
         widgets::section(ui, "Diagnóstico", pal);
-        ui.label(tf("Versão {}", &[&env!("CARGO_PKG_VERSION")]));
-        ui.horizontal(|ui| {
-            if ui.button(t("Reconectar")).clicked() {
-                let _ = shell::send("reconnect");
-            }
-            if ui.button(t("Abrir pasta de logs")).clicked() {
-                open_log_folder();
-            }
-        });
+        if ui.button(t("Abrir pasta de logs")).clicked() {
+            open_log_folder();
+        }
+    }
+
+    /// Reconectar e o autoteste ficam com o aparelho, onde se procura por eles.
+    fn device_tools(&mut self, ui: &mut egui::Ui, pal: &Palette) {
+        widgets::section(ui, "Problemas com o aparelho", pal);
+        if ui.button(t("Reconectar")).clicked() {
+            let _ = shell::send("reconnect");
+        }
         if ui
             .button(t("Testar aparelho"))
             .on_hover_text(t(SELFTEST_HINT))

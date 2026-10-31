@@ -75,6 +75,8 @@ pub(crate) struct App {
     favicons: favicon::Favicons,
     toasts: toast::Toasts,
     settings_open: bool,
+    /// Seção aberta nas Preferências (`settings::SECTIONS`).
+    settings_tab: usize,
     autostart: bool,
     rename: Option<bars::Rename>,
     /// Modo compacto (janela estreita): a biblioteca aberta no lugar do inspetor.
@@ -114,6 +116,7 @@ impl App {
             favicons: favicon::Favicons::default(),
             toasts: toast::Toasts::default(),
             settings_open: false,
+            settings_tab: 0,
             autostart: false,
             rename: None,
             library_open: false,
