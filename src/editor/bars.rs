@@ -247,7 +247,7 @@ impl App {
         }
     }
 
-    /// Mover e excluir a página `index`; compartilhado pelo menu de contexto e pelo "Gerenciar".
+    /// Mover e excluir a página `index`; compartilhado pelo menu de contexto e pelo "Perfil e página".
     fn page_actions(
         &mut self,
         ui: &mut egui::Ui,
@@ -297,7 +297,7 @@ impl App {
         g: &mut runtime::Shared,
         pal: &Palette,
     ) {
-        ui.menu_button(t("Gerenciar"), |ui| {
+        ui.menu_button(t("Perfil e página"), |ui| {
             let prof = g.cfg.active_profile;
             let index = g.cfg.profiles[prof].active_page;
             let page_label = ui.label(t("Nome da página")).id;
@@ -322,12 +322,15 @@ impl App {
         if menu_field(ui, &mut g.cfg.profiles[prof].name, profile_label, pal).changed() {
             self.touch();
         }
+        self.auto_app_items(ui, g, prof, pal);
+        ui.separator();
         if ui.button(t("Novo perfil")).clicked() {
             let name = tf("Perfil {}", &[&(g.cfg.profiles.len() + 1)]);
             g.cfg.add_profile(&name);
             self.touch();
             ui.close_menu();
         }
+        self.profile_file_items(ui, g, prof);
         let delete = ui.button(RichText::new(t("Excluir perfil")).color(pal.bad));
         if delete.clicked() {
             if g.cfg.remove_profile(prof) {

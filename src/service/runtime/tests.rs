@@ -13,6 +13,7 @@ fn two_page_state(action: ButtonAction, long: Option<ButtonAction>) -> Shared {
         service_running: true,
         icon_px: 85,
         mixer: None,
+        recent_apps: Vec::new(),
     }
 }
 

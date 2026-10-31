@@ -1,5 +1,6 @@
 //! Serviço em segundo plano: aparelho USB, ações, bandeja do sistema e servidor de controle
 //! para o editor. Não cria janela, então não consome CPU quando está ocioso.
+mod auto_profile;
 pub(crate) mod mixer_runtime;
 pub(crate) mod runtime;
 
@@ -117,6 +118,9 @@ pub fn run(open_editor: bool) {
     usb::spawn(event_tx, cmd_rx);
     let state = runtime::new_state(cfg, usb::ICON_SIZE as u32);
     runtime::spawn(state.clone(), cmd_tx.clone(), event_rx, exec);
+    let (focus_tx, focus_rx) = channel();
+    crate::platform::focus::spawn_watch(focus_tx);
+    auto_profile::spawn(state.clone(), cmd_tx.clone(), focus_rx);
     spawn_control_server(listener, state, cmd_tx);
 
     let _tray = shell::create_tray();
@@ -223,6 +227,11 @@ fn handle(mut conn: TcpStream, state: &SharedState, tx: &Sender<UsbCmd>) {
             let _ = tx.send(UsbCmd::Reconnect);
         }
         "reload" => reload(state, tx, AppConfig::load_existing()),
+        // Apps que ganharam o foco há pouco, um por linha: o editor os sugere na troca automática.
+        "apps" => {
+            let recent = runtime::lock(state).recent_apps.join("\t");
+            let _ = writeln!(conn, "{recent}");
+        }
         "status" => {
             let sh = runtime::lock(state);
             let _ = writeln!(conn, "{} {}", u8::from(sh.connected), sh.icon_px);

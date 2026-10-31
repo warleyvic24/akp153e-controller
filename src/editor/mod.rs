@@ -12,6 +12,7 @@ mod library_panel;
 pub(crate) mod omarchy;
 mod panes;
 mod picker;
+mod profile_ui;
 mod settings;
 mod stage;
 mod summary;
@@ -67,6 +68,8 @@ pub(crate) struct App {
     rename: Option<bars::Rename>,
     /// Modo compacto (janela estreita): a biblioteca aberta no lugar do inspetor.
     library_open: bool,
+    /// Apps que estiveram em foco (do serviço), sugeridos na troca automática de perfil.
+    recent_apps: profile_ui::RecentApps,
 }
 
 impl App {
@@ -97,6 +100,7 @@ impl App {
             autostart: false,
             rename: None,
             library_open: false,
+            recent_apps: profile_ui::RecentApps::default(),
         }
         .with_preview_state()
     }

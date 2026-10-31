@@ -103,7 +103,7 @@ fn read_session(list: &IAudioSessionEnumerator, index: i32) -> AudioResult<Optio
     }
 }
 
-fn process_path(pid: u32) -> Option<String> {
+pub(crate) fn process_path(pid: u32) -> Option<String> {
     // SAFETY: o handle abre só para leitura de nome, é fechado ao fim e o buffer tem o tamanho informado.
     unsafe {
         let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;

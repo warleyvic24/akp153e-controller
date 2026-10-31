@@ -16,6 +16,7 @@ pub(crate) mod audio;
 pub(crate) mod audio;
 
 mod audio_model;
+pub(crate) mod focus;
 #[cfg(not(windows))]
 mod icon_theme;
 pub(crate) mod omarchy;

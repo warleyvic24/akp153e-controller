@@ -22,6 +22,8 @@ pub struct Shared {
     pub icon_px: u32,
     /// Mixer de volume aberto no aparelho; enquanto existir, ele substitui a página nas teclas.
     pub mixer: Option<MixerView>,
+    /// No serviço: apps que ganharam o foco há pouco (o mais novo primeiro), para o editor sugerir.
+    pub recent_apps: Vec<String>,
 }
 
 pub type SharedState = Arc<Mutex<Shared>>;
@@ -33,6 +35,7 @@ pub fn new_state(cfg: AppConfig, icon_px: u32) -> SharedState {
         service_running: true,
         icon_px,
         mixer: None,
+        recent_apps: Vec::new(),
     }))
 }
 
@@ -257,6 +260,20 @@ fn persist_unlocked(nav: &Nav) {
     }
     if let Err(e) = disk.save() {
         log::error!("salvar troca de página: {e}");
+    }
+}
+
+/// Ativa o perfil de índice `index` (troca automática): redesenha e grava a navegação.
+pub fn switch_profile(state: &SharedState, tx: &Sender<UsbCmd>, index: usize) {
+    let nav = change_and_draw(state, tx, |sh| {
+        if index >= sh.cfg.profiles.len() {
+            return (None, false);
+        }
+        sh.cfg.active_profile = index;
+        (Nav::capture(sh), true)
+    });
+    if let Some(nav) = nav {
+        persist(&nav);
     }
 }
 
