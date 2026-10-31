@@ -505,6 +505,29 @@ pub fn search_field(ui: &mut Ui, query: &mut String, hint_text: &str, pal: &Pale
     resp
 }
 
+/// Seção recolhível do inspetor: título, e quando fechada um resumo do que tem dentro (para não
+/// esconder o que a tecla faz). `on` diz se a seção está em uso: só então começa aberta.
+pub fn fold(
+    ui: &mut Ui,
+    id: &str,
+    title: &str,
+    summary: Option<String>,
+    on: bool,
+    pal: &Palette,
+    body: impl FnOnce(&mut Ui),
+) {
+    let title = crate::strings::t(title);
+    let header = match summary {
+        Some(s) => RichText::new(format!("{title} · {s}")),
+        None => RichText::new(title),
+    };
+    ui.add_space(space::XS);
+    egui::CollapsingHeader::new(header.strong().color(pal.fg))
+        .id_salt(id)
+        .default_open(on)
+        .show(ui, body);
+}
+
 /// Janela modal do editor: no centro, com o fundo escurecido, título e X. Esc, o X ou um clique
 /// fora pedem para fechar (o segundo valor). `title` já vem traduzido.
 pub fn modal<R>(

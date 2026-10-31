@@ -94,7 +94,14 @@ pub const NO_APPS_FOUND: &str = "Nenhum programa encontrado. Use “Procurar pro
 pub fn app_buttons(ui: &mut egui::Ui, b: &mut ButtonConfig, picker: &mut AppPicker) -> bool {
     let mut changed = false;
     ui.horizontal_wrapped(|ui| {
-        if ui.button(t("Escolher app instalado")).clicked() {
+        let empty =
+            matches!(&b.action, ButtonAction::LaunchApp { path, .. } if path.trim().is_empty());
+        let choose = if empty {
+            "Escolher app…"
+        } else {
+            "Trocar app…"
+        };
+        if ui.button(t(choose)).clicked() {
             picker.show();
         }
         if ui.button(t(BROWSE_PROGRAM)).clicked() {

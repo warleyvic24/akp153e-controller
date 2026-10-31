@@ -659,7 +659,7 @@ mod tests {
             Role::MultilineTextInput,
         ];
         let mut unnamed: Vec<String> = Vec::new();
-        for tab in 0..3 {
+        for tab in 0..2 {
             for action in &actions {
                 if tab != inspector::TAB_ACTION && *action != ButtonAction::None {
                     continue;

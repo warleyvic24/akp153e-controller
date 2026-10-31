@@ -1,7 +1,7 @@
 //! Painéis do inspetor (Aparência, Ação, Alternar) e o editor de ações.
 use super::{c32, library, widgets};
 use crate::config::schema::*;
-use crate::editor::action_ui::{action_editor, PaneCtx};
+use crate::editor::action_ui::{action_editor, launch_advanced, PaneCtx, MAIN_ACTION_ID};
 use crate::editor::picker::{app_buttons, AppPicker};
 use crate::editor::theme::Palette;
 use crate::strings::t;
@@ -234,35 +234,60 @@ pub fn action_pane(
 ) -> bool {
     let pal = cx.pal;
     widgets::section(ui, "Ao tocar", pal);
-    let mut changed = action_editor(ui, cx, "act", &mut b.action, rec);
+    let mut changed = action_editor(ui, cx, MAIN_ACTION_ID, &mut b.action, rec);
     if matches!(b.action, ButtonAction::LaunchApp { .. }) {
         changed |= app_buttons(ui, b, picker);
+        if let ButtonAction::LaunchApp { path, args } = &mut b.action {
+            changed |= launch_advanced(ui, pal, MAIN_ACTION_ID, path, args);
+        }
     }
-    widgets::section(ui, "Ao segurar (opcional)", pal);
-    let mut has_long = b.long_press_action.is_some();
-    if ui
-        .checkbox(&mut has_long, t("Ativar ação ao segurar"))
-        .changed()
-    {
-        b.long_press_action = has_long.then_some(ButtonAction::None);
-        changed = true;
-    }
-    if let Some(a) = b.long_press_action.as_mut() {
-        changed |= action_editor(ui, cx, "lact", a, rec);
-        // O tempo só importa com uma ação ao segurar: fica junto dela, não escondido em outra aba.
-        let label = widgets::section(ui, "Segurar a partir de", pal);
-        fill_slider_width(ui);
-        changed |= ui
-            .add(egui::Slider::new(&mut b.long_press_threshold_ms, 100..=2000).suffix(" ms"))
-            .labelled_by(label)
-            .changed();
-    }
+    let long = b.long_press_action.as_ref().map(|a| {
+        super::summary::action_summary(a, cx.targets).unwrap_or_else(|| t("sem ação").into())
+    });
+    let on = b.long_press_action.is_some();
+    widgets::fold(
+        ui,
+        "fold-long",
+        "Ao segurar",
+        long.or_else(|| Some(t("desligado").into())),
+        on,
+        pal,
+        |ui| {
+            let mut has_long = b.long_press_action.is_some();
+            if ui
+                .checkbox(&mut has_long, t("Fazer outra ação ao segurar"))
+                .changed()
+            {
+                b.long_press_action = has_long.then_some(ButtonAction::None);
+                changed = true;
+            }
+            if let Some(a) = b.long_press_action.as_mut() {
+                changed |= action_editor(ui, cx, "lact", a, rec);
+                // O tempo só importa com uma ação ao segurar: fica junto dela.
+                let label = widgets::section(ui, "Segurar a partir de", pal);
+                fill_slider_width(ui);
+                changed |= ui
+                    .add(
+                        egui::Slider::new(&mut b.long_press_threshold_ms, 100..=2000).suffix(" ms"),
+                    )
+                    .labelled_by(label)
+                    .changed();
+            }
+        },
+    );
+    let on = b.toggled_appearance.is_some();
+    let state = on
+        .then(|| t("ligado").to_string())
+        .or_else(|| Some(t("desligado").into()));
+    widgets::fold(ui, "fold-states", "Dois estados", state, on, pal, |ui| {
+        changed |= states_body(ui, cx, b, rec);
+    });
     changed
 }
 
-/// Aba "Alternar": tecla de dois estados. Cada toque troca entre o normal e o ligado; o ligado
-/// tem aparência própria (rótulo, cores, ícone) e, se quiser, outra ação no segundo toque.
-pub fn states_pane(
+/// Tecla de dois estados: cada toque troca entre o normal e o ligado; o ligado tem aparência
+/// própria (rótulo, cores, ícone) e, se quiser, outra ação no segundo toque.
+fn states_body(
     ui: &mut egui::Ui,
     cx: &PaneCtx,
     b: &mut ButtonConfig,
@@ -270,7 +295,6 @@ pub fn states_pane(
 ) -> bool {
     let pal = cx.pal;
     let mut changed = false;
-    widgets::section(ui, "Dois estados", pal);
     let mut has_toggle = b.toggled_appearance.is_some();
     if ui
         .checkbox(
@@ -322,7 +346,7 @@ pub fn states_pane(
         Some(a) => changed |= action_editor(ui, cx, "tact", a, rec),
         None => {
             ui.label(widgets::hint(
-                t("Sem isso, os dois toques fazem a ação da aba Ação."),
+                t("Sem isso, os dois toques fazem a ação de \"Ao tocar\"."),
                 pal,
             ));
         }

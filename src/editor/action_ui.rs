@@ -78,6 +78,8 @@ const MEDIA_KEYS: [(&str, &str); 6] = [
 ];
 
 const BODY_ROWS: usize = 3;
+/// `id` da ação "Ao tocar" no `action_editor` (as outras são "lact", "tact" e "step").
+pub(super) const MAIN_ACTION_ID: &str = "act";
 
 /// Explica a ação "Mixer": o que aparece no aparelho e como sair.
 const MIXER_HINT: &str = "Mostra no aparelho os apps com som: ícone com a porcentagem em cima, + no meio e − embaixo. Esta tecla vira SAIR (segure para sair se houver mais de 5 apps).";
@@ -427,19 +429,30 @@ fn hotkey_editor(
         }
     });
     let mut changed = hotkey_recorder(ui, cx, id, keys, rec);
-    ui.label(
-        RichText::new(t("Digitar (ex: meta+d)"))
-            .size(text::CAPTION)
-            .color(pal.muted),
-    );
-    let field_id = ui.scope_id().with((id, "keys"));
-    changed |= textlist::list_field(
+    // Digitar o atalho é para quem precisa de uma tecla que o gravador não pega (ex.: Super).
+    widgets::fold(
         ui,
-        field_id,
-        keys_label,
-        keys,
-        textlist::parse_keys,
-        textlist::join_keys,
+        &format!("{id}-keys-advanced"),
+        "Digitar o atalho",
+        None,
+        false,
+        pal,
+        |ui| {
+            ui.label(
+                RichText::new(t("Ex.: meta+d, ctrl+shift+m"))
+                    .size(text::CAPTION)
+                    .color(pal.muted),
+            );
+            let field_id = ui.scope_id().with((id, "keys"));
+            changed |= textlist::list_field(
+                ui,
+                field_id,
+                keys_label,
+                keys,
+                textlist::parse_keys,
+                textlist::join_keys,
+            );
+        },
     );
     let invalid: Vec<&str> = keys
         .iter()
@@ -503,20 +516,60 @@ fn launch_editor(
     path: &mut String,
     args: &mut Vec<String>,
 ) -> bool {
-    let path_label = widgets::section(ui, "Programa (caminho ou nome)", pal);
-    let mut changed = ui
-        .add(egui::TextEdit::singleline(path).desired_width(ui.available_width()))
-        .labelled_by(path_label)
-        .changed();
-    let args_label = widgets::section(ui, "Argumentos", pal);
-    let field_id = ui.scope_id().with((id, "args"));
-    changed |= textlist::list_field(
+    // Na frente, só qual programa; caminho e argumentos são detalhe técnico, em "Avançado".
+    let shown = super::summary::program_name(path)
+        .unwrap_or_else(|| t("Nenhum programa escolhido").to_string());
+    let color = if path.trim().is_empty() {
+        pal.muted
+    } else {
+        pal.fg
+    };
+    ui.label(
+        RichText::new(shown)
+            .size(text::BODY + 1.0)
+            .strong()
+            .color(color),
+    );
+    // A ação principal põe os botões de escolher app entre o nome e o "Avançado" (`panes`).
+    if id == MAIN_ACTION_ID {
+        return false;
+    }
+    launch_advanced(ui, pal, id, path, args)
+}
+
+/// Caminho do programa e argumentos, recolhidos.
+pub(super) fn launch_advanced(
+    ui: &mut egui::Ui,
+    pal: &Palette,
+    id: &'static str,
+    path: &mut String,
+    args: &mut Vec<String>,
+) -> bool {
+    let mut changed = false;
+    widgets::fold(
         ui,
-        field_id,
-        args_label,
-        args,
-        textlist::parse_args,
-        textlist::join_args,
+        &format!("{id}-advanced"),
+        "Avançado",
+        None,
+        false,
+        pal,
+        |ui| {
+            let path_label = widgets::section(ui, "Programa (caminho ou nome)", pal);
+            changed |= ui
+                .add(egui::TextEdit::singleline(path).desired_width(ui.available_width()))
+                .labelled_by(path_label)
+                .changed();
+            let args_label = widgets::section(ui, "Argumentos", pal);
+            let field_id = ui.scope_id().with((id, "args"));
+            changed |= textlist::list_field(
+                ui,
+                field_id,
+                args_label,
+                args,
+                textlist::parse_args,
+                textlist::join_args,
+            );
+        },
     );
     changed
 }
@@ -553,25 +606,42 @@ fn webhook_editor(
         .add(egui::TextEdit::singleline(url).desired_width(ui.available_width()))
         .labelled_by(url_label)
         .changed();
-    widgets::section(ui, "Método", cx.pal);
-    ui.horizontal_wrapped(|ui| {
-        for m in engine::actions::WEBHOOK_METHODS {
-            let on = method.eq_ignore_ascii_case(m);
-            if widgets::pill(ui, m, on, cx.accent, cx.pal).clicked() {
-                *method = m.to_string();
+    if !engine::actions::is_web_url(url) {
+        ui.label(widgets::hint(
+            t("Comece com https:// (ou http://)."),
+            cx.pal,
+        ));
+    }
+    let summary = Some(method.to_uppercase());
+    widgets::fold(
+        ui,
+        "webhook-advanced",
+        "Avançado",
+        summary,
+        false,
+        cx.pal,
+        |ui| {
+            widgets::section(ui, "Método", cx.pal);
+            ui.horizontal_wrapped(|ui| {
+                for m in engine::actions::WEBHOOK_METHODS {
+                    let on = method.eq_ignore_ascii_case(m);
+                    if widgets::pill(ui, m, on, cx.accent, cx.pal).clicked() {
+                        *method = m.to_string();
+                        changed = true;
+                    }
+                }
+            });
+            let body_label = widgets::section(ui, "Corpo da requisição", cx.pal);
+            let mut s = body.clone().unwrap_or_default();
+            let edit = egui::TextEdit::multiline(&mut s)
+                .desired_width(ui.available_width())
+                .desired_rows(BODY_ROWS);
+            if ui.add(edit).labelled_by(body_label).changed() {
+                *body = (!s.is_empty()).then_some(s);
                 changed = true;
             }
-        }
-    });
-    let body_label = widgets::section(ui, "Corpo da requisição", cx.pal);
-    let mut s = body.clone().unwrap_or_default();
-    let edit = egui::TextEdit::multiline(&mut s)
-        .desired_width(ui.available_width())
-        .desired_rows(BODY_ROWS);
-    if ui.add(edit).labelled_by(body_label).changed() {
-        *body = (!s.is_empty()).then_some(s);
-        changed = true;
-    }
+        },
+    );
     changed
 }
 

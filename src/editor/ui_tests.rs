@@ -103,3 +103,20 @@ fn an_empty_key_shows_the_open_grid_without_none() {
     h.run();
     assert_eq!(first_key(&h), ButtonAction::Clock);
 }
+
+#[test]
+fn the_more_menu_clears_the_key_and_the_two_folds_start_closed() {
+    let mut u = under_test();
+    runtime::lock(&u.app.sh).cfg.page_mut().buttons[0].action = ButtonAction::Clock;
+    u.app.selected = 0;
+    let mut h = harness(u);
+    h.run();
+    // Sem ação ao segurar nem dois estados: as seções começam fechadas, dizendo "desligado".
+    h.get_by_label_contains("Ao segurar · desligado");
+    h.get_by_label_contains("Dois estados · desligado");
+    h.get_by_label("Mais ações da tecla").click();
+    h.run();
+    h.get_by_label_contains("Limpar tecla").click();
+    h.run();
+    assert_eq!(first_key(&h), ButtonAction::None);
+}

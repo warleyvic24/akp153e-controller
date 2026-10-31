@@ -2,7 +2,7 @@
 use super::{checks, is_blank, key_view, summary, theme, tokens, widgets, App};
 use crate::config::schema::*;
 use crate::editor::action_ui::{PaneCtx, Targets};
-use crate::editor::panes::{action_pane, appearance_pane, states_pane};
+use crate::editor::panes::{action_pane, appearance_pane};
 use crate::editor::picker::apply_app;
 use crate::editor::theme::Palette;
 use crate::platform::{apps, shell};
@@ -16,12 +16,12 @@ const APP_LIST_MAX_HEIGHT: f32 = 320.0;
 const APP_BADGE: f32 = 24.0;
 const APP_ROW_HOVER_TINT: f32 = 0.10;
 const INSPECTOR_MARGIN: f32 = 14.0;
-const PREVIEW_KEY: f32 = 56.0;
+const PREVIEW_KEY: f32 = 72.0;
 // O que a tecla faz vem antes de como ela parece.
-const TAB_NAMES: [&str; 3] = ["Ação", "Aparência", "Alternar"];
+const TAB_NAMES: [&str; 2] = ["Ação", "Aparência"];
 pub(crate) const TAB_ACTION: usize = 0;
-const TAB_LOOK: usize = 1;
-const TEST_HEIGHT: f32 = 34.0;
+const TEST_HEIGHT: f32 = 32.0;
+const MORE_MENU_WIDTH: f32 = 180.0;
 const LIVE_UNTESTABLE: &str = "Esta tecla só mostra informação; não há o que testar";
 
 /// Título do inspetor: o rótulo (numa linha só); sem ele, um nome curto do que a tecla faz (o
@@ -169,6 +169,11 @@ fn app_list(
     chosen
 }
 
+/// Item de menu com o atalho à direita.
+fn menu_item(ui: &mut egui::Ui, label: &str, shortcut: &str, enabled: bool) -> egui::Response {
+    ui.add_enabled(enabled, egui::Button::new(t(label)).shortcut_text(shortcut))
+}
+
 /// Id da janela da lista de apps (o título muda com o idioma).
 pub(crate) const APP_PICKER_ID: &str = "app-picker";
 const PICKER_WIDTH: f32 = 420.0;
@@ -284,29 +289,34 @@ impl App {
         ui.horizontal(|ui| {
             // Ícones à direita (o layout os desenha ao contrário); "Testar" ocupa o resto.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // Destrutivo: na ponta, em vermelho, longe de "Testar".
-                let clear = widgets::icon_button_tinted(
-                    ui,
-                    "trash",
-                    "Limpar tecla (Del)",
-                    true,
-                    pal.bad,
-                    pal,
-                );
-                if clear.clicked() {
-                    self.clear_key(g, sel);
-                }
-                let can_paste = self.clipboard.is_some();
-                if widgets::icon_button(ui, "paste", "Colar (Ctrl+V)", can_paste, pal).clicked() {
-                    self.paste_key(g, sel);
-                }
-                if widgets::icon_button(ui, "copy", "Copiar (Ctrl+C)", true, pal).clicked() {
-                    self.copy_key(ui.ctx(), g, sel);
-                }
+                // Copiar, colar e limpar num menu com nome e atalho: o limpar (destrutivo) sai de
+                // perto do "Testar", e os ícones soltos deixam de ser adivinhação.
+                let more = widgets::icon_button(ui, "more", "Mais ações da tecla", true, pal);
+                egui::Popup::menu(&more).show(|ui| {
+                    ui.set_min_width(MORE_MENU_WIDTH);
+                    if menu_item(ui, "Copiar", "Ctrl+C", true).clicked() {
+                        self.copy_key(ui.ctx(), g, sel);
+                    }
+                    let can_paste = self.clipboard.is_some();
+                    if menu_item(ui, "Colar", "Ctrl+V", can_paste).clicked() {
+                        self.paste_key(g, sel);
+                    }
+                    ui.separator();
+                    let clear = egui::Button::new(RichText::new(t("Limpar tecla")).color(pal.bad))
+                        .shortcut_text("Del");
+                    if ui.add(clear).clicked() {
+                        self.clear_key(g, sel);
+                    }
+                });
                 // Sem o que testar, o botão perde o preenchimento: um primário apagado ainda
                 // parece clicável. Neutro com borda deixa claro que está desligado.
+                // Secundário: testar é ocasional, não a ação principal do painel.
                 let (fill, ink, stroke) = if untestable.is_none() {
-                    (accent, theme::readable_on(accent), Stroke::NONE)
+                    (
+                        pal.raise,
+                        theme::ink(accent, pal),
+                        Stroke::new(1.0_f32, pal.control),
+                    )
                 } else {
                     (pal.field, pal.muted, Stroke::new(1.0_f32, pal.control))
                 };
@@ -486,8 +496,7 @@ impl App {
             let view = key_view(b, None, tex, false);
             widgets::paint_key(ui.painter(), rect, &view, false, false, pal, accent);
             ui.vertical(|ui| {
-                let number = RichText::new(tf("TECLA {}", &[&(sel + 1)]))
-                    .monospace()
+                let number = RichText::new(tf("Tecla {}", &[&(sel + 1)]))
                     .size(tokens::text::CAPTION)
                     .color(pal.muted);
                 ui.label(number);
@@ -541,8 +550,7 @@ impl App {
         let scroll = egui::ScrollArea::vertical().id_salt(("inspector", sel, self.tab));
         scroll.show(ui, |ui| match self.tab {
             TAB_ACTION => changed |= action_pane(ui, cx, b, &mut self.recording, &mut self.picker),
-            TAB_LOOK => changed |= appearance_pane(ui, b, cx.pal, cx.accent),
-            _ => changed |= states_pane(ui, cx, b, &mut self.recording),
+            _ => changed |= appearance_pane(ui, b, cx.pal, cx.accent),
         });
         changed
     }
