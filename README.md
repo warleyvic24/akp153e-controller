@@ -2,7 +2,7 @@
 
 [Português](README.pt-BR.md) · [![CI](https://github.com/warleyvic24/akp153e-controller/actions/workflows/ci.yml/badge.svg)](https://github.com/warleyvic24/akp153e-controller/actions/workflows/ci.yml) · [MIT License](LICENSE)
 
-Unofficial, open-source, Windows-only controller software for the AJAZZ AKP153E stream controller (15 LCD keys), written in Rust with egui/eframe. It replaces the manufacturer's app and contains no code, firmware or assets from it.
+Unofficial, open-source controller software for Windows and Linux for the AJAZZ AKP153E stream controller (15 LCD keys), written in Rust with egui/eframe. It replaces the manufacturer's app and contains no code, firmware or assets from it.
 
 > **Status: early (v0.1).** Key drawing, the editor, app/webhook/shortcut actions, autostart and the tray icon are verified on a real device. Physical key press/release and long press are **not verified yet**; the side panel is a display without buttons on the AKP153E and is not used — see [`evals/hardware-checklist.md`](evals/hardware-checklist.md). This project is not affiliated with AJAZZ.
 
@@ -14,8 +14,8 @@ One executable, two modes:
 
 | Mode | Command | Role |
 |------|---------|------|
-| Service | `akp153e.exe --background` | Tray icon, no window. Owns USB/HID, actions and key drawing. |
-| Editor | `akp153e.exe --editor` | egui window. Edits `%APPDATA%\AJazz\AKP153E\config.json` and tells the service to reload over `127.0.0.1:47153`. |
+| Service | `akp153e --background` | Tray icon, no window. Owns USB/HID, actions and key drawing. |
+| Editor | `akp153e --editor` | egui window. Edits `config.json` (`%APPDATA%\AJazz\AKP153E` on Windows, `~/.config/AJazz/AKP153E` on Linux) and tells the service to reload over `127.0.0.1:47153`. |
 
 Other flags: `--probe` (writes `akp153e_probe.txt`), `--run-action <json>`, `--autostart on|off`.
 
@@ -23,20 +23,23 @@ The device enumerates as HID `0300:3010` and is handled as protocol v3. The prot
 
 ## Build
 
-Requires Windows, a recent stable Rust toolchain and the MSVC build tools (the Windows SDK resource compiler embeds the icon).
+Requires a recent stable Rust toolchain (1.89 or newer) and:
+
+- **Windows:** the MSVC build tools (the Windows SDK resource compiler embeds the icon).
+- **Linux:** GTK 3, libayatana-appindicator, libudev, libxkbcommon and `pactl`; a udev rule gives your user access to the device. Packages, install script and what was tested (Omarchy / Hyprland) are in [`docs/LINUX.md`](docs/LINUX.md). On Arch: `cd packaging/arch && makepkg -si`.
 
 ```
-cargo build --release   # target\release\akp153e.exe
+cargo build --release   # target/release/akp153e (akp153e.exe on Windows)
 cargo test
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
 
-`cargo build --release` fails with "access denied" while the service is running; stop the `--background` process first.
+On Windows, `cargo build --release` fails with "access denied" while the service is running; stop the `--background` process first.
 
 ## Security
 
-The control port accepts any local process, and `config.json` stores webhook URLs and program paths in plain text. Details and reporting instructions are in [SECURITY.md](SECURITY.md).
+The control port listens on localhost (on Linux, connections from other users are refused), and `config.json` stores webhook URLs and program paths in plain text (owner-only on Linux). Details and reporting instructions are in [SECURITY.md](SECURITY.md).
 
 ## Contributing
 
