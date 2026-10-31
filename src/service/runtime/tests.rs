@@ -23,6 +23,7 @@ fn two_page_state(action: ButtonAction, long: Option<ButtonAction>) -> Shared {
         recent_apps: Vec::new(),
         obs: crate::obs::ObsState::default(),
         sleep: crate::service::sleep::SleepState::default(),
+        live: crate::platform::live::Live::default(),
     }
 }
 
@@ -351,7 +352,8 @@ fn the_pressed_image_is_smaller_and_framed_in_black() {
         b: 0,
         a: 255,
     };
-    let img = crate::graphics::renderer::render_pressed_rgba(&b, 100, 100);
+    let img =
+        crate::graphics::renderer::pressed(&crate::graphics::renderer::render_rgba(&b, 100, 100));
     assert_eq!(img.get_pixel(1, 1).0[0], 0, "borda preta");
     assert_eq!(img.get_pixel(50, 50).0[0], 200, "centro com a imagem");
 }

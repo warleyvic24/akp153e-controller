@@ -25,6 +25,21 @@ pub struct ButtonAppearance {
     /// Onde fica o rótulo. Ausente em configs antigas: `Auto` (embaixo do ícone, ou no meio).
     #[serde(default)]
     pub text_position: TextPosition,
+    /// Fundo em degradê suave (mais claro em cima), em vez de cor chapada.
+    #[serde(default)]
+    pub gradient: bool,
+}
+
+/// O que a tecla "Monitor" mostra.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Metric {
+    /// CPU, RAM e temperatura juntas.
+    #[default]
+    Overview,
+    Cpu,
+    Ram,
+    Temp,
 }
 
 /// Posição do rótulo na tecla; o ícone ocupa o espaço que sobra.
@@ -100,6 +115,11 @@ pub enum ButtonAction {
     },
     /// Tecla viva: mostra a hora e a data, redesenhada a cada minuto. Tocar não faz nada.
     Clock,
+    /// Tecla viva com o uso do sistema (CPU, RAM, temperatura), atualizada a cada poucos segundos.
+    Monitor {
+        #[serde(default)]
+        metric: Metric,
+    },
     /// Comando no OBS Studio (obs-websocket). `target` é a cena ou a entrada, quando o comando usa.
     Obs {
         command: ObsCommand,
@@ -224,6 +244,7 @@ impl ButtonConfig {
                 icon_path: None,
                 icon: None,
                 text_position: TextPosition::Auto,
+                gradient: false,
             },
             action: ButtonAction::None,
             long_press_action: None,
@@ -242,6 +263,14 @@ impl ButtonConfig {
         match (&self.toggled_appearance, self.toggle_state) {
             (Some(a), true) => a,
             _ => &self.appearance,
+        }
+    }
+
+    /// A aparência em uso agora, para mudar.
+    pub fn current_appearance_mut(&mut self) -> &mut ButtonAppearance {
+        match (&mut self.toggled_appearance, self.toggle_state) {
+            (Some(a), true) => a,
+            _ => &mut self.appearance,
         }
     }
 }
@@ -270,6 +299,8 @@ pub enum SideScreen {
     PageName,
     /// Hora e data, atualizadas a cada minuto.
     Clock,
+    /// CPU, RAM e temperatura ao vivo.
+    System,
     /// Uma imagem, recortada para preencher a faixa.
     Image { path: String },
 }

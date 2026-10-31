@@ -249,3 +249,20 @@ fn a_busy_key_still_fits_in_three_packets() {
     assert!(jpeg.len() <= MAX_JPEG_BYTES, "{} bytes", jpeg.len());
     assert!(image::load_from_memory(&jpeg).is_ok());
 }
+
+#[test]
+fn a_gradient_is_lighter_on_top_and_darker_at_the_foot() {
+    let mut b = ButtonConfig::blank();
+    b.appearance.background = RGBAColor {
+        r: 100,
+        g: 100,
+        b: 100,
+        a: 255,
+    };
+    let flat = render_rgba(&b, 20, 20);
+    b.appearance.gradient = true;
+    let soft = render_rgba(&b, 20, 20);
+    assert_eq!(flat.get_pixel(10, 0)[0], 100);
+    assert!(soft.get_pixel(10, 0)[0] > 100);
+    assert!(soft.get_pixel(10, 19)[0] < 100);
+}

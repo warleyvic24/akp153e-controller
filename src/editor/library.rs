@@ -1,4 +1,4 @@
-use crate::config::schema::{AppConfig, ButtonAction, ObsCommand};
+use crate::config::schema::{AppConfig, ButtonAction, Metric, ObsCommand};
 
 /// Ação pronta da biblioteca: aplicada a um botão define ação, ícone, rótulo e cor de fundo.
 #[derive(Clone, Debug)]
@@ -19,6 +19,32 @@ const NAV: [u8; 3] = [111, 88, 184];
 const DEVICE: [u8; 3] = [52, 60, 78];
 /// Teclas do OBS Studio.
 const OBS: [u8; 3] = [40, 44, 58];
+/// Cor da categoria de uma ação (a mesma da biblioteca); `None` para tecla sem ação.
+pub(crate) fn category_color(action: &ButtonAction) -> Option<[u8; 3]> {
+    Some(match action {
+        ButtonAction::None => return None,
+        ButtonAction::MediaKey { .. }
+        | ButtonAction::OpenMixer
+        | ButtonAction::PlaySound { .. } => MEDIA,
+        ButtonAction::Hotkey { .. }
+        | ButtonAction::TypeText { .. }
+        | ButtonAction::MultiAction { .. }
+        | ButtonAction::Delay { .. }
+        | ButtonAction::RunCommand { .. } => KEYS,
+        ButtonAction::LaunchApp { args, .. } if args.len() == 1 && args[0].contains("://") => WEB,
+        ButtonAction::LaunchApp { .. } => APPS,
+        ButtonAction::HttpWebhook { .. } => WEB,
+        ButtonAction::SwitchPage { .. }
+        | ButtonAction::SwitchProfile { .. }
+        | ButtonAction::NextPage
+        | ButtonAction::PreviousPage => NAV,
+        ButtonAction::Brightness { .. } | ButtonAction::Clock | ButtonAction::Monitor { .. } => {
+            DEVICE
+        }
+        ButtonAction::Obs { .. } => OBS,
+    })
+}
+
 /// Cores oferecidas no seletor do inspetor (a última é o grafite neutro).
 pub const SWATCHES: [[u8; 3]; 7] = [MEDIA, KEYS, APPS, WEB, NAV, [42, 47, 58], [0, 0, 0]];
 
@@ -250,6 +276,15 @@ pub fn presets() -> Vec<Preset> {
             "lucide:clock",
             DEVICE,
             ButtonAction::Clock,
+        ),
+        p(
+            "Aparelho",
+            "Monitor",
+            "lucide:activity",
+            DEVICE,
+            ButtonAction::Monitor {
+                metric: Metric::Overview,
+            },
         ),
         obs(ObsCommand::Record),
         obs(ObsCommand::Stream),

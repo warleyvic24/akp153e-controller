@@ -131,6 +131,9 @@ fn paint_device_body(p: &egui::Painter, rect: Rect, pal: &Palette, accent: Color
     p.rect_filled(led_rect, Rounding::same(LED_RADIUS), led);
 }
 
+const BEAUTIFY_HINT: &str =
+    "Cor da categoria, fundo em degradê, rótulo e ícone nas teclas que não têm. Ctrl+Z desfaz.";
+
 /// Atalhos do palco em forma de tecla, para quem não sabe que eles existem.
 fn shortcut_hints(ui: &mut Ui, pal: &Palette) {
     let hints = [
@@ -276,9 +279,31 @@ impl App {
         if page_blank {
             empty_guide(ui, pal, accent, rect.width());
         } else {
-            ui.allocate_ui(vec2(rect.width(), STAGE_FOOTER_HEIGHT), |ui| {
-                ui.horizontal(|ui| shortcut_hints(ui, pal));
-            });
+            let beautify = ui
+                .allocate_ui(vec2(rect.width(), STAGE_FOOTER_HEIGHT), |ui| {
+                    ui.horizontal(|ui| {
+                        // O botão fica à direita; as dicas usam o que sobra à esquerda.
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let clicked = ui
+                                .button(t("Embelezar página"))
+                                .on_hover_text(t(BEAUTIFY_HINT))
+                                .clicked();
+                            ui.with_layout(
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    shortcut_hints(ui, pal);
+                                },
+                            );
+                            clicked
+                        })
+                        .inner
+                    })
+                    .inner
+                })
+                .inner;
+            if beautify {
+                self.beautify_page(g);
+            }
         }
         events
     }

@@ -9,6 +9,7 @@
 //! teclas (vai à tela, não à memória flash como o `LOG`).
 use super::renderer::{bold_font, draw_line, encode_frame, font};
 use crate::config::schema::{RGBAColor, SideScreen};
+use crate::platform::live::Live;
 use image::{imageops, Rgba, RgbaImage};
 
 pub const WIDTH: u32 = 82;
@@ -49,12 +50,13 @@ const DOT_GAP: f32 = 14.0;
 const MAX_DOTS: usize = 8;
 
 /// A faixa inteira (82 x 400) para o modo escolhido; `None` quando apagada.
-pub fn render(side: &SideScreen, info: &SideInfo) -> Option<RgbaImage> {
+pub fn render(side: &SideScreen, info: &SideInfo, live: &Live) -> Option<RgbaImage> {
     let mut img = RgbaImage::from_pixel(WIDTH, HEIGHT, Rgba([0, 0, 0, 255]));
     match side {
         SideScreen::Off => return None,
         SideScreen::PageName => page_name(&mut img, info),
         SideScreen::Clock => clock(&mut img),
+        SideScreen::System => super::live_art::side_system(&mut img, live.system, MUTED),
         SideScreen::Image { path } => {
             if let Ok(picture) = image::open(path) {
                 let filled = picture
@@ -163,9 +165,9 @@ mod tests {
 
     #[test]
     fn off_draws_nothing_and_the_other_modes_fill_the_strip() {
-        assert!(render(&SideScreen::Off, &info()).is_none());
-        for mode in [SideScreen::PageName, SideScreen::Clock] {
-            let img = render(&mode, &info()).unwrap();
+        assert!(render(&SideScreen::Off, &info(), &Live::default()).is_none());
+        for mode in [SideScreen::PageName, SideScreen::Clock, SideScreen::System] {
+            let img = render(&mode, &info(), &Live::default()).unwrap();
             assert_eq!(img.dimensions(), (WIDTH, HEIGHT));
             if font().is_some() {
                 assert!(img.pixels().any(|p| p[0] > 128), "{mode:?} desenhou algo");
@@ -175,7 +177,7 @@ mod tests {
 
     #[test]
     fn the_current_page_dot_uses_the_accent() {
-        let img = render(&SideScreen::PageName, &info()).unwrap();
+        let img = render(&SideScreen::PageName, &info(), &Live::default()).unwrap();
         let cyan = img.pixels().filter(|p| p[2] > 200 && p[0] < 60).count();
         assert!(cyan > 10, "{cyan}");
     }
@@ -191,7 +193,7 @@ mod tests {
         let side = SideScreen::Image {
             path: path.display().to_string(),
         };
-        let img = render(&side, &info()).unwrap();
+        let img = render(&side, &info(), &Live::default()).unwrap();
         assert_eq!(img.get_pixel(0, 0)[0], 220);
         assert_eq!(img.get_pixel(WIDTH - 1, HEIGHT - 1)[0], 220);
         let _ = std::fs::remove_dir_all(dir);
@@ -225,22 +227,25 @@ mod tests {
         for (name, mode) in [
             ("pagina", SideScreen::PageName),
             ("relogio", SideScreen::Clock),
+            ("sistema", SideScreen::System),
         ] {
-            render(&mode, &info())
+            render(&mode, &info(), &Live::default())
                 .unwrap()
                 .save(dir.join(format!("{name}.png")))
                 .unwrap();
         }
     }
 
-    /// Como o aparelho deve ficar com uma config: as 15 teclas e a tela lateral em "nome da página",
-    /// e ao lado a tecla 1 apertada. `AKP_PREVIEW_CONFIG=config.json AKP_PREVIEW_OUT=x.png
+    /// Como o aparelho deve ficar com uma config: as 15 teclas (com os dados ao vivo deste PC) e a
+    /// tela lateral da página ("nome da página" se apagada), e ao lado a tecla 1 apertada. `AKP_PREVIEW_CONFIG=config.json AKP_PREVIEW_OUT=x.png
     /// cargo test device_preview -- --ignored`.
     #[test]
     #[ignore = "gera uma imagem para mostrar"]
     fn device_preview() {
         use crate::config::schema::AppConfig;
-        use crate::graphics::renderer::{render_pressed_rgba, render_rgba};
+        use crate::graphics::live_art::render_live;
+        use crate::graphics::renderer::pressed;
+        use crate::platform::live::{Sampler, Wants};
         let text = std::fs::read_to_string(std::env::var("AKP_PREVIEW_CONFIG").unwrap()).unwrap();
         let cfg = serde_json::from_str::<AppConfig>(&text)
             .unwrap()
@@ -252,10 +257,25 @@ mod tests {
         );
         let mut img = RgbaImage::from_pixel(w + key + 3 * pad, h, Rgba([28, 30, 38, 255]));
         let page = cfg.page();
+        // Duas consultas: a CPU é a diferença entre elas.
+        let all = Wants {
+            volume: true,
+            playing: true,
+            system: true,
+        };
+        let mut sampler = Sampler::default();
+        sampler.sample(all);
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let live = sampler.sample(all);
         for (i, b) in page.buttons.iter().enumerate() {
             let x = pad + (i as u32 % 5) * (key + gap);
             let y = pad + (i as u32 / 5) * (key + gap);
-            imageops::overlay(&mut img, &render_rgba(b, key, key), x.into(), y.into());
+            imageops::overlay(
+                &mut img,
+                &render_live(b, key, key, &live),
+                x.into(),
+                y.into(),
+            );
         }
         let profile = &cfg.profiles[cfg.active_profile];
         let side_info = SideInfo {
@@ -270,11 +290,15 @@ mod tests {
                 a: 255,
             },
         };
-        let strip = render(&SideScreen::PageName, &side_info).unwrap();
+        let mode = match &page.side {
+            SideScreen::Off => SideScreen::PageName,
+            other => other.clone(),
+        };
+        let strip = render(&mode, &side_info, &live).unwrap();
         let strip = imageops::resize(&strip, WIDTH, h - 2 * pad, imageops::FilterType::Triangle);
         imageops::overlay(&mut img, &strip, (pad + 5 * (key + gap)).into(), pad.into());
-        let pressed = render_pressed_rgba(&page.buttons[0], key, key);
-        imageops::overlay(&mut img, &pressed, (w + 2 * pad).into(), pad.into());
+        let down = pressed(&render_live(&page.buttons[0], key, key, &live));
+        imageops::overlay(&mut img, &down, (w + 2 * pad).into(), pad.into());
         img.save(std::env::var("AKP_PREVIEW_OUT").unwrap()).unwrap();
     }
 }

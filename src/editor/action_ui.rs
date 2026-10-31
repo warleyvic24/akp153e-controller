@@ -64,7 +64,7 @@ pub(crate) fn media_label(key: &str) -> &str {
         .map_or(key, |(_, label)| label)
 }
 
-const ACTION_KINDS: [(&str, &str); 17] = [
+const ACTION_KINDS: [(&str, &str); 18] = [
     ("none", "Nenhuma"),
     ("hotkey", "Atalho"),
     ("launch-app", "App"),
@@ -80,6 +80,7 @@ const ACTION_KINDS: [(&str, &str); 17] = [
     ("run-command", "Comando"),
     ("brightness", "Brilho"),
     ("clock", "Relógio"),
+    ("monitor", "Monitor"),
     ("obs", "OBS"),
     ("play-sound", "Som"),
 ];
@@ -141,6 +142,7 @@ fn action_name(a: &ButtonAction) -> &'static str {
         ButtonAction::RunCommand { .. } => "run-command",
         ButtonAction::Brightness { .. } => "brightness",
         ButtonAction::Clock => "clock",
+        ButtonAction::Monitor { .. } => "monitor",
         ButtonAction::Obs { .. } => "obs",
         ButtonAction::PlaySound { .. } => "play-sound",
     }
@@ -180,6 +182,9 @@ fn default_action(kind: &str) -> ButtonAction {
             delta: BRIGHTNESS_STEP,
         },
         "clock" => ButtonAction::Clock,
+        "monitor" => ButtonAction::Monitor {
+            metric: Metric::Overview,
+        },
         "play-sound" => ButtonAction::PlaySound {
             path: String::new(),
         },
@@ -346,6 +351,7 @@ fn kind_icon(kind: &str) -> &'static str {
         "run-command" => "lucide:terminal",
         "brightness" => "lucide:sun",
         "clock" => "lucide:clock",
+        "monitor" => "lucide:activity",
         "obs" => "lucide:clapperboard",
         "play-sound" => "lucide:audio-lines",
         _ => "ban",
@@ -387,6 +393,7 @@ pub fn action_editor(
         ButtonAction::Brightness { delta } => brightness_editor(ui, cx, delta),
         ButtonAction::Obs { command, target } => super::obs_ui::obs_editor(ui, cx, command, target),
         ButtonAction::PlaySound { path } => sound_editor(ui, cx, path),
+        ButtonAction::Monitor { metric } => super::monitor_ui::monitor_editor(ui, cx, metric),
         ButtonAction::Clock => {
             ui.label(widgets::hint(t(CLOCK_HINT), cx.pal));
             false

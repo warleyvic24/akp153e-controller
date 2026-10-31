@@ -141,6 +141,9 @@ fn color_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette) -> bool
         ui.add_space(SWATCH_GAP);
         changed |= color_picker(ui, "Texto", &mut b.appearance.text_color);
     });
+    changed |= ui
+        .checkbox(&mut b.appearance.gradient, t("Fundo em degradê"))
+        .changed();
     changed
 }
 

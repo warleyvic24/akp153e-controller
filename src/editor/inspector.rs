@@ -22,7 +22,7 @@ const TAB_NAMES: [&str; 3] = ["Ação", "Aparência", "Alternar"];
 pub(crate) const TAB_ACTION: usize = 0;
 const TAB_LOOK: usize = 1;
 const TEST_HEIGHT: f32 = 34.0;
-const CLOCK_UNTESTABLE: &str = "A tecla de relógio só mostra a hora; não há o que testar";
+const LIVE_UNTESTABLE: &str = "Esta tecla só mostra informação; não há o que testar";
 
 /// Título do inspetor: o rótulo (numa linha só); sem ele, um nome curto do que a tecla faz (o
 /// programa, a tecla de mídia, o atalho). `None` quando não há nada a dizer (o cabeçalho mostra
@@ -45,6 +45,9 @@ pub(crate) fn key_title(b: &ButtonConfig) -> Option<String> {
         ButtonAction::Hotkey { keys } if !keys.is_empty() => Some(summary::chord(keys)),
         ButtonAction::OpenMixer => Some(t("Mixer").to_string()),
         ButtonAction::Clock => Some(t("Relógio").to_string()),
+        ButtonAction::Monitor { metric } => {
+            Some(t(super::monitor_ui::metric_label(*metric)).to_string())
+        }
         ButtonAction::PlaySound { path } => summary::sound_name(path),
         ButtonAction::Obs { command, target } if target.is_empty() => {
             Some(t(super::obs_ui::command_label(*command)).to_string())
@@ -408,7 +411,7 @@ impl App {
                 }
                 let untestable = match b.action {
                     ButtonAction::None => Some(checks::NO_ACTION),
-                    ButtonAction::Clock => Some(CLOCK_UNTESTABLE),
+                    ButtonAction::Clock | ButtonAction::Monitor { .. } => Some(LIVE_UNTESTABLE),
                     _ => checks::action_problem(&b.action, &targets),
                 };
                 ui.add_space(tokens::space::XS);

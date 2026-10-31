@@ -343,17 +343,15 @@ mod mpris {
             .and_then(Value::as_str)
             .filter(|u| !u.is_empty())
             .map(str::to_string);
-        (!title.is_empty()).then(|| {
-            (
-                NowPlaying {
-                    title,
-                    artist,
-                    playing,
-                    art: None,
-                },
-                art,
-            )
-        })
+        (!title.is_empty()).then_some((
+            NowPlaying {
+                title,
+                artist,
+                playing,
+                art: None,
+            },
+            art,
+        ))
     }
 }
 

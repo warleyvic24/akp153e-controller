@@ -4,6 +4,7 @@ use super::{theme, tokens, widgets, App};
 use crate::config::schema::SideScreen;
 use crate::editor::theme::Palette;
 use crate::graphics::side::{self, SideInfo};
+use crate::platform::live::Live;
 use crate::service::runtime;
 use crate::strings::{display_name, t, tf};
 use eframe::egui::{self, Color32, RichText, Rounding, Sense, Stroke};
@@ -13,7 +14,7 @@ const OFF_LABEL_ALPHA: f32 = 0.55;
 
 /// Prévia da tela lateral, refeita só quando o conteúdo (ou o minuto, no relógio) muda.
 #[derive(Default)]
-pub(crate) struct SideTexture(Option<(SideScreen, SideInfo, u64, egui::TextureHandle)>);
+pub(crate) struct SideTexture(Option<(SideScreen, SideInfo, u64, Live, egui::TextureHandle)>);
 
 fn info(g: &runtime::Shared) -> SideInfo {
     let profile = &g.cfg.profiles[g.cfg.active_profile];
@@ -55,14 +56,19 @@ impl App {
         } else {
             0
         };
+        // Só o modo "Sistema" depende dos dados ao vivo.
+        let live = if side == SideScreen::System {
+            g.live.clone()
+        } else {
+            Live::default()
+        };
         let info = info(g);
-        let fresh = self
-            .side_tex
-            .0
-            .as_ref()
-            .is_some_and(|(s, i, m, _)| *s == side && *i == info && *m == minute);
+        let fresh =
+            self.side_tex.0.as_ref().is_some_and(|(s, i, m, l, _)| {
+                *s == side && *i == info && *m == minute && *l == live
+            });
         if !fresh {
-            self.side_tex.0 = side::render(&side, &info).map(|img| {
+            self.side_tex.0 = side::render(&side, &info, &live).map(|img| {
                 let image = egui::ColorImage::from_rgba_unmultiplied(
                     [img.width() as usize, img.height() as usize],
                     img.as_raw(),
@@ -70,11 +76,11 @@ impl App {
                 let tex = ui
                     .ctx()
                     .load_texture("side-screen", image, egui::TextureOptions::LINEAR);
-                (side.clone(), info.clone(), minute, tex)
+                (side.clone(), info.clone(), minute, live.clone(), tex)
             });
         }
         match &self.side_tex.0 {
-            Some((_, _, _, tex)) => {
+            Some((_, _, _, _, tex)) => {
                 let mut shape = egui::epaint::RectShape::filled(rect, round, Color32::WHITE);
                 shape.fill_texture_id = tex.id();
                 shape.uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
@@ -143,6 +149,7 @@ impl App {
                         (SideScreen::Off, "Nada"),
                         (SideScreen::PageName, "Nome da página"),
                         (SideScreen::Clock, "Relógio"),
+                        (SideScreen::System, "Sistema"),
                     ];
                     for (mode, name) in modes {
                         let on = *side == mode;

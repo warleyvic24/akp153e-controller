@@ -121,6 +121,7 @@ pub fn run(open_editor: bool) {
     usb::spawn(event_tx, cmd_rx);
     let state = runtime::new_state(cfg, usb::ICON_SIZE as u32);
     runtime::spawn(state.clone(), cmd_tx.clone(), event_rx, exec);
+    runtime::live::spawn(state.clone(), Some(cmd_tx.clone()));
     let (focus_tx, focus_rx) = channel();
     crate::platform::focus::spawn_watch(focus_tx);
     auto_profile::spawn(state.clone(), cmd_tx.clone(), focus_rx);

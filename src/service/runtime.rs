@@ -2,10 +2,12 @@
 //! e redesenha os botões. A UI e este módulo compartilham o estado via `SharedState`.
 use crate::config::schema::{AppConfig, ButtonAction, ButtonConfig, RGBAColor, SideScreen};
 use crate::engine::actions::Executor;
+use crate::graphics::live_art::render_live;
 use crate::graphics::mixer_art::render_mixer_key;
 use crate::graphics::renderer::{encode_frame, render_button_frame};
 use crate::graphics::side::SideInfo;
 use crate::mixer::{MixerKey, MixerView};
+use crate::platform::live::Live;
 use crate::service::mixer_runtime::{self, StepHold};
 use crate::usb::{SideFrame, UsbCmd, UsbEvent};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
@@ -31,6 +33,8 @@ pub struct Shared {
     pub obs: crate::obs::ObsState,
     /// No serviço: descanso da tela (apaga após um tempo sem uso).
     pub sleep: super::sleep::SleepState,
+    /// Volume, música e uso do sistema para as teclas vivas da página (`live::spawn`).
+    pub live: Live,
 }
 
 pub type SharedState = Arc<Mutex<Shared>>;
@@ -45,6 +49,7 @@ pub fn new_state(cfg: AppConfig, icon_px: u32) -> SharedState {
         recent_apps: Vec::new(),
         obs: crate::obs::ObsState::default(),
         sleep: super::sleep::SleepState::default(),
+        live: Live::default(),
     }))
 }
 
@@ -71,6 +76,8 @@ pub struct Snapshot {
     px: u32,
     /// Tela lateral da página (só nos desenhos da página inteira; o mixer não a usa).
     side: Option<(SideScreen, SideInfo)>,
+    /// Dados ao vivo do momento da cópia, para as teclas vivas.
+    live: Live,
 }
 
 /// O que a tela lateral da página ativa mostra agora e com que dados.
@@ -118,6 +125,7 @@ impl Snapshot {
             },
             px: sh.icon_px,
             side: sh.mixer.is_none().then(|| side_of(sh)),
+            live: sh.live.clone(),
         }
     }
 
@@ -125,13 +133,13 @@ impl Snapshot {
         for (index, frame) in &self.frames {
             let index = *index;
             let data = match frame {
-                Frame::Button(b) => render_button_frame(b, self.px, self.px),
+                Frame::Button(b) => encode_frame(&render_live(b, self.px, self.px, &self.live)),
                 Frame::Mixer(key) => encode_frame(&render_mixer_key(key, self.px)),
             };
             let _ = tx.send(UsbCmd::Frame { index, data });
         }
         if let Some((side, info)) = &self.side {
-            let frame = match crate::graphics::side::render(side, info) {
+            let frame = match crate::graphics::side::render(side, info, &self.live) {
                 Some(img) => SideFrame::Strips(crate::graphics::side::strips(&img)),
                 None => SideFrame::Clear,
             };
@@ -488,6 +496,7 @@ pub fn redraw_where(
                 .collect(),
             px: sh.icon_px,
             side: None,
+            live: sh.live.clone(),
         }
     };
     snapshot.render(tx);
@@ -507,6 +516,7 @@ fn redraw_side(state: &SharedState, tx: &Sender<UsbCmd>) {
             frames: Vec::new(),
             px: sh.icon_px,
             side: Some(side_of(&sh)),
+            live: sh.live.clone(),
         }
     };
     snapshot.render(tx);
@@ -517,7 +527,7 @@ fn show_pressed(state: &SharedState, tx: &Sender<UsbCmd>, index: usize) {
     let _order = DRAW_ORDER
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let (button, px) = {
+    let (button, px, live) = {
         let sh = lock(state);
         if sh.mixer.is_some() {
             return;
@@ -529,11 +539,11 @@ fn show_pressed(state: &SharedState, tx: &Sender<UsbCmd>, index: usize) {
         if b.action == ButtonAction::None {
             return;
         }
-        (shown(&sh, b), sh.icon_px)
+        (shown(&sh, b), sh.icon_px, sh.live.clone())
     };
-    let data = encode_frame(&crate::graphics::renderer::render_pressed_rgba(
-        &button, px, px,
-    ));
+    let data = encode_frame(&crate::graphics::renderer::pressed(&render_live(
+        &button, px, px, &live,
+    )));
     let _ = tx.send(UsbCmd::Frame { index, data });
 }
 
@@ -749,6 +759,8 @@ pub fn spawn(state: SharedState, tx: Sender<UsbCmd>, rx: Receiver<UsbEvent>, exe
         }
     });
 }
+
+pub mod live;
 
 #[cfg(test)]
 mod tests;

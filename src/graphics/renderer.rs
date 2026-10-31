@@ -195,7 +195,7 @@ pub(super) fn draw_line(
     draw_glyphs(img, font, scale, &shown, (x0, baseline), color);
 }
 
-fn draw_glyphs(
+pub(super) fn draw_glyphs(
     img: &mut RgbaImage,
     font: &FontArc,
     scale: PxScale,
@@ -358,7 +358,7 @@ fn draw_clock(img: &mut RgbaImage, color: RGBAColor) {
 pub fn render_rgba(button: &ButtonConfig, width: u32, height: u32) -> RgbaImage {
     let ap = button.current_appearance();
     let bg = ap.background;
-    let mut img = RgbaImage::from_pixel(width, height, Rgba([bg.r, bg.g, bg.b, 255]));
+    let mut img = background(bg, ap.gradient, width, height);
     // Tecla viva: o relógio ocupa a tecla toda (rótulo e ícone ficam de fora).
     if button.action == crate::config::schema::ButtonAction::Clock {
         draw_clock(&mut img, ap.text_color);
@@ -490,9 +490,48 @@ fn plate_for(icon: &RgbaImage, bg: RGBAColor) -> Option<RGBAColor> {
     })
 }
 
+/// Quanto o degradê clareia o topo e escurece o pé da tecla (fração do caminho até branco/preto).
+const GRADIENT_SPREAD: f32 = 0.18;
+
+/// Fundo da tecla: cor chapada ou degradê vertical suave (mais claro em cima).
+pub(super) fn background(bg: RGBAColor, gradient: bool, width: u32, height: u32) -> RgbaImage {
+    if !gradient || height < 2 {
+        return RgbaImage::from_pixel(width, height, Rgba([bg.r, bg.g, bg.b, 255]));
+    }
+    let mut img = RgbaImage::new(width, height);
+    for y in 0..height {
+        // De +GRADIENT_SPREAD (clareia) no topo a −GRADIENT_SPREAD (escurece) no pé.
+        let k = GRADIENT_SPREAD * (1.0 - 2.0 * y as f32 / (height - 1) as f32);
+        let shade = |c: u8| {
+            let c = c as f32;
+            let v = if k >= 0.0 {
+                c + (255.0 - c) * k
+            } else {
+                c * (1.0 + k)
+            };
+            v.round() as u8
+        };
+        let px = Rgba([shade(bg.r), shade(bg.g), shade(bg.b), 255]);
+        for x in 0..width {
+            img.put_pixel(x, y, px);
+        }
+    }
+    img
+}
+
 /// Retângulo de cantos arredondados (x, y, largura, altura), cortado nas bordas da imagem.
-fn fill_rounded(img: &mut RgbaImage, (x, y, w, h): (i64, i64, i64, i64), color: RGBAColor) {
-    let r = (w.min(h) as f32 * PLATE_RADIUS).max(1.0);
+fn fill_rounded(img: &mut RgbaImage, rect: (i64, i64, i64, i64), color: RGBAColor) {
+    let r = (rect.2.min(rect.3) as f32 * PLATE_RADIUS).max(1.0);
+    fill_round_rect(img, rect, r, color);
+}
+
+/// Retângulo (x, y, largura, altura) com cantos de raio `r`, suavizado e cortado nas bordas.
+pub(super) fn fill_round_rect(
+    img: &mut RgbaImage,
+    (x, y, w, h): (i64, i64, i64, i64),
+    r: f32,
+    color: RGBAColor,
+) {
     for py in y.max(0)..(y + h).min(img.height() as i64) {
         for px in x.max(0)..(x + w).min(img.width() as i64) {
             // Distância até o retângulo encolhido pelo raio: dentro dele, ou a até `r` dele.
@@ -515,14 +554,14 @@ pub fn render_button_frame(button: &ButtonConfig, width: u32, height: u32) -> Ve
 /// Quanto a imagem encolhe enquanto a tecla está apertada (a tecla "afunda").
 const PRESSED_SCALE: f32 = 0.86;
 
-/// A tecla apertada: a mesma imagem, menor e centrada sobre preto, como um botão que afundou.
-pub fn render_pressed_rgba(button: &ButtonConfig, width: u32, height: u32) -> RgbaImage {
-    let full = render_rgba(button, width, height);
+/// A tecla apertada: a imagem `full` dela, menor e centrada sobre preto, como um botão que afundou.
+pub fn pressed(full: &RgbaImage) -> RgbaImage {
+    let (width, height) = full.dimensions();
     let (w, h) = (
         ((width as f32) * PRESSED_SCALE).round() as u32,
         ((height as f32) * PRESSED_SCALE).round() as u32,
     );
-    let small = imageops::resize(&full, w, h, imageops::FilterType::Triangle);
+    let small = imageops::resize(full, w, h, imageops::FilterType::Triangle);
     let mut img = RgbaImage::from_pixel(width, height, Rgba([0, 0, 0, 255]));
     imageops::overlay(
         &mut img,

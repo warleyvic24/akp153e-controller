@@ -43,6 +43,10 @@ pub(crate) fn action_summary(a: &ButtonAction, targets: &Targets) -> Option<Stri
         ButtonAction::Brightness { delta } if *delta >= 0 => tf("Brilho +{}%", &[delta]),
         ButtonAction::Brightness { delta } => tf("Brilho {}%", &[delta]),
         ButtonAction::Clock => t("Relógio (hora e data)").to_string(),
+        ButtonAction::Monitor { metric } => tf(
+            "Monitor: {}",
+            &[&t(super::monitor_ui::metric_label(*metric))],
+        ),
         ButtonAction::PlaySound { path } => match sound_name(path) {
             Some(name) => tf("Toca: {}", &[&name]),
             None => t("Toca um som").to_string(),

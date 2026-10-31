@@ -97,6 +97,7 @@ pub(crate) fn run_editor() -> eframe::Result {
     }
     let sh = runtime::new_state(cfg, usb::ICON_SIZE as u32);
     runtime::spawn_status_poll(sh.clone());
+    runtime::live::spawn(sh.clone(), None);
     let (tx, rx) = channel::<UsbCmd>();
     drop(rx); // o editor não fala com o aparelho; quem desenha nele é o serviço
     let opts = eframe::NativeOptions {

@@ -122,6 +122,7 @@ impl Executor {
             ButtonAction::None
             | ButtonAction::Brightness { .. }
             | ButtonAction::Clock
+            | ButtonAction::Monitor { .. }
             | ButtonAction::SwitchPage { .. }
             | ButtonAction::SwitchProfile { .. }
             | ButtonAction::NextPage

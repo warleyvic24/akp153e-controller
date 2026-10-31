@@ -1,6 +1,7 @@
 //! Editor: a janela egui que edita a config e avisa o serviço. Não fala com o aparelho.
 mod action_ui;
 mod bars;
+mod beautify;
 mod checks;
 mod favicon;
 mod history;
@@ -9,6 +10,7 @@ mod inspector;
 mod layout;
 mod library;
 mod library_panel;
+mod monitor_ui;
 mod obs_ui;
 pub(crate) mod omarchy;
 mod panes;
@@ -26,6 +28,7 @@ mod widgets;
 
 use crate::config::schema::*;
 use crate::engine::actions::Executor;
+use crate::platform::live::Live;
 use crate::platform::shell;
 use crate::service::runtime;
 use crate::{graphics, strings, usb};
@@ -358,7 +361,21 @@ fn key_view(
 
 /// Texturas das teclas: a imagem exata que vai ao display, refeita só quando o botão muda.
 #[derive(Default)]
-struct KeyTextures(Vec<Option<(ButtonConfig, u32, u64, egui::TextureHandle)>>);
+struct KeyTextures {
+    keys: Vec<Option<CachedKey>>,
+    /// Dados ao vivo do quadro atual (copiados de `Shared::live`), para as teclas vivas.
+    live: Live,
+}
+
+/// Imagem de uma tecla e o que ela usou para ser desenhada (muda algo, desenha de novo).
+struct CachedKey {
+    button: ButtonConfig,
+    px: u32,
+    minute: u64,
+    /// Só nas teclas vivas; nas outras fica vazio e não força redesenho.
+    live: Option<Live>,
+    tex: egui::TextureHandle,
+}
 
 /// Minuto atual (para a prévia da tecla de relógio mudar junto com a do aparelho).
 pub(crate) fn current_minute() -> u64 {
@@ -375,32 +392,40 @@ impl KeyTextures {
         b: &ButtonConfig,
         px: u32,
     ) -> Option<egui::TextureId> {
-        if self.0.len() <= index {
-            self.0.resize_with(index + 1, || None);
+        if self.keys.len() <= index {
+            self.keys.resize_with(index + 1, || None);
         }
         if is_blank(b) {
             return None;
         }
-        let slot = &mut self.0[index];
+        let slot = &mut self.keys[index];
         // Só a tecla de relógio depende da hora; nas outras o minuto não conta.
         let minute = if b.action == ButtonAction::Clock {
             current_minute()
         } else {
             0
         };
-        if slot.as_ref().is_none_or(|(cached, cached_px, at, _)| {
-            cached != b || *cached_px != px || *at != minute
-        }) {
-            let rgba = graphics::renderer::render_rgba(b, px, px);
+        let live = graphics::live_art::wants(b)
+            .any()
+            .then(|| self.live.clone());
+        if slot
+            .as_ref()
+            .is_none_or(|c| c.button != *b || c.px != px || c.minute != minute || c.live != live)
+        {
+            let rgba = match &live {
+                Some(data) => graphics::live_art::render_live(b, px, px, data),
+                None => graphics::renderer::render_rgba(b, px, px),
+            };
             let image = egui::ColorImage::from_rgba_unmultiplied([px as usize; 2], rgba.as_raw());
-            *slot = Some((
-                b.clone(),
+            *slot = Some(CachedKey {
+                button: b.clone(),
                 px,
                 minute,
-                ctx.load_texture(format!("key{index}"), image, egui::TextureOptions::LINEAR),
-            ));
+                live,
+                tex: ctx.load_texture(format!("key{index}"), image, egui::TextureOptions::LINEAR),
+            });
         }
-        slot.as_ref().map(|(_, _, _, t)| t.id())
+        slot.as_ref().map(|c| c.tex.id())
     }
 }
 
@@ -411,6 +436,7 @@ impl eframe::App for App {
         let g: &mut runtime::Shared = &mut guard;
         self.autosave(&g.cfg);
         self.obs_live.refresh(&g.cfg);
+        self.key_tex.live.clone_from(&g.live);
         ctx.request_repaint_after(REPAINT_EVERY);
         // O Omarchy trocou de tema: força reaplicar as cores sem esperar o usuário mexer em nada.
         if omarchy::refresh() {
