@@ -563,13 +563,45 @@ pub fn calibration_rgba(size: u32) -> RgbaImage {
     img
 }
 
-/// Aplica a rotação do hardware e codifica em JPEG.
+/// Maior JPEG enviado ao aparelho: três pacotes de 1 KB. Uma captura USB do app oficial mostra que
+/// ele nunca manda imagem maior que ~2,9 KB, e imagens de 4 pacotes em sequência fizeram a tela de
+/// um AKP153E `0300:3010` voltar ao logo de inicialização (bodyboarder2528/opendeck-akp153e-sac,
+/// `bridge.cs`, 28-10-2026).
+pub const MAX_JPEG_BYTES: usize = 3 * 1024;
+/// Qualidade mínima ao encolher o JPEG para caber; abaixo disso os blocos aparecem demais.
+const MIN_JPEG_QUALITY: u8 = 30;
+const JPEG_QUALITY_STEP: u8 = 8;
+
+/// Aplica a rotação do hardware e codifica em JPEG, baixando a qualidade até caber em
+/// `MAX_JPEG_BYTES` (ou chegar à mínima).
 pub fn encode_frame(img: &RgbaImage) -> Vec<u8> {
     // rot90 seguido de espelho horizontal e vertical (= rot180) equivale a rot270.
     let img = imageops::rotate270(img);
     let rgb = image::DynamicImage::ImageRgba8(img).to_rgb8();
+    let mut quality = JPEG_QUALITY;
+    let mut jpeg = encode_jpeg(&rgb, quality);
+    while jpeg.len() > MAX_JPEG_BYTES && quality > MIN_JPEG_QUALITY {
+        quality = quality
+            .saturating_sub(JPEG_QUALITY_STEP)
+            .max(MIN_JPEG_QUALITY);
+        jpeg = encode_jpeg(&rgb, quality);
+    }
+    // Imagem muito cheia de detalhe (foto, ruído): suaviza até caber, na qualidade mínima.
+    for sigma in BLUR_STEPS {
+        if jpeg.len() <= MAX_JPEG_BYTES {
+            break;
+        }
+        jpeg = encode_jpeg(&imageops::blur(&rgb, sigma), MIN_JPEG_QUALITY);
+    }
+    jpeg
+}
+
+/// Desfoques tentados, em ordem, quando nem a qualidade mínima faz a imagem caber.
+const BLUR_STEPS: [f32; 4] = [0.8, 1.5, 2.5, 4.0];
+
+fn encode_jpeg(rgb: &image::RgbImage, quality: u8) -> Vec<u8> {
     let mut out = Vec::new();
-    let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, JPEG_QUALITY);
+    let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, quality);
     match enc.encode(
         rgb.as_raw(),
         rgb.width(),

@@ -234,3 +234,18 @@ fn background_color_is_rendered() {
     let px = render_rgba(&b, 10, 10).get_pixel(5, 5).0;
     assert_eq!(px, [200, 10, 10, 255]);
 }
+
+#[test]
+fn a_busy_key_still_fits_in_three_packets() {
+    // Ruído colorido: o pior caso para o JPEG (sem nada a comprimir).
+    let mut img = RgbaImage::new(100, 100);
+    for (x, y, p) in img.enumerate_pixels_mut() {
+        let v = (x
+            .wrapping_mul(2_654_435_761)
+            .wrapping_add(y.wrapping_mul(40_503))) as u8;
+        *p = Rgba([v, v.rotate_left(3), v.rotate_left(5), 255]);
+    }
+    let jpeg = encode_frame(&img);
+    assert!(jpeg.len() <= MAX_JPEG_BYTES, "{} bytes", jpeg.len());
+    assert!(image::load_from_memory(&jpeg).is_ok());
+}
