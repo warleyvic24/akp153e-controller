@@ -7,6 +7,8 @@ mod config;
 mod device;
 mod editor;
 mod engine;
+#[cfg(test)]
+mod fuzz_tests;
 mod graphics;
 mod mixer;
 mod obs;

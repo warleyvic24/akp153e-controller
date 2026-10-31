@@ -402,3 +402,82 @@ fn a_side_clock_counts_as_a_clock() {
 fn drawn_page(sh: &Shared, tx: &Sender<UsbCmd>) {
     Snapshot::take(sh).render(tx);
 }
+
+/// Muitos apertos e solturas em sequência pelo laço de verdade do serviço (`spawn`): trocas de
+/// página, mixer abrindo e fechando, apertos sem soltura, reconexões. No fim o estado continua
+/// válido e o laço termina quando o aparelho some. Curto no CI; longo à mão:
+/// `KEYFORGE_SOAK=20000 cargo test the_service_loop_survives -- --ignored --nocapture`.
+fn soak(events: usize) {
+    let (tx, rx_cmds) = channel::<UsbCmd>();
+    let (ev_tx, ev_rx) = channel::<UsbEvent>();
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .unwrap();
+    let exec = Executor::new(rt.handle().clone());
+    let mut sh = two_page_state(ButtonAction::SwitchPage { page: 2 }, None);
+    sh.cfg.page_mut().buttons[1].action = ButtonAction::NextPage;
+    sh.cfg.page_mut().buttons[2].action = ButtonAction::OpenMixer;
+    sh.cfg.page_mut().buttons[3].action = ButtonAction::Clock;
+    let state = Arc::new(Mutex::new(sh));
+    // Esvazia os quadros como o USB faria, para a fila não crescer sem fim.
+    let drain = std::thread::spawn(move || rx_cmds.iter().count());
+    spawn(state.clone(), tx, ev_rx, exec);
+    let mut seed: u64 = 0x2545_F491_4F6C_DD1D;
+    for i in 0..events {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        let index = (seed % 18) as usize; // inclui índices fora da grade
+        let event = match seed % 23 {
+            0 => UsbEvent::Status(i % 2 == 0),
+            1..=11 => UsbEvent::Key {
+                index,
+                pressed: true,
+            },
+            _ => UsbEvent::Key {
+                index,
+                pressed: false,
+            },
+        };
+        if ev_tx.send(event).is_err() {
+            break;
+        }
+    }
+    let _ = ev_tx.send(UsbEvent::Status(true));
+    drop(ev_tx);
+    // O laço termina sozinho quando o canal de eventos fecha.
+    let deadline = Instant::now() + Duration::from_secs(120);
+    while Arc::strong_count(&state) > 1 && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(
+        Arc::strong_count(&state),
+        1,
+        "o laço do serviço não terminou"
+    );
+    let sh = lock(&state);
+    let profile = &sh.cfg.profiles[sh.cfg.active_profile];
+    assert!(profile.active_page < profile.pages.len());
+    drop(sh);
+    drop(state);
+    assert!(drain.join().unwrap() > 0);
+}
+
+#[test]
+fn the_service_loop_survives_a_burst_of_random_key_events() {
+    soak(400);
+}
+
+#[test]
+#[ignore]
+fn the_service_loop_survives_a_long_soak() {
+    let events = std::env::var("KEYFORGE_SOAK")
+        .ok()
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(20_000);
+    let start = Instant::now();
+    soak(events);
+    println!("{events} eventos em {:?}", start.elapsed());
+}
