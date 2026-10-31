@@ -40,6 +40,7 @@ cargo build --release           # -> target\release\keyforge.exe
   - `obs/`: protocolo do obs-websocket 5 e estado do OBS, sem rede (testável); a rede fica em `service/obs_runtime.rs`.
   - `mixer/`: página de mixer, dados puros e testáveis; ação `open-mixer`.
   - `platform/`: `shell.rs` (os dois sistemas, com `cfg`), `mod.rs` (ícones, processos, `same_user`), `omarchy.rs`, `focus.rs` (app em foco: Hyprland pelo socket de eventos, Windows pela janela da frente), `live.rs` (volume geral, MPRIS pelo `busctl`, CPU/RAM/temperatura). Windows: `audio.rs` (Core Audio), `apps.rs`. Linux: `audio_linux.rs` (`pactl`), `apps_linux.rs` (atalhos `.desktop`), `icon_theme.rs`. Comum: `audio_model.rs`.
+  - `device/`: aparelhos descritos por dados (`devices/<fabricante>/<modelo>.json`, embutidos; a pasta `devices/` ao lado da config tem prioridade): ids USB, protocolo, imagem, teclas (`hw` = índice no protocolo) e tela lateral. O `usb/` lê tudo daí; validação e teste de ouro em `device/tests.rs`.
   - `config/` (`schema.rs`, exportar/importar perfil `profile_io.rs`), `engine/` (ações), `graphics/` (desenho das teclas, teclas vivas `live_art.rs`, ícones, biblioteca Lucide `icon_library.rs` sobre `assets/lucide-icons.tsv`, ícone do app), `usb/` (protocolo), `strings.rs` (texto novo = `t`/`tf` + entrada em `EN`).
 - Unsafe só em `platform/` (`shell.rs`, `audio.rs`, `focus.rs`, `live.rs` no Windows), sempre com `// SAFETY:`.
 - Testes que leem o código usam `test_support::sources_without_tests()`, que percorre todas as subpastas.

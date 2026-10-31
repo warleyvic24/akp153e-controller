@@ -2,6 +2,7 @@
 //! AKP153E: um executável, dois modos. Serviço (`--background`, dono do USB) e editor (`--editor`).
 mod cli;
 mod config;
+mod device;
 mod editor;
 mod engine;
 mod graphics;

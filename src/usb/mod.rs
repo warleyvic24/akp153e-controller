@@ -1,13 +1,14 @@
-//! Transporte HID do AKP153E (interface vendor-specific, usage page 0xFFA0).
-//! Relatórios de 513 bytes (report id 0x00 + 512), comandos com prefixo "CRT", imagens JPEG 85x85.
+//! Transporte HID da família AJAZZ/Mirabox (interface vendor-specific, usage page 0xFFA0): comandos
+//! com prefixo "CRT", imagens JPEG. O que muda de um modelo para outro (ids, pacote, tamanho da
+//! imagem, ordem das teclas, tela lateral) vem do arquivo do aparelho (`crate::device`).
+use crate::device::DeviceModel;
 use hidapi::{HidApi, HidDevice, HidError};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::time::{Duration, Instant};
 
-pub const IDS: [(u16, u16); 3] = [(0x0300, 0x3010), (0x33C3, 0x6677), (0x6602, 0x1001)];
+/// Lado da imagem até o aparelho dizer o dele (`UsbEvent::Info`).
 pub const ICON_SIZE: usize = 85;
-const V3_ICON_PX: u32 = 100; // calibração no aparelho: 95 e 100 mostram as 4 bordas e a régua inteiras; acima de ~104 corta
 const USAGE_PAGE: u16 = 0xFFA0;
 const MAX_PAYLOAD: usize = 1024;
 const HOLD_WATCHDOG: Duration = Duration::from_secs(5);
@@ -31,25 +32,29 @@ fn brightness_command(payload: usize, level: u8) -> Vec<u8> {
     )
 }
 const CLEAR_ALL_KEYS: u8 = 0xFF;
-const DEVICE_COLS: usize = 6;
-const UI_COLS: usize = 5;
 const ACK_KEY_OFFSET: usize = 9;
 const STATE_OFFSET: usize = 10;
-const OPENDECK_TO_DEVICE: [u8; 18] = [12, 9, 6, 3, 0, 15, 13, 10, 7, 4, 1, 16, 14, 11, 8, 5, 2, 17];
-const DEVICE_TO_OPENDECK: [u8; 18] = [4, 10, 16, 3, 9, 15, 2, 8, 14, 1, 7, 13, 0, 6, 12, 5, 11, 17];
 
-/// Parâmetros de protocolo por modelo (v1: 512 bytes, só aperto; v3: soltura reportada).
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// O modelo aberto e o tamanho de pacote que ele aceitou.
+#[derive(Clone, Copy, PartialEq)]
 struct Profile {
     payload: usize,
     both_states: bool,
     icon_px: u32,
+    model: &'static DeviceModel,
 }
 
-/// Perfis candidatos para o modelo, em ordem de preferência (v3: pacote de 1024 com recuo para 512).
+impl std::fmt::Debug for Profile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} (pacote {})", self.model.id, self.payload)
+    }
+}
+
+/// Perfis candidatos para o modelo, em ordem de preferência (ex.: 1024 com recuo para 512).
 fn profile_candidates(vid: u16, pid: u16) -> Vec<Profile> {
-    let v3 = (vid, pid) == (0x0300, 0x3010);
-    let icon_px = if v3 { V3_ICON_PX } else { ICON_SIZE as u32 };
+    let Some(model) = crate::device::find(vid, pid) else {
+        return Vec::new();
+    };
     // AKP_PACKET=512|1024 força um tamanho de pacote sem recompilar.
     let forced = std::env::var("AKP_PACKET")
         .ok()
@@ -57,15 +62,15 @@ fn profile_candidates(vid: u16, pid: u16) -> Vec<Profile> {
         .filter(|n| [512, 1024].contains(n));
     let payloads = match forced {
         Some(n) => vec![n],
-        None if v3 => vec![1024, 512],
-        None => vec![512],
+        None => model.protocol.packets.clone(),
     };
     payloads
         .into_iter()
         .map(|payload| Profile {
             payload,
-            both_states: v3,
-            icon_px,
+            both_states: model.protocol.release_events,
+            icon_px: model.image.px,
+            model,
         })
         .collect()
 }
@@ -97,25 +102,18 @@ pub enum SideFrame {
     Clear,
 }
 
-/// Posições do aparelho (0-based) que formam a tela lateral, de cima para baixo: a 6ª coluna da
-/// grade de 3 x 6 (`OPENDECK_TO_DEVICE[5]`, `[11]` e `[17]`).
-pub const SIDE_DEVICE_KEYS: [u8; 3] = [
-    OPENDECK_TO_DEVICE[DEVICE_COLS - 1],
-    OPENDECK_TO_DEVICE[2 * DEVICE_COLS - 1],
-    OPENDECK_TO_DEVICE[3 * DEVICE_COLS - 1],
-];
-
-/// Índice da grade da UI (5 colunas) -> índice físico do dispositivo (0-based).
-fn ui_to_device(i: usize) -> Option<u8> {
-    let od = (i / UI_COLS) * DEVICE_COLS + i % UI_COLS;
-    OPENDECK_TO_DEVICE.get(od).copied()
+/// Valor de tecla do relatório (1-based) -> tecla da página; `None` se não for tecla (ex.: a
+/// lateral do AKP153E, que é uma tela sem botões).
+fn device_to_ui(model: &DeviceModel, d: u8) -> Option<usize> {
+    model.key_of_hw(d.checked_sub(1)?)
 }
 
-/// Valor de tecla do relatório (1-based) -> índice da grade da UI; `None` para a coluna lateral
-/// (botões só do AKP153R; no AKP153E a lateral é uma tela sem teclas).
-fn device_to_ui(d: u8) -> Option<usize> {
-    let od = *DEVICE_TO_OPENDECK.get((d as usize).checked_sub(1)?)? as usize;
-    (od % DEVICE_COLS < UI_COLS).then(|| (od / DEVICE_COLS) * UI_COLS + od % DEVICE_COLS)
+/// Índices do protocolo das partes da tela lateral, de cima para baixo (vazio se não houver).
+fn side_slots(model: &DeviceModel) -> Vec<u8> {
+    model
+        .strip()
+        .map(|s| s.slots.iter().map(|slot| slot.hw).collect())
+        .unwrap_or_default()
 }
 
 fn command(payload: usize, body: &[u8]) -> Vec<u8> {
@@ -158,9 +156,10 @@ fn write_init(dev: &HidDevice, p: Profile) -> Result<(), HidError> {
 
 fn open(api: &mut HidApi) -> Result<(HidDevice, Profile), String> {
     api.refresh_devices().map_err(|e| e.to_string())?;
+    let known = crate::device::known_ids();
     let mut cands: Vec<_> = api
         .device_list()
-        .filter(|d| IDS.contains(&(d.vendor_id(), d.product_id())))
+        .filter(|d| known.contains(&(d.vendor_id(), d.product_id())))
         .collect();
     cands.sort_by_key(|d| d.usage_page() != USAGE_PAGE);
     let info = cands.first().ok_or("dispositivo não encontrado")?;
@@ -184,7 +183,7 @@ fn send_image(
     ui_index: usize,
     jpeg: &[u8],
 ) -> Result<bool, HidError> {
-    let Some(key) = ui_to_device(ui_index) else {
+    let Some(key) = profile.model.key_hw(ui_index) else {
         return Ok(false);
     };
     let Some(packets) = image_packets(profile.payload, key, jpeg) else {
@@ -207,7 +206,7 @@ fn send_image(
 fn send_side(dev: &HidDevice, profile: Profile, side: &SideFrame) -> Result<bool, HidError> {
     match side {
         SideFrame::Clear => {
-            for key in SIDE_DEVICE_KEYS {
+            for key in side_slots(profile.model) {
                 dev.write(&command(
                     profile.payload,
                     &[b'C', b'L', b'E', 0, 0, 0, key + 1],
@@ -215,8 +214,8 @@ fn send_side(dev: &HidDevice, profile: Profile, side: &SideFrame) -> Result<bool
             }
         }
         SideFrame::Strips(strips) => {
-            for (key, jpeg) in SIDE_DEVICE_KEYS.iter().zip(strips) {
-                let Some(packets) = image_packets(profile.payload, *key, jpeg) else {
+            for (key, jpeg) in side_slots(profile.model).into_iter().zip(strips) {
+                let Some(packets) = image_packets(profile.payload, key, jpeg) else {
                     log::warn!("faixa da tela lateral excede 64 KiB");
                     continue;
                 };
@@ -234,7 +233,8 @@ fn send_side(dev: &HidDevice, profile: Profile, side: &SideFrame) -> Result<bool
 /// Com `both_states` (v3) o byte de estado é obrigatório: relatório curto é ignorado, pois
 /// tratá-lo como aperto deixaria a tecla "presa" até o watchdog. Sem ele (v1) só o aperto vem
 /// e `pressed` não é usado.
-fn parse_ack(report: &[u8], both_states: bool) -> Option<(usize, bool)> {
+fn parse_ack(report: &[u8], profile: Profile) -> Option<(usize, bool)> {
+    let both_states = profile.both_states;
     if report.len() <= ACK_KEY_OFFSET || report[..3] != *b"ACK" {
         return None;
     }
@@ -243,16 +243,16 @@ fn parse_ack(report: &[u8], both_states: bool) -> Option<(usize, bool)> {
         None if both_states => return None,
         None => true,
     };
-    device_to_ui(report[ACK_KEY_OFFSET]).map(|i| (i, pressed))
+    device_to_ui(profile.model, report[ACK_KEY_OFFSET]).map(|i| (i, pressed))
 }
 
 fn read_key(
     dev: &HidDevice,
     buf: &mut [u8; MAX_PAYLOAD],
-    both_states: bool,
+    profile: Profile,
 ) -> Result<Option<(usize, bool)>, HidError> {
     let n = dev.read_timeout(buf, READ_TIMEOUT_MS)?;
-    Ok(parse_ack(&buf[..n], both_states))
+    Ok(parse_ack(&buf[..n], profile))
 }
 
 /// Teclas da grade da UI (3 x 5).
@@ -381,7 +381,7 @@ fn run_connection(
             last_keepalive = Instant::now();
         }
         expire_held(&mut down, tx);
-        let Some((index, pressed)) = read_key(dev, &mut buf, profile.both_states)? else {
+        let Some((index, pressed)) = read_key(dev, &mut buf, profile)? else {
             continue;
         };
         if profile.both_states {
@@ -424,9 +424,10 @@ fn run_probe(say: &mut dyn FnMut(String)) {
         Err(e) => return say(format!("hidapi: {e}")),
     };
     say("== Interfaces HID (* = conhecida) VID:PID usage_page/usage interface ==".into());
+    let known = crate::device::known_ids();
     for d in api
         .device_list()
-        .filter(|d| IDS.contains(&(d.vendor_id(), d.product_id())))
+        .filter(|d| known.contains(&(d.vendor_id(), d.product_id())))
     {
         say(format!(
             "* {:04X}:{:04X} {:04X}/{:X} if{}",
@@ -480,12 +481,21 @@ fn run_probe(say: &mut dyn FnMut(String)) {
 mod tests {
     use super::*;
 
+    fn akp153e() -> Profile {
+        profile_candidates(0x0300, 0x3010)[0]
+    }
+
+    fn v1() -> Profile {
+        profile_candidates(0x33C3, 0x6677)[0]
+    }
+
     #[test]
     fn the_side_screen_is_the_sixth_column_and_never_a_key() {
-        assert_eq!(SIDE_DEVICE_KEYS, [15, 16, 17]);
-        for key in SIDE_DEVICE_KEYS {
+        let model = akp153e().model;
+        assert_eq!(side_slots(model), [15, 16, 17]);
+        for key in side_slots(model) {
             assert_eq!(
-                device_to_ui(key + 1),
+                device_to_ui(model, key + 1),
                 None,
                 "aperto na lateral não vira tecla"
             );
@@ -504,7 +514,7 @@ mod tests {
     #[test]
     fn the_linux_udev_rule_covers_every_known_device() {
         let rules = include_str!("../../packaging/linux/70-keyforge.rules").to_lowercase();
-        for (vid, pid) in IDS {
+        for (vid, pid) in crate::device::known_ids() {
             for subsystem in ["hidraw", "usb"] {
                 let line = format!(
                     "subsystem==\"{subsystem}\", attrs{{idvendor}}==\"{vid:04x}\", attrs{{idproduct}}==\"{pid:04x}\""
@@ -520,25 +530,20 @@ mod tests {
     }
 
     #[test]
-    fn key_maps_are_inverse_permutations() {
-        for (od, &d) in OPENDECK_TO_DEVICE.iter().enumerate() {
-            assert_eq!(DEVICE_TO_OPENDECK[d as usize] as usize, od);
-        }
-    }
-
-    #[test]
     fn ui_keys_roundtrip_through_device_values() {
+        let model = akp153e().model;
         for i in 0..15 {
-            assert_eq!(device_to_ui(ui_to_device(i).unwrap() + 1), Some(i));
+            assert_eq!(device_to_ui(model, model.key_hw(i).unwrap() + 1), Some(i));
         }
-        assert_eq!(ui_to_device(15), None);
+        assert_eq!(model.key_hw(15), None);
     }
 
     #[test]
     fn side_keys_and_invalid_values_are_ignored() {
-        assert_eq!(device_to_ui(0), None);
-        assert_eq!(device_to_ui(19), None);
-        assert_eq!(device_to_ui(16), None); // opendeck 5 = coluna lateral
+        let model = akp153e().model;
+        assert_eq!(device_to_ui(model, 0), None);
+        assert_eq!(device_to_ui(model, 19), None);
+        assert_eq!(device_to_ui(model, 16), None); // a lateral
     }
 
     #[test]
@@ -574,15 +579,15 @@ mod tests {
 
     #[test]
     fn short_ack_is_ignored_on_v3_but_counts_as_press_on_v1() {
-        assert_eq!(parse_ack(&ack(1, None), true), None);
-        assert_eq!(parse_ack(&ack(1, None), false), Some((4, true)));
+        assert_eq!(parse_ack(&ack(1, None), akp153e()), None);
+        assert_eq!(parse_ack(&ack(1, None), v1()), Some((4, true)));
     }
 
     #[test]
     fn ack_state_byte_gives_press_and_release() {
-        assert_eq!(parse_ack(&ack(1, Some(1)), true), Some((4, true)));
-        assert_eq!(parse_ack(&ack(1, Some(0)), true), Some((4, false)));
-        assert_eq!(parse_ack(b"NAK\0\0\0\0\0\0\x01\x01", true), None);
+        assert_eq!(parse_ack(&ack(1, Some(1)), akp153e()), Some((4, true)));
+        assert_eq!(parse_ack(&ack(1, Some(0)), akp153e()), Some((4, false)));
+        assert_eq!(parse_ack(b"NAK\0\0\0\0\0\0\x01\x01", akp153e()), None);
     }
 
     #[test]

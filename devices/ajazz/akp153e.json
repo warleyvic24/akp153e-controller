@@ -1,0 +1,160 @@
+{
+  "id": "ajazz-akp153e",
+  "name": "AJAZZ AKP153E",
+  "note": "Rev. 2. Tela lateral de 82 x 400 (geometria medida por bodyboarder2528/opendeck-akp153e-sac).",
+  "usb": [
+    {
+      "vid": "0300",
+      "pid": "3010",
+      "usage_page": "ffa0"
+    }
+  ],
+  "protocol": {
+    "family": "mirabox",
+    "version": 3,
+    "packets": [
+      1024,
+      512
+    ],
+    "release_events": true
+  },
+  "image": {
+    "px": 100,
+    "format": "jpeg",
+    "max_bytes": 3072
+  },
+  "controls": [
+    {
+      "id": "k0",
+      "kind": "key",
+      "x": 0,
+      "y": 0,
+      "hw": 12
+    },
+    {
+      "id": "k1",
+      "kind": "key",
+      "x": 1,
+      "y": 0,
+      "hw": 9
+    },
+    {
+      "id": "k2",
+      "kind": "key",
+      "x": 2,
+      "y": 0,
+      "hw": 6
+    },
+    {
+      "id": "k3",
+      "kind": "key",
+      "x": 3,
+      "y": 0,
+      "hw": 3
+    },
+    {
+      "id": "k4",
+      "kind": "key",
+      "x": 4,
+      "y": 0,
+      "hw": 0
+    },
+    {
+      "id": "k5",
+      "kind": "key",
+      "x": 0,
+      "y": 1,
+      "hw": 13
+    },
+    {
+      "id": "k6",
+      "kind": "key",
+      "x": 1,
+      "y": 1,
+      "hw": 10
+    },
+    {
+      "id": "k7",
+      "kind": "key",
+      "x": 2,
+      "y": 1,
+      "hw": 7
+    },
+    {
+      "id": "k8",
+      "kind": "key",
+      "x": 3,
+      "y": 1,
+      "hw": 4
+    },
+    {
+      "id": "k9",
+      "kind": "key",
+      "x": 4,
+      "y": 1,
+      "hw": 1
+    },
+    {
+      "id": "k10",
+      "kind": "key",
+      "x": 0,
+      "y": 2,
+      "hw": 14
+    },
+    {
+      "id": "k11",
+      "kind": "key",
+      "x": 1,
+      "y": 2,
+      "hw": 11
+    },
+    {
+      "id": "k12",
+      "kind": "key",
+      "x": 2,
+      "y": 2,
+      "hw": 8
+    },
+    {
+      "id": "k13",
+      "kind": "key",
+      "x": 3,
+      "y": 2,
+      "hw": 5
+    },
+    {
+      "id": "k14",
+      "kind": "key",
+      "x": 4,
+      "y": 2,
+      "hw": 2
+    },
+    {
+      "id": "side",
+      "kind": "strip",
+      "x": 5,
+      "y": 0,
+      "w": 1,
+      "h": 3,
+      "px": [
+        82,
+        400
+      ],
+      "slots": [
+        {
+          "hw": 15,
+          "top": 0
+        },
+        {
+          "hw": 16,
+          "top": 146
+        },
+        {
+          "hw": 17,
+          "top": 219
+        }
+      ]
+    }
+  ],
+  "status": "verified"
+}

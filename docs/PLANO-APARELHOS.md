@@ -9,7 +9,7 @@ Nenhuma fase começa sem a anterior estar verde no CI (Windows e Linux).
 
 ---
 
-## Fase 0: renomear para Keyforge
+## Fase 0: renomear para Keyforge (feita em 2026-10-31; migração conferida neste PC)
 
 **Passos**
 1. `Cargo.toml` `name = "keyforge"` (binário `keyforge`), `build.rs` (ProductName), título da janela,
@@ -41,7 +41,7 @@ sem conflito de arquivos; `cargo test` e o teste do hook passam.
 
 ---
 
-## Fase 1: descrição do aparelho (dados)
+## Fase 1: descrição do aparelho (dados) (feita em 2026-10-31)
 
 **Formato** (`devices/<fabricante>/<modelo>.json`, embutidos no binário e lidos também da pasta da config):
 ```json
