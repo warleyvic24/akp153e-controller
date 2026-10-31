@@ -20,6 +20,11 @@ makepkg -sf --noconfirm
 
 # O pacote principal (o "-debug" fica de fora).
 pkg=$(ls -t keyforge-[0-9]*.pkg.tar.* | head -n 1)
+# Pacote do nome antigo: o `pacman -U --noconfirm` recusa o conflito (o `replaces` só vale para
+# repositórios), então ele sai antes. A config fica (está na pasta do usuário).
+if pacman -Q akp153e >/dev/null 2>&1; then
+  sudo -n pacman -R --noconfirm akp153e
+fi
 sudo -n pacman -U --noconfirm "$pkg"
 
 # Reinicia serviço e editor com o binário novo (o editor salva sozinho, nada se perde).
