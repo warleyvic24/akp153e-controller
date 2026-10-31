@@ -248,6 +248,12 @@ fn backup_path(config: &std::path::Path) -> PathBuf {
     config.with_extension(format!("json.bak-{secs}"))
 }
 
+/// Permissão do `config.json` no Linux: leitura e escrita só para o dono.
+#[cfg(unix)]
+const CONFIG_FILE_MODE: u32 = 0o600;
+/// Arquivo vazio, ao lado da config, que serve de trava entre editor e serviço (`AppConfig::locked`).
+const LOCK_FILE: &str = "config.lock";
+
 /// Versão 2: páginas e perfis têm identificador estável e as ações apontam para ele.
 pub const SCHEMA_VERSION: u32 = 2;
 fn legacy_version() -> u32 {
@@ -319,6 +325,25 @@ impl Profile {
         let mut page = Page::new(name, 3, 5);
         page.id = id;
         self.pages.push(page);
+    }
+}
+
+/// v1 -> v2 de uma ação: posição de página/perfil vira id (0 = destino que não existe mais).
+/// Entra nos passos de uma multi-ação, que também guardavam a posição.
+fn retarget_by_index(a: &mut ButtonAction, page_ids: &[u64], profile_ids: &[u64]) {
+    match a {
+        ButtonAction::SwitchPage { page } => {
+            *page = page_ids.get(*page as usize).copied().unwrap_or(0)
+        }
+        ButtonAction::SwitchProfile { profile } => {
+            *profile = profile_ids.get(*profile as usize).copied().unwrap_or(0)
+        }
+        ButtonAction::MultiAction { steps } => {
+            for step in steps {
+                retarget_by_index(step, page_ids, profile_ids);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -440,16 +465,11 @@ impl AppConfig {
         for p in &mut self.profiles {
             let page_ids: Vec<u64> = p.pages.iter().map(|pg| pg.id).collect();
             for b in p.pages.iter_mut().flat_map(|pg| pg.buttons.iter_mut()) {
-                for a in std::iter::once(&mut b.action).chain(b.long_press_action.as_mut()) {
-                    match a {
-                        ButtonAction::SwitchPage { page } => {
-                            *page = page_ids.get(*page as usize).copied().unwrap_or(0)
-                        }
-                        ButtonAction::SwitchProfile { profile } => {
-                            *profile = profile_ids.get(*profile as usize).copied().unwrap_or(0)
-                        }
-                        _ => {}
-                    }
+                for a in std::iter::once(&mut b.action)
+                    .chain(b.long_press_action.as_mut())
+                    .chain(b.toggled_action.as_mut())
+                {
+                    retarget_by_index(a, &page_ids, &profile_ids);
                 }
             }
         }
@@ -466,7 +486,12 @@ impl AppConfig {
         }
         let tmp = path.with_extension(format!("json.{}.tmp", std::process::id()));
         let json = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
-        let written = std::fs::File::create(&tmp).and_then(|mut f| {
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        // Só o dono lê: a config guarda URLs de webhook (com tokens) e caminhos de programas.
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, CONFIG_FILE_MODE);
+        let written = options.open(&tmp).and_then(|mut f| {
             use std::io::Write;
             f.write_all(json.as_bytes())?;
             f.sync_all() // sem isto, uma queda de energia após o rename pode deixar o arquivo vazio
@@ -478,6 +503,34 @@ impl AppConfig {
         std::fs::rename(&tmp, path).inspect_err(|_| {
             let _ = std::fs::remove_file(&tmp);
         })
+    }
+
+    /// Roda `job` (reler, mudar e gravar o arquivo) com a trava entre processos `config.lock`.
+    /// Editor e serviço regravam o mesmo arquivo; sem a trava, um podia ler antes de o outro
+    /// gravar e desfazer a mudança dele (ex.: a troca de página feita no aparelho). Sem a trava
+    /// (pasta inacessível, sistema de arquivos sem suporte) `job` roda assim mesmo.
+    pub fn locked<R>(job: impl FnOnce() -> R) -> R {
+        let lock = Self::path()
+            .map(|p| p.with_file_name(LOCK_FILE))
+            .and_then(|p| {
+                std::fs::create_dir_all(p.parent()?).ok()?;
+                std::fs::OpenOptions::new()
+                    .create(true)
+                    .truncate(false)
+                    .write(true)
+                    .open(p)
+                    .ok()
+            });
+        match &lock {
+            Some(file) => {
+                if let Err(e) = file.lock() {
+                    log::warn!("trava da config: {e}");
+                }
+            }
+            None => log::warn!("trava da config indisponível"),
+        }
+        // A trava é solta quando `lock` sai de escopo (o arquivo é fechado).
+        job()
     }
 
     /// Adota o perfil e a página ativos de `disk` (achados por id), se ainda existirem aqui.

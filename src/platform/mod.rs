@@ -140,6 +140,61 @@ pub(crate) fn fc_match_file(pattern: &str) -> Option<std::path::PathBuf> {
     (ext == "ttf" || ext == "otf").then_some(path)
 }
 
+/// A conexão local veio de um processo do mesmo usuário? A porta de controle é TCP em
+/// 127.0.0.1, onde qualquer usuário da máquina conecta. No Linux o dono de cada socket está em
+/// `/proc/net/tcp`; sem essa tabela (ou no Windows, que não tem uma equivalente sem API nativa)
+/// a conexão é aceita, como antes.
+pub(crate) fn same_user(conn: &std::net::TcpStream) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let (Ok(peer), Ok(local)) = (conn.peer_addr(), conn.local_addr()) else {
+            return false;
+        };
+        let (Ok(table), Ok(me)) = (
+            std::fs::read_to_string(PROC_NET_TCP),
+            std::fs::metadata("/proc/self").map(|m| m.uid()),
+        ) else {
+            log::warn!("dono da conexão de controle desconhecido: {PROC_NET_TCP} ilegível");
+            return true;
+        };
+        // Cliente que já fechou não aparece (ou aparece sem dono): não há a quem responder.
+        tcp_owner(&table, peer, local) == Some(me)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = conn;
+        true
+    }
+}
+
+#[cfg(target_os = "linux")]
+const PROC_NET_TCP: &str = "/proc/net/tcp";
+
+/// Dono (uid) do socket que vai de `from` para `to`, segundo a tabela de `/proc/net/tcp`.
+/// Endereço IPv4 em hexadecimal na ordem de bytes da máquina; porta em hexadecimal normal.
+#[cfg(target_os = "linux")]
+fn tcp_owner(table: &str, from: std::net::SocketAddr, to: std::net::SocketAddr) -> Option<u32> {
+    const LOCAL: usize = 1;
+    const REMOTE: usize = 2;
+    const UID: usize = 7;
+    let hex = |addr: std::net::SocketAddr| match addr {
+        std::net::SocketAddr::V4(a) => Some(format!(
+            "{:08X}:{:04X}",
+            u32::from_ne_bytes(a.ip().octets()),
+            a.port()
+        )),
+        std::net::SocketAddr::V6(_) => None,
+    };
+    let (from, to) = (hex(from)?, hex(to)?);
+    table.lines().skip(1).find_map(|line| {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        let matches =
+            fields.get(LOCAL) == Some(&from.as_str()) && fields.get(REMOTE) == Some(&to.as_str());
+        matches.then(|| fields.get(UID)?.parse().ok()).flatten()
+    })
+}
+
 /// Inicia um programa sem esperar por ele. Uma thread o recolhe ao terminar: no Linux, um filho
 /// que sai e nunca recebe `wait` fica como zumbi enquanto o processo pai viver (o serviço vive a
 /// sessão inteira). Devolve o pid.
@@ -171,6 +226,29 @@ mod tests {
         );
         let normal = std::path::PathBuf::from("/usr/bin/akp153e");
         assert_eq!(strip_deleted(normal.clone()), normal);
+    }
+
+    #[test]
+    fn a_local_connection_from_this_process_is_the_same_user() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let _client = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (server, _) = listener.accept().unwrap();
+        assert!(same_user(&server));
+    }
+
+    #[test]
+    fn the_owner_comes_from_the_matching_socket_line() {
+        let ip = u32::from_ne_bytes([127, 0, 0, 1]);
+        let table = format!(
+            "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n\
+             0: {ip:08X}:B8A1 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 1 1\n\
+             1: {ip:08X}:D431 {ip:08X}:B8A1 01 00000000:00000000 00:00000000 00000000  1001        0 2 1\n"
+        );
+        let service: std::net::SocketAddr = "127.0.0.1:47265".parse().unwrap();
+        let client: std::net::SocketAddr = "127.0.0.1:54321".parse().unwrap();
+        assert_eq!(tcp_owner(&table, client, service), Some(1001));
+        let other: std::net::SocketAddr = "127.0.0.1:1".parse().unwrap();
+        assert_eq!(tcp_owner(&table, other, service), None);
     }
 
     #[test]

@@ -233,6 +233,10 @@ impl Followup {
 /// Relê o disco e muda só perfil/página ativos (por id): gravar a cópia em memória inteira
 /// apagaria uma edição do editor cujo "reload" ainda não chegou ao serviço.
 fn persist(nav: &Nav) {
+    AppConfig::locked(|| persist_unlocked(nav));
+}
+
+fn persist_unlocked(nav: &Nav) {
     let Some(mut disk) = AppConfig::load_existing() else {
         return;
     };
@@ -324,16 +328,15 @@ pub fn trigger_locked(sh: &mut Shared, exec: &Executor, index: usize, held: Dura
         return Followup::default();
     };
     let long = held >= Duration::from_millis(b.long_press_threshold_ms);
-    let toggles = b.toggles();
+    let long_action = b.long_press_action.as_ref().filter(|_| long);
+    // A pressão longa com ação própria não é um toque: não alterna a tecla de dois estados.
+    let toggles = b.toggles() && long_action.is_none();
     // Tecla de dois estados: no segundo toque (já ligada) vale a ação do estado ligado, se houver.
     let tap = match (&b.toggled_action, b.toggle_state) {
         (Some(a), true) => a,
         _ => &b.action,
     };
-    let action = match (&b.long_press_action, long) {
-        (Some(a), true) => a.clone(),
-        _ => tap.clone(),
-    };
+    let action = long_action.unwrap_or(tap).clone();
     if toggles {
         sh.cfg.page_mut().buttons[index].toggle_state = !b.toggle_state;
     }
@@ -620,6 +623,25 @@ mod tests {
             sh.cfg.profiles[0].active_page, 1,
             "o segundo usa a do estado ligado"
         );
+    }
+
+    #[tokio::test]
+    async fn a_long_press_with_its_own_action_does_not_flip_a_two_state_key() {
+        let (tx, _rx) = channel();
+        let exec = Executor::new(tokio::runtime::Handle::current());
+        let mut sh = two_page_state(
+            ButtonAction::None,
+            Some(ButtonAction::SwitchPage { page: 2 }),
+        );
+        sh.cfg.page_mut().buttons[0].toggled_appearance = Some(ButtonConfig::blank().appearance);
+        trigger(&mut sh, &tx, &exec, 0, Duration::from_secs(1));
+        assert_eq!(sh.cfg.profiles[0].active_page, 1, "a ação longa rodou");
+        assert!(!sh.cfg.profiles[0].pages[0].buttons[0].toggle_state);
+        // Sem ação longa, segurar ainda conta como toque e alterna.
+        sh.cfg.profiles[0].active_page = 0;
+        sh.cfg.page_mut().buttons[0].long_press_action = None;
+        trigger(&mut sh, &tx, &exec, 0, Duration::from_secs(1));
+        assert!(sh.cfg.page().buttons[0].toggle_state);
     }
 
     #[tokio::test]

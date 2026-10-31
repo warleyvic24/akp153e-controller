@@ -57,6 +57,80 @@ fn migrates_legacy_index_targets_to_ids() {
 }
 
 #[test]
+fn migration_also_covers_toggled_actions_and_multi_action_steps() {
+    let mut cfg = AppConfig {
+        schema_version: 1,
+        ..Default::default()
+    };
+    cfg.profiles[0].pages[0].id = 0;
+    cfg.profiles[0].id = 0;
+    cfg.profiles[0].pages.push(Page::new("Page 2", 3, 5));
+    let b = &mut cfg.profiles[0].pages[0].buttons[0];
+    b.toggled_action = Some(ButtonAction::SwitchPage { page: 1 });
+    b.action = ButtonAction::MultiAction {
+        steps: vec![
+            ButtonAction::Delay { ms: 10 },
+            ButtonAction::SwitchProfile { profile: 0 },
+        ],
+    };
+    let cfg = cfg.sanitized();
+    let b = &cfg.profiles[0].pages[0].buttons[0];
+    assert_eq!(b.toggled_action, Some(ButtonAction::SwitchPage { page: 2 }));
+    assert_eq!(
+        b.action,
+        ButtonAction::MultiAction {
+            steps: vec![
+                ButtonAction::Delay { ms: 10 },
+                ButtonAction::SwitchProfile { profile: 1 },
+            ],
+        }
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn saved_config_is_readable_only_by_its_owner() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = std::env::temp_dir().join(format!("akp_cfg_mode_{}", std::process::id()));
+    let path = dir.join("config.json");
+    // Um arquivo antigo, legível por todos, fica restrito na próxima gravação.
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(&path, "{}").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    AppConfig::default().save_to(&path).unwrap();
+    let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn locked_jobs_never_overlap() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    let busy = Arc::new(AtomicBool::new(false));
+    let workers: Vec<_> = (0..4)
+        .map(|_| {
+            let busy = busy.clone();
+            std::thread::spawn(move || {
+                for _ in 0..5 {
+                    AppConfig::locked(|| {
+                        assert!(
+                            !busy.swap(true, Ordering::SeqCst),
+                            "duas gravações ao mesmo tempo"
+                        );
+                        std::thread::sleep(std::time::Duration::from_millis(2));
+                        busy.store(false, Ordering::SeqCst);
+                    });
+                }
+            })
+        })
+        .collect();
+    for w in workers {
+        w.join().unwrap();
+    }
+}
+
+#[test]
 fn ids_survive_page_removal() {
     let mut cfg = AppConfig::default();
     cfg.profiles[0].add_page("B");

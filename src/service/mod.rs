@@ -209,6 +209,11 @@ fn reload(state: &SharedState, tx: &Sender<UsbCmd>, cfg: Option<AppConfig>) {
 }
 
 fn handle(mut conn: TcpStream, state: &SharedState, tx: &Sender<UsbCmd>) {
+    // A porta é TCP local: outro usuário da mesma máquina também conecta.
+    if !crate::platform::same_user(&conn) {
+        log::warn!("conexão de controle de outro usuário recusada");
+        return;
+    }
     let Some(line) = read_command(&mut conn) else {
         return;
     };

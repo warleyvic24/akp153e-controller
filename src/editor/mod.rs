@@ -166,12 +166,16 @@ impl App {
     /// mantém o perfil/página que o arquivo já tem: o aparelho pode ter trocado de página nesse meio-tempo.
     fn save(&mut self, cfg: &AppConfig) {
         let mut out = cfg.clone();
-        if !self.nav_dirty {
-            if let Some(disk) = AppConfig::load_existing() {
-                out.adopt_active_from(&disk);
+        // Ler e gravar sob a trava: o serviço pode estar gravando uma troca de página agora.
+        let saved = AppConfig::locked(|| {
+            if !self.nav_dirty {
+                if let Some(disk) = AppConfig::load_existing() {
+                    out.adopt_active_from(&disk);
+                }
             }
-        }
-        match out.save() {
+            out.save()
+        });
+        match saved {
             Ok(()) => {
                 self.dirty = false;
                 self.nav_dirty = false;
