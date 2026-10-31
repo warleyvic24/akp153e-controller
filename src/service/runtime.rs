@@ -344,6 +344,26 @@ pub fn trigger_locked(sh: &mut Shared, exec: &Executor, index: usize, held: Dura
     followup
 }
 
+/// Tecla solta no aparelho: dispara a ação e desenha sob `DRAW_ORDER`, como `change_and_draw`.
+/// Sem isso um "reload" simultâneo intercalaria os quadros dele com os desta troca de página, e
+/// teclas ficariam com a imagem antiga. Devolve a tecla que abriu o mixer, se a ação pediu um:
+/// abri-lo usa `change_and_draw`, então fica para depois de soltar `DRAW_ORDER`.
+fn press(
+    state: &SharedState,
+    tx: &Sender<UsbCmd>,
+    exec: &Executor,
+    index: usize,
+    held: Duration,
+) -> Option<usize> {
+    let _order = DRAW_ORDER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let followup = trigger_locked(&mut lock(state), exec, index, held);
+    let mixer_home = followup.mixer_home();
+    followup.run(tx);
+    mixer_home
+}
+
 /// No editor: consulta o serviço a cada segundo para mostrar o estado do aparelho.
 pub fn spawn_status_poll(state: SharedState) {
     std::thread::spawn(move || loop {
@@ -444,11 +464,7 @@ pub fn spawn(state: SharedState, tx: Sender<UsbCmd>, rx: Receiver<UsbEvent>, exe
                     } else if pressed {
                         down[index] = Some(Instant::now());
                     } else if let Some(since) = down[index].take() {
-                        let followup =
-                            trigger_locked(&mut lock(&state), &exec, index, since.elapsed());
-                        let mixer_home = followup.mixer_home();
-                        followup.run(&tx);
-                        if let Some(opener) = mixer_home {
+                        if let Some(opener) = press(&state, &tx, &exec, index, since.elapsed()) {
                             mixer_runtime::open(&state, &tx, opener);
                         }
                     }
@@ -604,6 +620,39 @@ mod tests {
             sh.cfg.profiles[0].active_page, 1,
             "o segundo usa a do estado ligado"
         );
+    }
+
+    #[tokio::test]
+    async fn a_key_press_waits_for_a_drawing_in_progress() {
+        let (tx, rx) = channel();
+        let exec = Executor::new(tokio::runtime::Handle::current());
+        let state = Arc::new(Mutex::new(two_page_state(
+            ButtonAction::SwitchPage { page: 2 },
+            None,
+        )));
+        let (pressed_tx, pressed_rx) = channel();
+        let pressed = std::thread::spawn({
+            let (state, tx) = (state.clone(), tx.clone());
+            move || {
+                // Espera o desenho abaixo já estar em andamento.
+                pressed_rx.recv().unwrap();
+                press(&state, &tx, &exec, 0, Duration::ZERO)
+            }
+        });
+        {
+            // Um desenho em andamento já soltou o estado, mas ainda segura a ordem dos quadros.
+            let _drawing = DRAW_ORDER.lock().unwrap();
+            pressed_tx.send(()).unwrap();
+            std::thread::sleep(Duration::from_millis(100));
+            assert_eq!(
+                lock(&state).cfg.profiles[0].active_page,
+                0,
+                "o aperto não pode entrar no meio do desenho"
+            );
+        }
+        assert_eq!(pressed.join().unwrap(), None);
+        assert_eq!(lock(&state).cfg.profiles[0].active_page, 1);
+        assert_eq!(rx.try_iter().count(), 15);
     }
 
     fn mixer_state(opener: usize) -> SharedState {

@@ -181,6 +181,33 @@ fn parse_px(arg: &str) -> Result<Option<u32>, ()> {
     }
 }
 
+/// Adota a config relida do disco e redesenha. `None` (arquivo sumido, travado num instante ou
+/// inválido) mantém a atual: cair na config padrão apagaria as teclas do aparelho até o próximo
+/// "reload". O backup de uma config inválida fica a cargo do editor, que usa `AppConfig::load`.
+fn reload(state: &SharedState, tx: &Sender<UsbCmd>, cfg: Option<AppConfig>) {
+    let Some(cfg) = cfg else {
+        log::warn!("reload: config ilegível ou inválida; mantida a atual");
+        return;
+    };
+    let brightness = cfg.ui.brightness;
+    let language = cfg.ui.language;
+    let brightness_changed = runtime::change_and_draw(state, tx, |sh| {
+        let changed = sh.cfg.ui.brightness != brightness;
+        sh.cfg = cfg;
+        // Com o mixer aberto, "reload" é o que restaura a tela: reenvia as 15 teclas dele.
+        if let Some(mixer) = &sh.mixer {
+            mixer.invalidate();
+        }
+        (changed, true)
+    });
+    usb::set_brightness(brightness);
+    // O menu da bandeja só muda de idioma quando o serviço reinicia; o resto vale já.
+    crate::strings::set_language(language);
+    if brightness_changed {
+        let _ = tx.send(UsbCmd::Brightness(brightness));
+    }
+}
+
 fn handle(mut conn: TcpStream, state: &SharedState, tx: &Sender<UsbCmd>) {
     let Some(line) = read_command(&mut conn) else {
         return;
@@ -190,26 +217,7 @@ fn handle(mut conn: TcpStream, state: &SharedState, tx: &Sender<UsbCmd>) {
         "reconnect" => {
             let _ = tx.send(UsbCmd::Reconnect);
         }
-        "reload" => {
-            let cfg = AppConfig::load();
-            let brightness = cfg.ui.brightness;
-            let language = cfg.ui.language;
-            let brightness_changed = runtime::change_and_draw(state, tx, |sh| {
-                let changed = sh.cfg.ui.brightness != brightness;
-                sh.cfg = cfg;
-                // Com o mixer aberto, "reload" é o que restaura a tela: reenvia as 15 teclas dele.
-                if let Some(mixer) = &sh.mixer {
-                    mixer.invalidate();
-                }
-                (changed, true)
-            });
-            usb::set_brightness(brightness);
-            // O menu da bandeja só muda de idioma quando o serviço reinicia; o resto vale já.
-            crate::strings::set_language(language);
-            if brightness_changed {
-                let _ = tx.send(UsbCmd::Brightness(brightness));
-            }
-        }
+        "reload" => reload(state, tx, AppConfig::load_existing()),
         "status" => {
             let sh = runtime::lock(state);
             let _ = writeln!(conn, "{} {}", u8::from(sh.connected), sh.icon_px);
@@ -369,6 +377,23 @@ mod tests {
         for bad in [&b"calib 9999\n"[..], b"calib abc\n", b"pattern 0\n"] {
             assert_eq!(frames(&command(bad, true).1), 0, "{bad:?}");
         }
+    }
+
+    #[test]
+    fn an_unreadable_config_on_reload_keeps_the_current_one() {
+        let mut current = AppConfig::default();
+        current.page_mut().buttons[0].appearance.text = "OBS".into();
+        let state = runtime::new_state(current.clone(), 100);
+        let (tx, rx) = channel();
+        reload(&state, &tx, None);
+        assert_eq!(runtime::lock(&state).cfg, current);
+        assert_eq!(rx.try_iter().count(), 0, "nada redesenhado");
+        reload(&state, &tx, Some(AppConfig::default()));
+        assert_eq!(runtime::lock(&state).cfg, AppConfig::default());
+        assert_eq!(
+            frames(&rx.try_iter().collect::<Vec<_>>()),
+            current.page().buttons.len()
+        );
     }
 
     #[test]
