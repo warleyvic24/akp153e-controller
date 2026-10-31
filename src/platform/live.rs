@@ -57,6 +57,7 @@ pub struct SystemStats {
 #[derive(Default)]
 pub struct Sampler {
     cpu_before: Option<(u64, u64)>,
+    #[cfg_attr(windows, allow(dead_code))]
     art: HashMap<String, Option<String>>,
 }
 
