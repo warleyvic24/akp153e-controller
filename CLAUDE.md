@@ -32,7 +32,7 @@ cargo build --release           # -> target\release\akp153e.exe
 ## Convenções
 
 - Comentários e mensagens ao usuário em português; nomes de código em inglês. Constantes nomeadas em vez de números soltos.
-- Nenhum arquivo acima de 800 linhas (hoje o maior é `service/runtime.rs`, ~765; o próximo teste grande vai para `service/runtime/tests.rs`). Testes grandes vão para `tests.rs` ao lado (ex.: `mixer/tests.rs`).
+- Nenhum arquivo acima de 800 linhas (hoje o maior é `editor/action_ui.rs`, ~775). Testes grandes vão para `tests.rs` ao lado (ex.: `mixer/tests.rs`).
 - Camadas em `src/`, dependência só para baixo. O editor usa do serviço apenas `service::runtime` (estado compartilhado); o serviço nunca usa o editor.
   - `main.rs`: lê os argumentos e escolhe o modo. `cli.rs`: log, `--run-action`, abertura do editor.
   - `editor/`: janela egui. `mod.rs` (`App`), painéis `panes.rs`, ações `action_ui.rs`, inspetor `inspector.rs`, barras `bars.rs`, palco `stage.rs`, preferências `settings.rs`, avisos `toast.rs`, design `tokens.rs`/`theme.rs`/`widgets.rs`.
