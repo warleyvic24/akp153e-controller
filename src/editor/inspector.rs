@@ -445,7 +445,8 @@ impl App {
     ) {
         ui.horizontal(|ui| {
             let (rect, _) = ui.allocate_exact_size(vec2(PREVIEW_KEY, PREVIEW_KEY), Sense::hover());
-            let tex = self.key_tex.get(ctx, sel, b, icon_px);
+            let live = crate::obs::shown(b, &self.obs_live.state);
+            let tex = self.key_tex.get(ctx, sel, &live, icon_px);
             let view = key_view(b, None, tex, false);
             widgets::paint_key(ui.painter(), rect, &view, false, false, pal, accent);
             ui.vertical(|ui| {

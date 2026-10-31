@@ -1,7 +1,7 @@
 //! Integração com o OBS Studio pelo obs-websocket 5 (embutido no OBS desde a versão 28). Aqui fica
 //! só o protocolo e o estado, sem rede: autenticação, mensagens, qual pedido cada ação faz e o que
 //! cada evento muda. A conexão vive no serviço (`service::obs_runtime`).
-use crate::config::schema::{ButtonConfig, ObsCommand, RGBAColor};
+use crate::config::schema::{AppConfig, ButtonAction, ButtonConfig, ObsCommand, RGBAColor};
 use base64::Engine;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -93,15 +93,62 @@ impl ObsState {
         }
     }
 
-    /// Resumo de uma linha para o editor: `{"connected":..,"scenes":[..],"inputs":[..]}`.
+    /// Resumo de uma linha para o editor: conexão, listas e o estado de cada saída.
     pub fn info_json(&self) -> String {
         json!({
             "connected": self.connected,
+            "streaming": self.streaming,
+            "recording": self.recording,
+            "record_paused": self.record_paused,
+            "virtualcam": self.virtualcam,
+            "replay": self.replay,
+            "scene": self.scene,
             "scenes": self.scenes,
             "inputs": self.inputs,
+            "muted": self.muted,
         })
         .to_string()
     }
+
+    /// O inverso de `info_json` (no editor); campos ausentes (serviço antigo) ficam no padrão.
+    pub fn from_info_json(text: &str) -> Option<Self> {
+        let v: Value = serde_json::from_str(text).ok()?;
+        let flag = |k: &str| v.get(k).and_then(Value::as_bool).unwrap_or(false);
+        let list = |k: &str| names_list(v.get(k));
+        Some(Self {
+            connected: flag("connected"),
+            streaming: flag("streaming"),
+            recording: flag("recording"),
+            record_paused: flag("record_paused"),
+            virtualcam: flag("virtualcam"),
+            replay: flag("replay"),
+            scene: v.get("scene").and_then(Value::as_str).unwrap_or("").into(),
+            scenes: list("scenes"),
+            inputs: list("inputs"),
+            muted: list("muted"),
+        })
+    }
+}
+
+/// Alguma tecla (ou passo de multi-ação) de qualquer perfil usa o OBS?
+pub fn uses_obs(cfg: &AppConfig) -> bool {
+    fn any_obs(a: &ButtonAction) -> bool {
+        match a {
+            ButtonAction::Obs { .. } => true,
+            ButtonAction::MultiAction { steps } => steps.iter().any(any_obs),
+            _ => false,
+        }
+    }
+    cfg.profiles
+        .iter()
+        .flat_map(|p| &p.pages)
+        .flat_map(|pg| &pg.buttons)
+        .flat_map(|b| {
+            std::iter::once(&b.action)
+                .chain(b.long_press_action.as_ref())
+                .chain(b.toggled_action.as_ref())
+        })
+        .any(any_obs)
 }
 
 /// Resposta da autenticação: base64(sha256(base64(sha256(senha + sal)) + desafio)).
@@ -161,6 +208,26 @@ pub fn initial_requests() -> Vec<String> {
     .iter()
     .map(|t| request(t, t, Value::Null))
     .collect()
+}
+
+fn names_list(v: Option<&Value>) -> Vec<String> {
+    v.and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|s| s.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// A tecla como aparece agora: as do OBS refletem o estado dele (no aparelho e na prévia do editor).
+pub fn shown(b: &ButtonConfig, state: &ObsState) -> ButtonConfig {
+    match &b.action {
+        ButtonAction::Obs { command, target } => {
+            live_look(b, *command, state.is_active(*command, target))
+        }
+        _ => b.clone(),
+    }
 }
 
 fn active(data: &Value) -> bool {

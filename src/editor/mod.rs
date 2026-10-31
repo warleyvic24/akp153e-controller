@@ -72,6 +72,8 @@ pub(crate) struct App {
     library_open: bool,
     /// Apps que estiveram em foco (do serviço), sugeridos na troca automática de perfil.
     recent_apps: profile_ui::RecentApps,
+    /// Estado do OBS (do serviço), para as teclas do OBS aparecerem como no aparelho.
+    obs_live: obs_ui::ObsLive,
     /// Janela da tela lateral aberta.
     side_open: bool,
     side_tex: side_ui::SideTexture,
@@ -106,6 +108,7 @@ impl App {
             rename: None,
             library_open: false,
             recent_apps: profile_ui::RecentApps::default(),
+            obs_live: obs_ui::ObsLive::default(),
             side_open: false,
             side_tex: side_ui::SideTexture::default(),
         }
@@ -407,6 +410,7 @@ impl eframe::App for App {
         let mut guard = runtime::lock(&sh);
         let g: &mut runtime::Shared = &mut guard;
         self.autosave(&g.cfg);
+        self.obs_live.refresh(&g.cfg);
         ctx.request_repaint_after(REPAINT_EVERY);
         // O Omarchy trocou de tema: força reaplicar as cores sem esperar o usuário mexer em nada.
         if omarchy::refresh() {

@@ -459,12 +459,7 @@ fn press(
 
 /// O botão como deve aparecer agora: teclas do OBS refletem o estado do OBS (gravando, cena...).
 fn shown(sh: &Shared, b: &ButtonConfig) -> ButtonConfig {
-    match &b.action {
-        ButtonAction::Obs { command, target } => {
-            crate::obs::live_look(b, *command, sh.obs.is_active(*command, target))
-        }
-        _ => b.clone(),
-    }
+    crate::obs::shown(b, &sh.obs)
 }
 
 /// Redesenha só as teclas da página que satisfazem `pick(índice, botão)`, na ordem dos outros desenhos.

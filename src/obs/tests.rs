@@ -165,6 +165,12 @@ fn info_for_the_editor_is_one_line_of_json() {
     };
     let info = s.info_json();
     assert!(!info.contains('\n'));
+    assert_eq!(ObsState::from_info_json(&info), Some(s.clone()));
+    assert_eq!(
+        ObsState::from_info_json(r#"{"connected":true,"scenes":["A"]}"#).map(|o| o.connected),
+        Some(true),
+        "serviço antigo, sem os estados"
+    );
     let v: Value = serde_json::from_str(&info).unwrap();
     assert_eq!(v["scenes"][0], "A");
 }

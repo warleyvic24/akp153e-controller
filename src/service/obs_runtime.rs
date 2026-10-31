@@ -2,7 +2,7 @@
 //! uma tecla foi apertada); reconecta sozinho quando o OBS abre ou fecha. Os eventos do OBS
 //! atualizam `Shared::obs` e redesenham as teclas do OBS (gravando = vermelho, cena atual acesa).
 use super::runtime::{self, SharedState};
-use crate::config::schema::{AppConfig, ButtonAction, ObsSettings};
+use crate::config::schema::{ButtonAction, ObsSettings};
 use crate::obs::{self, op, ObsCall, ObsState};
 use crate::usb::UsbCmd;
 use serde_json::Value;
@@ -24,27 +24,6 @@ const HANDSHAKE_DEADLINE: Duration = Duration::from_secs(5);
 
 type Socket = WebSocket<TcpStream>;
 
-/// Alguma tecla (ou passo de multi-ação) de qualquer perfil usa o OBS?
-pub fn uses_obs(cfg: &AppConfig) -> bool {
-    fn any_obs(a: &ButtonAction) -> bool {
-        match a {
-            ButtonAction::Obs { .. } => true,
-            ButtonAction::MultiAction { steps } => steps.iter().any(any_obs),
-            _ => false,
-        }
-    }
-    cfg.profiles
-        .iter()
-        .flat_map(|p| &p.pages)
-        .flat_map(|pg| &pg.buttons)
-        .flat_map(|b| {
-            std::iter::once(&b.action)
-                .chain(b.long_press_action.as_ref())
-                .chain(b.toggled_action.as_ref())
-        })
-        .any(any_obs)
-}
-
 pub fn spawn(state: SharedState, tx: Sender<UsbCmd>, calls: Receiver<ObsCall>) {
     std::thread::spawn(move || {
         let mut retry = RETRY_MIN;
@@ -52,7 +31,7 @@ pub fn spawn(state: SharedState, tx: Sender<UsbCmd>, calls: Receiver<ObsCall>) {
         loop {
             let (settings, wanted) = {
                 let sh = runtime::lock(&state);
-                (sh.cfg.obs.clone(), uses_obs(&sh.cfg))
+                (sh.cfg.obs.clone(), obs::uses_obs(&sh.cfg))
             };
             if !wanted && pending.is_empty() {
                 match calls.recv_timeout(IDLE_CHECK) {
@@ -224,19 +203,19 @@ fn set_state(state: &SharedState, tx: &Sender<UsbCmd>, change: impl FnOnce(&mut 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::schema::ObsCommand;
+    use crate::config::schema::{AppConfig, ObsCommand};
 
     #[test]
     fn only_configs_with_obs_keys_connect() {
         let mut cfg = AppConfig::default();
-        assert!(!uses_obs(&cfg));
+        assert!(!obs::uses_obs(&cfg));
         cfg.page_mut().buttons[2].action = ButtonAction::MultiAction {
             steps: vec![ButtonAction::Obs {
                 command: ObsCommand::Record,
                 target: String::new(),
             }],
         };
-        assert!(uses_obs(&cfg));
+        assert!(obs::uses_obs(&cfg));
     }
 
     /// Servidor WebSocket falso que fala o obs-websocket: Hello com senha, confere o Identify,

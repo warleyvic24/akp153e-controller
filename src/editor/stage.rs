@@ -326,7 +326,9 @@ impl App {
                 events.under_pointer = Some(i);
             }
             let drop_target = resp.dnd_hover_payload::<Dragged>().is_some() || file_over;
-            let tex = self.key_tex.get(ctx, i, button, g.icon_px);
+            // A prévia é a do aparelho: teclas do OBS acesas/vermelhas conforme o OBS.
+            let live = crate::obs::shown(button, &self.obs_live.state);
+            let tex = self.key_tex.get(ctx, i, &live, g.icon_px);
             let view = key_view(button, Some(i + 1), tex, problem.is_some());
             let hot = resp.hovered() || drop_target;
             widgets::paint_key(&painter, kr, &view, hot, i == self.selected, pal, accent);

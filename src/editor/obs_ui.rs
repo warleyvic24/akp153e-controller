@@ -13,6 +13,30 @@ use std::time::{Duration, Instant};
 const INFO_REFRESH: Duration = Duration::from_secs(2);
 const PORT_WIDTH: f32 = 70.0;
 
+/// Estado do OBS para a prévia das teclas no editor (igual ao que o aparelho mostra).
+#[derive(Default)]
+pub(crate) struct ObsLive {
+    asked: Option<Instant>,
+    pub state: crate::obs::ObsState,
+}
+
+impl ObsLive {
+    /// Pergunta ao serviço a cada `INFO_REFRESH`, só se alguma tecla usa o OBS.
+    pub fn refresh(&mut self, cfg: &crate::config::schema::AppConfig) {
+        if !crate::obs::uses_obs(cfg) {
+            self.state = crate::obs::ObsState::default();
+            return;
+        }
+        if self.asked.is_some_and(|at| at.elapsed() < INFO_REFRESH) {
+            return;
+        }
+        self.asked = Some(Instant::now());
+        self.state = shell::send("obs-info")
+            .and_then(|r| crate::obs::ObsState::from_info_json(&r))
+            .unwrap_or_default();
+    }
+}
+
 /// Nome exibido de cada comando (passa por `t`).
 pub(crate) fn command_label(command: ObsCommand) -> &'static str {
     match command {
