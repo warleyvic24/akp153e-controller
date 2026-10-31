@@ -1,4 +1,5 @@
 //! Palco central: as abas de página, o aparelho desenhado com as teclas e os atalhos.
+use super::device_view;
 use super::{checks, is_blank, key_view, widgets, App};
 use crate::config::schema::ButtonConfig;
 use crate::editor::action_ui::Targets;
@@ -18,14 +19,7 @@ const PAGE_TABS_HEIGHT: f32 = 40.0;
 // Título e três passos de uma linha, com margens; medido na tela (o antigo 120 cortava o fim).
 const GUIDE_HEIGHT: f32 = 170.0;
 const OFFLINE_BANNER_HEIGHT: f32 = 60.0;
-const KEY_MIN: f32 = 48.0;
-// A imagem da tecla tem o tamanho do display (100 px); acima de ~1,4x ela fica borrada.
-const KEY_MAX: f32 = 140.0;
-const DEVICE_MAX_WIDTH: f32 = 780.0;
-const DEVICE_PAD: f32 = 24.0;
-const DEVICE_GAP: f32 = 12.0;
-/// Largura da tela lateral em relação à tecla (82 px de faixa para ~95 px de tecla no aparelho).
-const SIDE_RATIO: f32 = 0.86;
+const BADGE_STROKE: f32 = 1.0;
 const BEZEL_INSET: f32 = 8.0;
 const SCREEN_RADIUS: f32 = 16.0;
 const LED_SIZE: egui::Vec2 = egui::Vec2::new(34.0, 3.0);
@@ -50,21 +44,26 @@ struct DeviceEvents {
     under_pointer: Option<usize>,
 }
 
-/// Lado da tecla que cabe no espaço livre (entre `KEY_MIN` e `KEY_MAX`), contando a tela lateral.
-fn fit_key_size(avail_w: f32, avail_h: f32, rows: usize, cols: usize) -> f32 {
-    let (r, c) = (rows as f32, cols as f32);
-    let by_width =
-        (avail_w.min(DEVICE_MAX_WIDTH) - 2.0 * DEVICE_PAD - c * DEVICE_GAP) / (c + SIDE_RATIO);
-    let by_height = (avail_h - 2.0 * DEVICE_PAD - (r - 1.0) * DEVICE_GAP) / r;
-    by_width.min(by_height).clamp(KEY_MIN, KEY_MAX)
-}
-
-fn device_size(key: f32, rows: usize, cols: usize) -> egui::Vec2 {
-    let (r, c) = (rows as f32, cols as f32);
-    vec2(
-        2.0 * DEVICE_PAD + c * key + c * DEVICE_GAP + key * SIDE_RATIO,
-        2.0 * DEVICE_PAD + r * key + (r - 1.0) * DEVICE_GAP,
-    )
+/// Selo na ponta direita da fileira de páginas quando o modelo ainda não foi provado por ninguém.
+fn experimental_badge(ui: &Ui, row: Rect, pal: &Palette) {
+    let text = t("Experimental");
+    let font = egui::FontId::proportional(text::CAPTION);
+    let galley = ui.painter().layout_no_wrap(text.into(), font, pal.fg);
+    let pad = vec2(space::SM, space::XS);
+    let size = galley.size() + 2.0 * pad;
+    let badge = Rect::from_min_size(
+        pos2(row.right() - size.x, row.center().y - size.y / 2.0),
+        size,
+    );
+    // Texto e contorno na cor do texto: o contraste com o fundo já é o testado em `theme.rs`.
+    ui.painter().rect_stroke(
+        badge,
+        Rounding::same(radius::PILL),
+        Stroke::new(BADGE_STROKE, pal.fg),
+    );
+    ui.painter().galley(badge.min + pad, galley, pal.fg);
+    ui.interact(badge, ui.id().with("experimental"), Sense::hover())
+        .on_hover_text(t("Este modelo ainda não foi provado num aparelho de verdade: teclas trocadas ou tela apagada podem acontecer."));
 }
 
 /// Nome que o leitor de tela anuncia: posição, o que a tecla mostra, se precisa de ajuste e se
@@ -285,39 +284,45 @@ impl App {
                 STAGE_FOOTER_HEIGHT
             };
         let above = banner + PAGE_TABS_HEIGHT + space::SM;
-        let (rows, cols) = (g.cfg.page().rows, g.cfg.page().cols);
-        let key = fit_key_size(
+        let Some(model) = device_view::model_for(&g.cfg.page().model) else {
+            return DeviceEvents::default();
+        };
+        let key = device_view::fit_key_size(
+            model,
             ui.available_width(),
             ui.available_height() - above - below,
-            rows,
-            cols,
         );
-        let device = device_size(key, rows, cols);
+        let layout = device_view::layout(model, key);
+        let device = layout.size;
         // Centraliza na vertical o bloco inteiro (aviso, páginas, aparelho e o que vem abaixo).
         ui.add_space(((ui.available_height() - above - device.y - below) / 2.0).max(0.0));
         if !g.connected {
             self.offline_banner(ui, pal, g.service_running, device.x);
         }
         // As páginas pertencem ao aparelho: ficam coladas a ele, alinhadas à sua borda esquerda.
-        ui.allocate_ui(vec2(device.x, PAGE_TABS_HEIGHT), |ui| {
-            ui.horizontal(|ui| self.page_tabs(ui, g, pal));
-        });
+        let tabs = ui
+            .allocate_ui(vec2(device.x, PAGE_TABS_HEIGHT), |ui| {
+                ui.horizontal(|ui| self.page_tabs(ui, g, pal));
+            })
+            .response
+            .rect;
+        if model.status == crate::device::Status::Experimental {
+            // A fileira encolhe ao conteúdo: o selo vai na borda direita do aparelho.
+            experimental_badge(
+                ui,
+                Rect::from_min_size(tabs.min, vec2(device.x, tabs.height())),
+                pal,
+            );
+        }
         ui.add_space(space::SM);
         let (rect, _) = ui.allocate_exact_size(device, Sense::hover());
         paint_device_body(ui.painter(), rect, pal, accent, g.connected);
-        let events = self.draw_keys(ui, ctx, g, rect, key, pal, accent);
-        // A tela lateral é a 6ª coluna do aparelho, da altura das 3 fileiras de teclas.
-        let side = Rect::from_min_size(
-            pos2(
-                rect.left() + DEVICE_PAD + cols as f32 * (key + DEVICE_GAP),
-                rect.top() + DEVICE_PAD,
-            ),
-            vec2(
-                key * SIDE_RATIO,
-                rows as f32 * key + (rows as f32 - 1.0) * DEVICE_GAP,
-            ),
-        );
-        self.side_strip(ui, g, side, pal, accent);
+        let at = rect.min.to_vec2();
+        let keys: Vec<Rect> = layout.keys.iter().map(|k| k.translate(at)).collect();
+        let events = self.draw_keys(ui, ctx, g, &keys, key, pal, accent);
+        if let Some(side) = layout.strip {
+            self.side_strip(ui, g, side.translate(at), pal, accent);
+        }
         ui.add_space(space::MD);
         if page_blank {
             empty_guide(ui, pal, accent, rect.width());
@@ -357,13 +362,12 @@ impl App {
         ui: &mut Ui,
         ctx: &egui::Context,
         g: &runtime::Shared,
-        rect: Rect,
+        keys: &[Rect],
         key: f32,
         pal: &Palette,
         accent: Color32,
     ) -> DeviceEvents {
         let painter = ui.painter().clone();
-        let cols = g.cfg.page().cols;
         let targets = Targets::from(&g.cfg);
         let mut events = DeviceEvents::default();
         let page_at = (
@@ -376,12 +380,8 @@ impl App {
         }
         let mut painter = painter;
         painter.set_opacity(opacity);
-        for i in 0..g.cfg.page().rows * cols {
-            let origin = pos2(
-                rect.left() + DEVICE_PAD + (i % cols) as f32 * (key + DEVICE_GAP),
-                rect.top() + DEVICE_PAD + (i / cols) as f32 * (key + DEVICE_GAP),
-            );
-            let kr = Rect::from_min_size(origin, vec2(key, key));
+        // `buttons[i]` é a tecla `i` do modelo; sobra de um lado ou do outro não é desenhada.
+        for (i, &kr) in keys.iter().enumerate().take(g.cfg.page().buttons.len()) {
             let resp = ui.interact(kr, ui.id().with(("key", i)), Sense::click_and_drag());
             let button = &g.cfg.page().buttons[i];
             let problem = checks::button_problem(button, &targets);
@@ -488,39 +488,5 @@ impl App {
                 self.toasts.push("Teclas trocadas", Some("Desfazer"));
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn keys_shrink_to_fit_a_short_stage_but_never_below_the_minimum() {
-        // Com sobra de altura, a largura máxima do aparelho (780 px) é que limita a tecla.
-        let by_width =
-            (DEVICE_MAX_WIDTH - 2.0 * DEVICE_PAD - 5.0 * DEVICE_GAP) / (5.0 + SIDE_RATIO);
-        assert_eq!(fit_key_size(900.0, 2000.0, 3, 5), by_width);
-        assert_eq!(fit_key_size(900.0, 2000.0, 3, 2), KEY_MAX);
-        let mid = fit_key_size(900.0, 400.0, 3, 5);
-        assert!(mid > KEY_MIN && mid < KEY_MAX, "{mid}");
-        assert_eq!(fit_key_size(900.0, 50.0, 3, 5), KEY_MIN);
-    }
-
-    #[test]
-    fn the_device_is_never_wider_than_its_cap() {
-        let key = fit_key_size(5000.0, 5000.0, 3, 5);
-        assert!(device_size(key, 3, 5).x <= DEVICE_MAX_WIDTH + 2.0 * DEVICE_PAD);
-        assert!(device_size(key, 3, 5).x <= DEVICE_MAX_WIDTH + 1.0);
-    }
-
-    #[test]
-    fn device_size_matches_the_grid() {
-        let s = device_size(100.0, 3, 5);
-        assert_eq!(
-            s.x,
-            2.0 * DEVICE_PAD + 500.0 + 5.0 * DEVICE_GAP + 100.0 * SIDE_RATIO
-        );
-        assert_eq!(s.y, 2.0 * DEVICE_PAD + 300.0 + 2.0 * DEVICE_GAP);
     }
 }

@@ -338,6 +338,8 @@ const EN: &[(&str, &str)] = &[
     ("Texto na tecla (ex.: Mudo). Enter quebra a linha", "Key text (e.g. Mute). Enter breaks the line"),
     ("Topo", "Top"),
     ("Tela lateral", "Side screen"),
+    ("Experimental", "Experimental"),
+    ("Este modelo ainda não foi provado num aparelho de verdade: teclas trocadas ou tela apagada podem acontecer.", "This model has not been proven on a real device yet: swapped keys or a blank screen may happen."),
     ("Tela lateral: clique para escolher o que ela mostra nesta página", "Side screen: click to choose what it shows on this page"),
     ("Tela lateral · {}", "Side screen · {}"),
     ("Mostrar", "Show"),

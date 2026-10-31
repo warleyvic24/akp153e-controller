@@ -129,7 +129,14 @@ sem evento de giro no `Driver`, seriam campos sem uso. Conferido com uma cópia 
 
 ---
 
-## Fase 4: editor desenha qualquer aparelho
+## Fase 4: editor desenha qualquer aparelho (feita em parte em 2026-10-31)
+
+**Feito:** o palco desenha as teclas e a faixa lateral a partir do arquivo do modelo da página
+(`editor/device_view.rs`, com testes de geometria: o AKP153E sai idêntico; um modelo de 2 x 3 sem lateral).
+Selo "Experimental" à direita das páginas quando o modelo não é verificado. Prévias conferidas nos dois temas.
+**Falta:** giratórios e faixa de toque (junto com a Fase 7, que traz o primeiro aparelho com eles);
+escolher o modelo à mão sem aparelho e dividir as páginas com `Page::split_for` ao trocar de modelo
+(só faz sentido quando houver um segundo modelo de outro tamanho no catálogo).
 
 **Passos**
 1. O palco desenha os controles do arquivo (teclas, faixa lateral, giratórios redondos, faixa de toque).

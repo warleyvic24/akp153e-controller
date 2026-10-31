@@ -3,6 +3,7 @@ mod action_ui;
 mod bars;
 mod beautify;
 mod checks;
+mod device_view;
 mod favicon;
 mod history;
 mod icon_picker;
