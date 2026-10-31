@@ -366,13 +366,18 @@ pub fn segmented<R>(ui: &mut Ui, pal: &Palette, add: impl FnOnce(&mut Ui) -> R) 
 /// Rótulo de seção em caixa alta. Sem espaçamento artificial entre letras: o espaço fino que
 /// simulava isso era lido letra por letra por leitores de tela e quebrava busca e cópia.
 /// Devolve o id do rótulo, para o campo que ele nomeia usar `labelled_by` (leitores de tela).
+/// Quanto o título de seção puxa da cor do texto (0 = apagado, 1 = texto).
+const SECTION_INK: f32 = 0.45;
+
 pub fn section(ui: &mut Ui, text: &str, pal: &Palette) -> egui::Id {
     let text = crate::strings::t(text);
     ui.add_space(space::XS + 2.0);
+    // Caixa normal e um tom acima do texto apagado: título de seção se lê, não se decifra.
     ui.label(
-        RichText::new(text.to_uppercase())
-            .font(crate::editor::theme::display_font(text::CAPTION))
-            .color(pal.muted),
+        RichText::new(text)
+            .size(text::BODY - 1.0)
+            .strong()
+            .color(crate::editor::theme::mix(pal.muted, pal.fg, SECTION_INK)),
     )
     .id
 }
@@ -391,7 +396,6 @@ pub fn status_chip(ui: &mut Ui, label: &str, color: Color32) -> Response {
         .show(ui, |ui| {
             ui.label(
                 RichText::new(format!("● {label}"))
-                    .monospace()
                     .size(text::CAPTION)
                     .color(ink),
             )

@@ -63,12 +63,10 @@ impl App {
                 if widgets::icon_button(ui, "settings", "Preferências", true, pal).clicked() {
                     self.open_settings();
                 }
-                self.manage_menu(ui, g, pal);
                 ui.add_space(WORDMARK_GAP);
                 self.undo_redo(ui, undo, redo, pal);
                 ui.add_space(WORDMARK_GAP);
-                self.save_chip(ui, pal);
-                self.connection_chip(ui, g, pal);
+                self.sync_chip(ui, g, pal);
                 let left = Layout::left_to_right(Align::Center);
                 ui.with_layout(left, |ui| {
                     // Janela estreita: o botão "Ações" abre a biblioteca no lugar do inspetor.
@@ -87,6 +85,8 @@ impl App {
                         ui.label(RichText::new(t("Perfil")).color(pal.muted));
                     }
                     self.profile_combo(ui, g);
+                    // Gerenciar fica junto do perfil, que é o que ele gerencia.
+                    self.manage_menu(ui, g, pal);
                 });
             });
         });
@@ -112,35 +112,25 @@ impl App {
         .clicked();
     }
 
-    /// Estado da gravação, ao lado do estado da conexão.
-    fn save_chip(&self, ui: &mut egui::Ui, pal: &Palette) {
-        if let Some(err) = &self.save_error {
-            widgets::status_chip(ui, "Falha ao salvar", pal.bad).on_hover_text(format!(
-                "{err}
-{}",
-                t("Nova tentativa em instantes.")
-            ));
-        } else if self.dirty {
-            widgets::status_chip(ui, "Salvando…", pal.muted);
-        } else {
-            widgets::status_chip(ui, "Salvo", pal.ok);
-        }
-    }
-
-    /// Chip de conexão; ao clicar, abre um menu com reconectar e a pasta de logs.
-    fn connection_chip(&mut self, ui: &mut egui::Ui, g: &runtime::Shared, pal: &Palette) {
+    /// Um selo só responde "o aparelho mostra o que estou vendo?": junta o serviço, o cabo e a
+    /// gravação (que é automática: "salvo" só seria ruído). Ao clicar, reconectar e os logs.
+    fn sync_chip(&mut self, ui: &mut egui::Ui, g: &runtime::Shared, pal: &Palette) {
         let (label, color) = if !g.service_running {
-            ("SERVIÇO PARADO", pal.bad)
-        } else if g.connected {
-            ("CONECTADO", pal.ok)
+            ("Serviço parado", pal.bad)
+        } else if !g.connected {
+            ("Desconectado", pal.bad)
+        } else if self.save_error.is_some() {
+            ("Falha ao salvar", pal.bad)
+        } else if self.dirty {
+            ("Enviando…", pal.muted)
         } else {
-            ("DESCONECTADO", pal.bad)
+            ("No aparelho", pal.ok)
         };
         let chip = widgets::status_chip(ui, label, color);
         let resp = ui
             .interact(chip.rect, ui.scope_id().with("conn_chip"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand);
-        widgets::name(&resp, "Estado da conexão");
+        widgets::name(&resp, "Estado do aparelho");
         let popup = ui.scope_id().with("conn_popup");
         if resp.clicked() {
             egui::Popup::toggle_id(ui.ctx(), popup);
@@ -152,6 +142,9 @@ impl App {
             .close_behavior(close)
             .show(|ui| {
                 ui.set_min_width(CONN_POPUP_WIDTH);
+                if let Some(err) = &self.save_error {
+                    ui.label(format!("{err}\n{}", t("Nova tentativa em instantes.")));
+                }
                 let msg = if !g.service_running {
                     t("O serviço em segundo plano não está rodando.")
                 } else if g.connected {
@@ -299,7 +292,7 @@ impl App {
         g: &mut runtime::Shared,
         pal: &Palette,
     ) {
-        ui.menu_button(t("Perfil e página"), |ui| {
+        ui.menu_button(t("Gerenciar"), |ui| {
             let prof = g.cfg.active_profile;
             let index = g.cfg.profiles[prof].active_page;
             let page_label = ui.label(t("Nome da página")).id;
