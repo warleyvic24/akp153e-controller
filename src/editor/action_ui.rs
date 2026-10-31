@@ -2,7 +2,7 @@
 use super::{textlist, widgets};
 use crate::config::schema::*;
 use crate::editor::theme::{self, Palette};
-use crate::editor::tokens::{radius, text};
+use crate::editor::tokens::text;
 use crate::engine;
 use crate::strings::{display_name, t, tf};
 use eframe::egui::{self, Color32, RichText};
@@ -64,7 +64,7 @@ pub(crate) fn media_label(key: &str) -> &str {
         .map_or(key, |(_, label)| label)
 }
 
-const ACTION_KINDS: [(&str, &str); 18] = [
+pub(super) const ACTION_KINDS: [(&str, &str); 18] = [
     ("none", "Nenhuma"),
     ("hotkey", "Atalho"),
     ("launch-app", "App"),
@@ -112,19 +112,11 @@ const MEDIA_KEYS: [(&str, &str); 6] = [
 ];
 
 const BODY_ROWS: usize = 3;
-const KIND_COLUMNS: usize = 4;
-const KIND_GAP: f32 = 6.0;
-const KIND_TILE_HEIGHT: f32 = 54.0;
-const KIND_ICON: f32 = 18.0;
-const KIND_ICON_TOP: f32 = 19.0;
-const KIND_LABEL_BOTTOM: f32 = 13.0;
-const KIND_ON_TINT: f32 = 0.12;
-const KIND_HOVER_TINT: f32 = 0.08;
 
 /// Explica a ação "Mixer": o que aparece no aparelho e como sair.
 const MIXER_HINT: &str = "Mostra no aparelho os apps com som: ícone com a porcentagem em cima, + no meio e − embaixo. Esta tecla vira SAIR (segure para sair se houver mais de 5 apps).";
 
-fn action_name(a: &ButtonAction) -> &'static str {
+pub(super) fn action_name(a: &ButtonAction) -> &'static str {
     match a {
         ButtonAction::None => "none",
         ButtonAction::Hotkey { .. } => "hotkey",
@@ -148,7 +140,7 @@ fn action_name(a: &ButtonAction) -> &'static str {
     }
 }
 
-fn default_action(kind: &str) -> ButtonAction {
+pub(super) fn default_action(kind: &str) -> ButtonAction {
     match kind {
         "hotkey" => ButtonAction::Hotkey { keys: vec![] },
         "launch-app" => ButtonAction::LaunchApp {
@@ -273,91 +265,6 @@ fn capture_hotkey(ctx: &egui::Context) -> Option<Capture> {
     })
 }
 
-/// Seletor do tipo de ação; trocar o tipo recomeça com os valores padrão do novo tipo.
-fn kind_picker(ui: &mut egui::Ui, cx: &PaneCtx, a: &mut ButtonAction) -> bool {
-    let mut changed = false;
-    let gap = KIND_GAP;
-    let width = (ui.available_width() - gap * (KIND_COLUMNS - 1) as f32) / KIND_COLUMNS as f32;
-    for row in ACTION_KINDS.chunks(KIND_COLUMNS) {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = gap;
-            for &(kind, label) in row {
-                let on = action_name(a) == kind;
-                if kind_tile(ui, kind, label, on, width, cx).clicked() && !on {
-                    *a = default_action(kind);
-                    changed = true;
-                }
-            }
-        });
-    }
-    changed
-}
-
-/// Bloco da grade de tipos: ícone em cima, nome embaixo; o escolhido em destaque.
-fn kind_tile(
-    ui: &mut egui::Ui,
-    kind: &str,
-    label: &str,
-    on: bool,
-    width: f32,
-    cx: &PaneCtx,
-) -> egui::Response {
-    let label = t(label);
-    let (rect, resp) =
-        ui.allocate_exact_size(egui::vec2(width, KIND_TILE_HEIGHT), egui::Sense::click());
-    resp.widget_info(|| {
-        egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, on, label)
-    });
-    let pal = cx.pal;
-    let ink = theme::ink(cx.accent, pal);
-    let round = egui::Rounding::same(radius::CONTROL);
-    let (fill, fg) = if on {
-        (cx.accent.gamma_multiply(KIND_ON_TINT), ink)
-    } else if resp.hovered() || resp.has_focus() {
-        (theme::mix(pal.raise, pal.fg, KIND_HOVER_TINT), pal.fg)
-    } else {
-        (pal.raise, pal.fg)
-    };
-    let p = ui.painter();
-    p.rect_filled(rect, round, fill);
-    if on {
-        p.rect_stroke(rect, round, egui::Stroke::new(1.5_f32, ink));
-    }
-    let icon_at = egui::pos2(rect.center().x, rect.top() + KIND_ICON_TOP);
-    super::icon_picker::paint_any(p, cx.ctx, icon_at, KIND_ICON, kind_icon(kind), fg);
-    p.text(
-        egui::pos2(rect.center().x, rect.bottom() - KIND_LABEL_BOTTOM),
-        egui::Align2::CENTER_CENTER,
-        label,
-        egui::FontId::proportional(text::CAPTION),
-        fg,
-    );
-    resp
-}
-
-fn kind_icon(kind: &str) -> &'static str {
-    match kind {
-        "hotkey" => "keyboard",
-        "launch-app" => "app",
-        "http-webhook" => "globe",
-        "media-key" => "music",
-        "switch-page" => "page",
-        "switch-profile" => "user",
-        "open-mixer" => "mixer",
-        "type-text" => "keyboard",
-        "multi-action" => "plus",
-        "next-page" => "next",
-        "previous-page" => "prev",
-        "run-command" => "lucide:terminal",
-        "brightness" => "lucide:sun",
-        "clock" => "lucide:clock",
-        "monitor" => "lucide:activity",
-        "obs" => "lucide:clapperboard",
-        "play-sound" => "lucide:audio-lines",
-        _ => "ban",
-    }
-}
-
 /// Editor completo da ação `a`. `id` separa o estado de "Ao tocar" e "Ao segurar".
 pub fn action_editor(
     ui: &mut egui::Ui,
@@ -366,7 +273,7 @@ pub fn action_editor(
     a: &mut ButtonAction,
     rec: &mut Option<&'static str>,
 ) -> bool {
-    let mut changed = kind_picker(ui, cx, a);
+    let mut changed = super::kind_picker::kind_picker(ui, cx, id, a);
     changed |= match a {
         ButtonAction::Hotkey { keys } => hotkey_editor(ui, cx, id, keys, rec),
         ButtonAction::LaunchApp { path, args } => launch_editor(ui, cx.pal, id, path, args),

@@ -35,7 +35,7 @@ cargo build --release           # -> target\release\keyforge.exe
 - Nenhum arquivo acima de 800 linhas (hoje o maior é `editor/action_ui.rs`, ~775). Testes grandes vão para `tests.rs` ao lado (ex.: `mixer/tests.rs`).
 - Camadas em `src/`, dependência só para baixo. O editor usa do serviço apenas `service::runtime` (estado compartilhado); o serviço nunca usa o editor.
   - `main.rs`: lê os argumentos e escolhe o modo. `cli.rs`: log, `--run-action`, abertura do editor.
-  - `editor/`: janela egui. `mod.rs` (`App`), painéis `panes.rs`, ações `action_ui.rs`, inspetor `inspector.rs`, barras `bars.rs`, palco `stage.rs` (geometria do aparelho vinda do arquivo do modelo em `device_view.rs`), preferências `settings.rs`, avisos `toast.rs`, design `tokens.rs`/`theme.rs`/`widgets.rs`.
+  - `editor/`: janela egui. `mod.rs` (`App`), painéis `panes.rs`, ações `action_ui.rs` (tipo da ação em `kind_picker.rs`: grade aberta na tecla vazia, linha "App ▾" nas outras), inspetor `inspector.rs`, barras `bars.rs`, palco `stage.rs` (geometria do aparelho vinda do arquivo do modelo em `device_view.rs`), preferências `settings.rs`, avisos `toast.rs`, design `tokens.rs`/`theme.rs`/`widgets.rs`.
   - `service/`: serviço em segundo plano (`mod.rs`), estado compartilhado `runtime.rs` (testes em `runtime/tests.rs`; dados ao vivo das teclas em `runtime/live.rs`, que o editor também liga para a prévia), thread do mixer `mixer_runtime.rs`, perfil automático `auto_profile.rs`, conexão com o OBS `obs_runtime.rs`, descanso da tela `sleep.rs`.
   - `obs/`: protocolo do obs-websocket 5 e estado do OBS, sem rede (testável); a rede fica em `service/obs_runtime.rs`.
   - `mixer/`: página de mixer, dados puros e testáveis; ação `open-mixer`.

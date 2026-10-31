@@ -346,6 +346,8 @@ const EN: &[(&str, &str)] = &[
     ("Nada", "Nothing"),
     ("Nome da página", "Page name"),
     ("Trocar", "Change"),
+    ("Tipo de ação: {}. Trocar", "Action type: {}. Change"),
+    ("Trocar o tipo apaga os campos desta ação.", "Changing the type clears this action's fields."),
     ("Recortada para preencher {} x {} px (em pé).", "Cropped to fill {} x {} px (portrait)."),
     ("Cada página tem a sua. Experimental: o desenho da faixa foi medido num AKP153E 0300:3010 por outro projeto; se aparecer cortado ou fora do lugar, avise.", "Each page has its own. Experimental: the strip layout was measured on an AKP153E 0300:3010 by another project; if it looks cut off or misplaced, let us know."),
     ("Som", "Sound"),

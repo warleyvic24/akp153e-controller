@@ -9,6 +9,7 @@ mod history;
 mod icon_picker;
 mod inspector;
 mod key_tex;
+mod kind_picker;
 mod layout;
 mod library;
 mod library_panel;
