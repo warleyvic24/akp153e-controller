@@ -14,6 +14,8 @@ Um executável, dois modos:
 cargo test                      # rápido; não toca na config real (ver abaixo)
 cargo clippy --all-targets      # deve ficar sem avisos
 cargo fmt                       # obrigatório antes de concluir
+cargo deny check                # licenças e avisos de segurança (deny.toml; também no CI)
+cargo llvm-cov --summary-only   # cobertura (CI exige >= 70% das linhas; no Arch: LLVM_COV=/usr/bin/llvm-cov LLVM_PROFDATA=/usr/bin/llvm-profdata)
 cargo build --release           # -> target\release\keyforge.exe
 ```
 
@@ -33,7 +35,7 @@ cargo build --release           # -> target\release\keyforge.exe
 
 - Comentários e mensagens ao usuário em português; nomes de código em inglês. Constantes nomeadas em vez de números soltos.
 - Nenhum arquivo acima de 800 linhas (hoje o maior é `editor/action_ui.rs`, ~775). Testes grandes vão para `tests.rs` ao lado (ex.: `mixer/tests.rs`).
-- Camadas em `src/`, dependência só para baixo. O editor usa do serviço apenas `service::runtime` (estado compartilhado); o serviço nunca usa o editor.
+- Camadas em `src/`, dependência só para baixo (conferido por `architecture_tests.rs`). O editor usa do serviço apenas `service::runtime` (estado compartilhado); o serviço nunca usa o editor.
   - `main.rs`: lê os argumentos e escolhe o modo. `cli.rs`: log, `--run-action`, abertura do editor.
   - `editor/`: janela egui. `mod.rs` (`App`), painéis `panes.rs`, ações `action_ui.rs` (tipo da ação em `kind_picker.rs`: grade aberta na tecla vazia, linha "App ▾" nas outras), inspetor `inspector.rs`, barras `bars.rs`, palco `stage.rs` (geometria do aparelho vinda do arquivo do modelo em `device_view.rs`), preferências `settings.rs`, avisos `toast.rs`, design `tokens.rs`/`theme.rs`/`widgets.rs`.
   - `service/`: serviço em segundo plano (`mod.rs`), estado compartilhado `runtime.rs` (testes em `runtime/tests.rs`; dados ao vivo das teclas em `runtime/live.rs`, que o editor também liga para a prévia), thread do mixer `mixer_runtime.rs`, perfil automático `auto_profile.rs`, conexão com o OBS `obs_runtime.rs`, descanso da tela `sleep.rs`.

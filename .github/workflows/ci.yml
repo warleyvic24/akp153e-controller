@@ -18,12 +18,13 @@ jobs:
         run: cargo test
       - name: Testes (hook de guarda)
         run: node --test "tests/**/*.test.js"
-      - name: Instalar cargo-audit
+      - name: Instalar cargo-deny
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-audit
-      - name: Auditoria de dependências
-        run: cargo audit
+          tool: cargo-deny
+      # Licenças, avisos de segurança (com as exceções justificadas em deny.toml) e origem das crates.
+      - name: Dependências (cargo deny)
+        run: cargo deny check
 
   linux:
     runs-on: ubuntu-latest
@@ -41,6 +42,15 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
       - name: Testes (Rust)
         run: cargo test
+      - name: Instalar cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      # Cobertura de linhas (73% em 2026-10-31): o piso impede que ela caia sem ninguém perceber.
+      - name: Cobertura
+        run: |
+          rustup component add llvm-tools-preview
+          cargo llvm-cov --summary-only --fail-under-lines 70
       - name: Build release
         run: cargo build --release
       - uses: actions/upload-artifact@v4

@@ -1,0 +1,56 @@
+# cargo deny check: licenças, avisos de segurança e origem das crates (rodado no CI).
+# Toda licença aqui é permissiva ou de cópia só do próprio arquivo (MPL-2.0); o Keyforge é MIT.
+
+[graph]
+all-features = false
+
+[advisories]
+# Avisos de crates sem manutenção não travam: entram como aviso no log.
+unmaintained = "workspace"
+yanked = "warn"
+ignore = [
+    # quick-xml 0.30 vem do egui 0.29 (accesskit -> atspi -> zbus_xml) e só lê o XML de introspecção
+    # do D-Bus da própria sessão: o risco é um serviço local travar o editor. Sai com a atualização do
+    # egui (docs/ROTEIRO.md, Degrau 2). Revisar até 2027-01-31.
+    { id = "RUSTSEC-2026-0194", reason = "quick-xml 0.30 preso pelo egui 0.29; só lê XML do D-Bus local" },
+    { id = "RUSTSEC-2026-0195", reason = "quick-xml 0.30 preso pelo egui 0.29; só lê XML do D-Bus local" },
+]
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "Unlicense",
+    "Unicode-3.0",
+    "CDLA-Permissive-2.0",
+    "OFL-1.1",
+    # option-ext (via directories): cópia só dos arquivos dela, sem efeito sobre o resto.
+    "MPL-2.0",
+]
+confidence-threshold = 0.9
+
+# Fontes padrão do egui: Ubuntu Font License (livre para embutir e distribuir).
+[[licenses.clarify]]
+crate = "epaint_default_fonts"
+expression = "(MIT OR Apache-2.0) AND OFL-1.1 AND LicenseRef-UFL-1.0"
+license-files = []
+
+[[licenses.exceptions]]
+crate = "epaint_default_fonts"
+allow = ["LicenseRef-UFL-1.0"]
+
+[bans]
+# Versões duplicadas são comuns na árvore do egui/winit: aviso, não erro.
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

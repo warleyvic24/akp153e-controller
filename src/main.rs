@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 //! AKP153E: um executável, dois modos. Serviço (`--background`, dono do USB) e editor (`--editor`).
+#[cfg(test)]
+mod architecture_tests;
 mod cli;
 mod config;
 mod device;
