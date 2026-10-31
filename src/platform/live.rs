@@ -57,6 +57,9 @@ pub struct NowPlaying {
     pub art: Option<String>,
     /// Em pausa há mais de `IDLE_AFTER`: quem mostra a música pode dar lugar a outra coisa.
     pub idle: bool,
+    /// Onde a faixa está e quanto dura, em segundos, quando o player informa (rádio e alguns
+    /// sites não informam).
+    pub progress: Option<(u32, u32)>,
 }
 
 /// Pausa curta (atender alguém, pular de faixa) não conta; depois disto a música está parada.
@@ -66,6 +69,18 @@ impl NowPlaying {
     /// Vale mostrar a música: tocando, ou em pausa há pouco.
     pub fn worth_showing(&self) -> bool {
         self.playing || !self.idle
+    }
+
+    /// Mesma música no mesmo estado, sem contar o avanço da faixa (que muda a cada leitura e só
+    /// importa a quem desenha a barra).
+    pub fn same_besides_progress(&self, other: &Self) -> bool {
+        Self {
+            progress: None,
+            ..self.clone()
+        } == Self {
+            progress: None,
+            ..other.clone()
+        }
     }
 }
 
@@ -364,7 +379,27 @@ mod mpris {
         found.sort_by_key(|(s, _)| s != "Playing");
         let (state, player) = found.into_iter().next()?;
         let metadata = busctl(&["get-property", &player, PATH, PLAYER, "Metadata"])?;
-        parse_metadata(&metadata, state == "Playing")
+        let (mut now, art) = parse_metadata(&metadata, state == "Playing")?;
+        let position = busctl(&["get-property", &player, PATH, PLAYER, "Position"])
+            .and_then(|v| v.get("data")?.as_i64());
+        now.progress = progress(position, length_us(&metadata));
+        Some((now, art))
+    }
+
+    /// Duração da faixa em microssegundos (`mpris:length`, que vem como `x` ou `t`).
+    fn length_us(v: &Value) -> Option<i64> {
+        let length = v.get("data")?.get("mpris:length")?.get("data")?;
+        length
+            .as_i64()
+            .or_else(|| length.as_u64().map(|u| u as i64))
+    }
+
+    /// Posição e duração em segundos; nada se a duração for zero ou desconhecida.
+    pub fn progress(position_us: Option<i64>, length_us: Option<i64>) -> Option<(u32, u32)> {
+        const US: i64 = 1_000_000;
+        let length = length_us.filter(|l| *l > 0)?;
+        let position = position_us.unwrap_or(0).clamp(0, length);
+        Some(((position / US) as u32, (length / US) as u32))
     }
 
     /// Lê o `a{sv}` do Metadata no JSON do busctl.
@@ -392,6 +427,7 @@ mod mpris {
                 playing,
                 art: None,
                 idle: false,
+                progress: None,
             },
             art,
         ))
@@ -409,6 +445,7 @@ mod idle_tests {
             playing,
             art: None,
             idle: false,
+            progress: None,
         }
     }
 
@@ -424,6 +461,26 @@ mod idle_tests {
         assert!(s
             .mark_idle(song(false), later + IDLE_AFTER / 2)
             .worth_showing());
+    }
+}
+
+#[cfg(all(test, not(windows)))]
+mod progress_tests {
+    use super::mpris::progress;
+
+    #[test]
+    fn progress_is_in_seconds_and_needs_a_known_length() {
+        assert_eq!(
+            progress(Some(83_500_000), Some(225_000_000)),
+            Some((83, 225))
+        );
+        assert_eq!(
+            progress(Some(5), Some(0)),
+            None,
+            "rádio e sites sem duração"
+        );
+        assert_eq!(progress(None, Some(60_000_000)), Some((0, 60)));
+        assert_eq!(progress(Some(99_000_000), Some(60_000_000)), Some((60, 60)));
     }
 }
 

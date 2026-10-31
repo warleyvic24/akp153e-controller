@@ -129,6 +129,7 @@ fn a_cover_fills_the_key_and_the_frame_fits_the_device_limit() {
             playing: true,
             art: Some(path.display().to_string()),
             idle: false,
+            progress: None,
         }),
         ..Live::default()
     };

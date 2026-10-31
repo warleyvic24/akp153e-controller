@@ -56,11 +56,18 @@ pub(super) fn wants(sh: &Shared) -> Wants {
     all
 }
 
+fn progress_of(live: &Live) -> Option<(u32, u32)> {
+    live.playing.as_ref().and_then(|p| p.progress)
+}
+
 /// O que mudou de `old` para `new`, nos termos de `Wants` (para saber o que redesenhar).
 fn changed(old: &Live, new: &Live) -> Wants {
     Wants {
         volume: old.volume != new.volume,
-        playing: old.playing != new.playing,
+        playing: match (&old.playing, &new.playing) {
+            (Some(a), Some(b)) => !a.same_besides_progress(b),
+            (a, b) => a != b,
+        },
         system: old.system != new.system,
         mic: old.mic_muted != new.mic_muted,
     }
@@ -76,11 +83,12 @@ pub fn spawn(state: SharedState, tx: Option<Sender<UsbCmd>>) {
             if wanted.any() {
                 // Consultar é lento (processos externos): fora do lock.
                 let fresh = sampler.sample(wanted);
-                let diff = {
+                let (diff, before_progress) = {
                     let mut sh = lock(&state);
                     let diff = changed(&sh.live, &fresh);
+                    let before = progress_of(&sh.live);
                     sh.live = fresh;
-                    diff
+                    (diff, before)
                 };
                 if let (Some(tx), true) = (&tx, diff.any()) {
                     redraw_where(&state, tx, |_, b| {
@@ -90,9 +98,18 @@ pub fn spawn(state: SharedState, tx: Option<Sender<UsbCmd>>) {
                             || (w.system && diff.system)
                             || (w.mic && diff.mic)
                     });
-                    let side = lock(&state).cfg.page().side.clone();
+                }
+                if let Some(tx) = &tx {
+                    // A barra de progresso só existe na lateral: ela redesenha a cada avanço.
+                    let (side, progressed) = {
+                        let sh = lock(&state);
+                        (
+                            sh.cfg.page().side.clone(),
+                            before_progress != progress_of(&sh.live),
+                        )
+                    };
                     if (diff.system && side == SideScreen::System)
-                        || (diff.playing && side == SideScreen::NowPlaying)
+                        || ((diff.playing || progressed) && side == SideScreen::NowPlaying)
                     {
                         redraw_side(&state, tx);
                     }

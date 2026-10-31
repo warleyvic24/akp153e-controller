@@ -514,6 +514,8 @@ const TITLE_ONE_LINE: usize = 20;
 /// Títulos de vídeo passam de 80 letras: cortados aqui, a letra continua legível na faixa.
 const TITLE_MAX: usize = 40;
 const SIDE_STATE_SIZE: f32 = 18.0;
+const SIDE_PROGRESS_INSET: f32 = 10.0;
+const SIDE_PROGRESS_HEIGHT: f32 = 4.0;
 
 pub fn side_now_playing(img: &mut RgbaImage, playing: Option<&NowPlaying>, muted: RGBAColor) {
     let (w, h) = img.dimensions();
@@ -580,6 +582,28 @@ pub fn side_now_playing(img: &mut RgbaImage, playing: Option<&NowPlaying>, muted
     }
     let upright = imageops::rotate90(&lying);
     imageops::overlay(img, &upright, 0, i64::from(SIDE_TEXT_TOP));
+    if let Some((at, of)) = playing.and_then(|p| p.progress) {
+        // Barra fina de quanto já tocou, logo acima do símbolo de tocar/pausa.
+        let fill = if playing.is_some_and(|p| p.playing) {
+            GREEN
+        } else {
+            SOFT_WHITE
+        };
+        let frac = at as f32 / of.max(1) as f32;
+        let (wf, hf) = (w as f32, h as f32);
+        bar(
+            img,
+            (
+                SIDE_PROGRESS_INSET,
+                hf - SIDE_TEXT_BOTTOM as f32,
+                wf - 2.0 * SIDE_PROGRESS_INSET,
+                SIDE_PROGRESS_HEIGHT,
+            ),
+            frac,
+            fill,
+            WHITE,
+        );
+    }
     if let Some(p) = playing {
         let (wf, hf) = (w as f32, h as f32);
         let x = (wf - SIDE_STATE_SIZE) / 2.0;

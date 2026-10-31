@@ -238,6 +238,7 @@ mod tests {
                 playing,
                 art: None,
                 idle,
+                progress: None,
             }),
             ..Live::default()
         };
@@ -249,6 +250,28 @@ mod tests {
             assert_ne!(now(&song(true, false)), clock, "tocando");
             assert_ne!(now(&song(false, false)), clock, "pausa curta");
         }
+    }
+
+    #[test]
+    fn the_progress_bar_shows_how_much_has_played() {
+        let at = |progress| {
+            let live = Live {
+                playing: Some(crate::platform::live::NowPlaying {
+                    title: "Música".into(),
+                    artist: String::new(),
+                    playing: true,
+                    art: None,
+                    idle: false,
+                    progress,
+                }),
+                ..Live::default()
+            };
+            let img = render(&SideScreen::NowPlaying, &info(), &live).unwrap();
+            // Pixels verdes da barra (o ▶ também é verde, mas é igual nos dois casos).
+            img.pixels().filter(|p| p[1] > 150 && p[0] < 100).count()
+        };
+        assert!(at(Some((50, 60))) > at(Some((5, 60))));
+        assert!(at(Some((5, 60))) > at(None));
     }
 
     /// Grava a faixa de cada modo em PNG para olhar: `AKP_SIDE_OUT=/pasta cargo test side_previews -- --ignored`.
