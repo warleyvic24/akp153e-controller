@@ -366,6 +366,9 @@ pub fn segmented<R>(ui: &mut Ui, pal: &Palette, add: impl FnOnce(&mut Ui) -> R) 
 /// Rótulo de seção em caixa alta. Sem espaçamento artificial entre letras: o espaço fino que
 /// simulava isso era lido letra por letra por leitores de tela e quebrava busca e cópia.
 /// Devolve o id do rótulo, para o campo que ele nomeia usar `labelled_by` (leitores de tela).
+/// Respiro interno das janelas modais.
+const MODAL_PADDING: i8 = 20;
+
 /// Quanto o título de seção puxa da cor do texto (0 = apagado, 1 = texto).
 const SECTION_INK: f32 = 0.45;
 
@@ -500,6 +503,39 @@ pub fn search_field(ui: &mut Ui, query: &mut String, hint_text: &str, pal: &Pale
     paint_icon(ui.painter(), center, ICON, "search", pal.muted);
     name(&resp, hint_text);
     resp
+}
+
+/// Janela modal do editor: no centro, com o fundo escurecido, título e X. Esc, o X ou um clique
+/// fora pedem para fechar (o segundo valor). `title` já vem traduzido.
+pub fn modal<R>(
+    ctx: &egui::Context,
+    id: &str,
+    title: &str,
+    width: f32,
+    pal: &Palette,
+    body: impl FnOnce(&mut Ui) -> R,
+) -> (R, bool) {
+    let frame = egui::Frame::NONE
+        .fill(pal.raise)
+        .stroke(Stroke::new(1.0_f32, pal.control))
+        .corner_radius(CornerRadius::from(radius::CARD))
+        .inner_margin(egui::Margin::same(MODAL_PADDING));
+    let mut close = false;
+    let shown = egui::Modal::new(egui::Id::unique(id))
+        .frame(frame)
+        .show(ctx, |ui| {
+            ui.set_width(width);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(title).size(text::TITLE).strong());
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    close = icon_button(ui, "close", "Fechar", true, pal).clicked();
+                });
+            });
+            ui.add_space(space::MD);
+            body(ui)
+        });
+    let close = close || shown.should_close();
+    (shown.inner, close)
 }
 
 pub fn hint(text: &str, pal: &Palette) -> RichText {

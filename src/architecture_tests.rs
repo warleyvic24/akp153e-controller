@@ -69,3 +69,14 @@ fn the_service_never_uses_the_editor() {
         .collect();
     assert!(wrong.is_empty(), "o serviço usa o editor: {wrong:?}");
 }
+
+#[test]
+fn the_editor_opens_dialogs_only_through_the_shared_modal() {
+    // Janela crua do egui fica presa a um canto, sem fundo escurecido nem Esc: usar `widgets::modal`.
+    let raw: Vec<String> = crate::test_support::sources_without_tests()
+        .into_iter()
+        .filter(|(file, src)| file.starts_with("editor/") && src.contains("egui::Window::new"))
+        .map(|(file, _)| file)
+        .collect();
+    assert!(raw.is_empty(), "janela crua no editor: {raw:?}");
+}

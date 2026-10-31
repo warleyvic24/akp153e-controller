@@ -9,7 +9,7 @@ use crate::service::runtime;
 use crate::strings::{display_name, t, tf};
 use eframe::egui::{self, Color32, CornerRadius, RichText, Sense, Stroke};
 
-const WINDOW_WIDTH: f32 = 320.0;
+const WINDOW_WIDTH: f32 = 380.0;
 const OFF_LABEL_ALPHA: f32 = 0.55;
 
 /// Prévia da tela lateral, refeita só quando o conteúdo (ou o minuto, no relógio) muda.
@@ -131,62 +131,64 @@ impl App {
         let accent = theme::accent_color(&g.cfg.ui);
         let mut open = true;
         let page = display_name(&g.cfg.page().name);
-        let title = RichText::new(tf("Tela lateral · {}", &[&page]))
-            .size(tokens::text::BODY)
-            .strong();
+        let title = tf("Tela lateral · {}", &[&page]);
         let mut changed = false;
-        egui::Window::new(title)
-            .id(egui::Id::unique("side-window"))
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .default_width(WINDOW_WIDTH)
-            .show(ctx, |ui| {
-                let side = &mut g.cfg.page_mut().side;
-                widgets::section(ui, "Mostrar", pal);
-                ui.horizontal_wrapped(|ui| {
-                    let modes = [
-                        (SideScreen::Off, "Nada"),
-                        (SideScreen::PageName, "Nome da página"),
-                        (SideScreen::Clock, "Relógio"),
-                        (SideScreen::System, "Sistema"),
-                    ];
-                    for (mode, name) in modes {
-                        let on = *side == mode;
-                        if widgets::pill(ui, name, on, accent, pal).clicked() && !on {
-                            *side = mode;
-                            changed = true;
-                        }
+        let ((), close) = widgets::modal(ctx, "side-window", &title, WINDOW_WIDTH, pal, |ui| {
+            let side = &mut g.cfg.page_mut().side;
+            widgets::section(ui, "Mostrar", pal);
+            ui.horizontal_wrapped(|ui| {
+                let modes = [
+                    (SideScreen::Off, "Nada"),
+                    (SideScreen::PageName, "Nome da página"),
+                    (SideScreen::Clock, "Relógio"),
+                    (SideScreen::System, "Sistema"),
+                ];
+                for (mode, name) in modes {
+                    let on = *side == mode;
+                    if widgets::pill(ui, name, on, accent, pal).clicked() && !on {
+                        *side = mode;
+                        changed = true;
                     }
-                    let is_image = matches!(side, SideScreen::Image { .. });
-                    if widgets::pill(ui, "Imagem", is_image, accent, pal).clicked() {
-                        if let Some(path) = pick_side_image() {
-                            *side = SideScreen::Image { path };
+                }
+                let is_image = matches!(side, SideScreen::Image { .. });
+                if widgets::pill(ui, "Imagem", is_image, accent, pal).clicked() {
+                    if let Some(path) = pick_side_image() {
+                        *side = SideScreen::Image { path };
+                        changed = true;
+                    }
+                }
+            });
+            if let SideScreen::Image { path } = side {
+                let name = std::path::Path::new(path.as_str())
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                ui.horizontal(|ui| {
+                    ui.label(name).on_hover_text(path.as_str());
+                    if ui.button(t("Trocar")).clicked() {
+                        if let Some(new) = pick_side_image() {
+                            *path = new;
                             changed = true;
                         }
                     }
                 });
-                if let SideScreen::Image { path } = side {
-                    let name = std::path::Path::new(path.as_str())
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_default();
-                    ui.horizontal(|ui| {
-                        ui.label(name).on_hover_text(path.as_str());
-                        if ui.button(t("Trocar")).clicked() {
-                            if let Some(new) = pick_side_image() {
-                                *path = new;
-                                changed = true;
-                            }
-                        }
-                    });
-                    let hint = tf("Recortada para preencher {} x {} px (em pé).", &[&side::WIDTH, &side::HEIGHT]);
-                    ui.label(widgets::hint(&hint, pal));
-                }
-                ui.add_space(tokens::space::SM);
-                let note = t("Cada página tem a sua. Experimental: o desenho da faixa foi medido num AKP153E 0300:3010 por outro projeto; se aparecer cortado ou fora do lugar, avise.");
-                ui.label(RichText::new(note).size(tokens::text::CAPTION).color(pal.muted));
-            });
+                let hint = tf(
+                    "Recortada para preencher {} x {} px (em pé).",
+                    &[&side::WIDTH, &side::HEIGHT],
+                );
+                ui.label(widgets::hint(&hint, pal));
+            }
+            ui.add_space(tokens::space::SM);
+            let note = t("Cada página tem a sua. Experimental: o desenho da faixa foi medido num AKP153E 0300:3010 por outro projeto; se aparecer cortado ou fora do lugar, avise.");
+            ui.label(
+                RichText::new(note)
+                    .size(tokens::text::CAPTION)
+                    .color(pal.muted),
+            );
+        });
+        if close {
+            open = false;
+        }
         if changed {
             self.touch();
         }

@@ -172,7 +172,6 @@ fn app_list(
 /// Id da janela da lista de apps (o título muda com o idioma).
 pub(crate) const APP_PICKER_ID: &str = "app-picker";
 const PICKER_WIDTH: f32 = 420.0;
-const PICKER_PADDING: i8 = 20;
 
 impl App {
     pub(crate) fn app_picker(&mut self, ctx: &egui::Context, g: &mut runtime::Shared) {
@@ -185,28 +184,13 @@ impl App {
         let mut open = true;
         let pal = theme::palette(g.cfg.ui.theme);
         let mut chosen: Option<apps::InstalledApp> = None;
-        let frame = Frame::NONE
-            .fill(pal.raise)
-            .stroke(Stroke::new(1.0_f32, pal.control))
-            .corner_radius(CornerRadius::from(tokens::radius::CARD))
-            .inner_margin(Margin::same(PICKER_PADDING));
-        let modal = egui::Modal::new(egui::Id::unique(APP_PICKER_ID))
-            .frame(frame)
-            .show(ctx, |ui| {
-                ui.set_width(PICKER_WIDTH);
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(t("Escolha um app"))
-                            .size(tokens::text::TITLE)
-                            .strong(),
-                    );
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if widgets::icon_button(ui, "close", "Fechar", true, &pal).clicked() {
-                            open = false;
-                        }
-                    });
-                });
-                ui.add_space(tokens::space::SM);
+        let ((), close) = widgets::modal(
+            ctx,
+            APP_PICKER_ID,
+            t("Escolha um app"),
+            PICKER_WIDTH,
+            &pal,
+            |ui| {
                 let search = widgets::search_field(ui, &mut self.picker.query, "Buscar app", &pal);
                 if std::mem::take(&mut self.picker.focus_search) {
                     search.request_focus();
@@ -217,8 +201,9 @@ impl App {
                     return;
                 };
                 chosen = app_list(ui, list, &self.picker.query, &mut self.app_icons, &pal);
-            });
-        if modal.should_close() {
+            },
+        );
+        if close {
             open = false;
         }
         if let Some(app) = chosen {

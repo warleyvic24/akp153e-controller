@@ -16,7 +16,6 @@ const SECTION_DEVICE: usize = 1;
 const SECTION_INTEGRATIONS: usize = 2;
 const MODAL_WIDTH: f32 = 620.0;
 const MODAL_BODY_HEIGHT: f32 = 420.0;
-const MODAL_PADDING: i8 = 20;
 const NAV_WIDTH: f32 = 150.0;
 const NAV_MARK: f32 = 3.0;
 const NAV_ON_TINT: f32 = 0.14;
@@ -78,25 +77,8 @@ impl App {
         if !self.settings_open {
             return;
         }
-        let frame = egui::Frame::NONE
-            .fill(pal.raise)
-            .stroke(egui::Stroke::new(1.0_f32, pal.control))
-            .corner_radius(egui::CornerRadius::from(tokens::radius::CARD))
-            .inner_margin(egui::Margin::same(MODAL_PADDING));
-        // Modal de verdade: no centro, com o fundo escurecido; Esc ou um clique fora fecha.
-        let modal = egui::Modal::new(egui::Id::unique("settings"))
-            .frame(frame)
-            .show(ctx, |ui| {
-                ui.set_width(MODAL_WIDTH);
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(t("Preferências")).size(text::TITLE).strong());
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if widgets::icon_button(ui, "close", "Fechar", true, pal).clicked() {
-                            self.settings_open = false;
-                        }
-                    });
-                });
-                ui.add_space(tokens::space::MD);
+        let ((), close) =
+            widgets::modal(ctx, "settings", t("Preferências"), MODAL_WIDTH, pal, |ui| {
                 ui.horizontal_top(|ui| {
                     self.settings_nav(ui, g, pal);
                     ui.separator();
@@ -108,7 +90,7 @@ impl App {
                     });
                 });
             });
-        if modal.should_close() {
+        if close {
             self.settings_open = false;
         }
     }
