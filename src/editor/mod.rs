@@ -1,4 +1,5 @@
 //! Editor: a janela egui que edita a config e avisa o serviço. Não fala com o aparelho.
+mod action_kind;
 mod action_ui;
 mod bars;
 mod beautify;

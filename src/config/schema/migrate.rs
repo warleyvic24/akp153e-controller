@@ -54,6 +54,23 @@ impl AppConfig {
         migrate_dir(&old, &new)
     }
 
+    /// v3 -> v4: o "abrir site" antigo (o abridor do sistema com uma URL) vira `OpenUrl`.
+    pub(super) fn migrate_open_url(&mut self) {
+        for b in self
+            .profiles
+            .iter_mut()
+            .flat_map(|p| p.pages.iter_mut())
+            .flat_map(|pg| pg.buttons.iter_mut())
+        {
+            for a in std::iter::once(&mut b.action)
+                .chain(b.long_press_action.as_mut())
+                .chain(b.toggled_action.as_mut())
+            {
+                to_open_url(a);
+            }
+        }
+    }
+
     /// v1 -> v2: ações que apontavam para a posição passam a apontar para o id.
     pub(super) fn migrate_index_targets(&mut self) {
         let profile_ids: Vec<u64> = self.profiles.iter().map(|p| p.id).collect();
@@ -68,6 +85,25 @@ impl AppConfig {
                 }
             }
         }
+    }
+}
+
+/// Programas que o "abrir site" antigo chamava (Linux e Windows).
+const LEGACY_URL_OPENERS: [&str; 2] = ["xdg-open", "explorer"];
+
+fn to_open_url(a: &mut ButtonAction) {
+    match a {
+        ButtonAction::LaunchApp { path, args }
+            if LEGACY_URL_OPENERS.contains(&path.as_str())
+                && args.len() == 1
+                && args[0].contains("://") =>
+        {
+            *a = ButtonAction::OpenUrl {
+                url: args[0].clone(),
+            };
+        }
+        ButtonAction::MultiAction { steps } => steps.iter_mut().for_each(to_open_url),
+        _ => {}
     }
 }
 

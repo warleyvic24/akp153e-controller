@@ -1,7 +1,8 @@
 //! Escolha do tipo de ação no inspetor. Tecla vazia: a grade com todos os tipos, aberta (é a
 //! decisão a tomar). Tecla já configurada: uma linha só ("App ▾") que abre a mesma grade num
 //! balão; assim os campos da ação, que são o que se edita depois, ficam no topo do painel.
-use super::action_ui::{action_name, default_action, PaneCtx, ACTION_KINDS};
+use super::action_kind::ActionKind;
+use super::action_ui::PaneCtx;
 use super::{icon_picker, theme, widgets};
 use crate::config::schema::ButtonAction;
 use crate::editor::tokens::{radius, space, text};
@@ -31,11 +32,8 @@ pub(super) fn kind_picker(
         // "Nenhuma" já é o estado atual: na grade aberta ela só ocuparia lugar.
         return kind_grid(ui, cx, a, false);
     }
-    let kind = action_name(a);
-    let label = ACTION_KINDS
-        .iter()
-        .find(|(k, _)| *k == kind)
-        .map_or("", |(_, l)| *l);
+    let kind = ActionKind::of(a);
+    let label = kind.label();
     let width = ui.available_width();
     let (rect, resp) =
         ui.allocate_exact_size(egui::vec2(width, KIND_ROW_HEIGHT), egui::Sense::click());
@@ -61,7 +59,7 @@ pub(super) fn kind_picker(
         rect.left() + space::MD + KIND_ROW_ICON / 2.0,
         rect.center().y,
     );
-    icon_picker::paint_any(p, cx.ctx, icon_at, KIND_ROW_ICON, kind_icon(kind), ink);
+    icon_picker::paint_any(p, cx.ctx, icon_at, KIND_ROW_ICON, kind.icon(), ink);
     p.text(
         egui::pos2(
             rect.left() + 2.0 * space::MD + KIND_ROW_ICON,
@@ -120,18 +118,17 @@ fn kind_grid(ui: &mut egui::Ui, cx: &PaneCtx, a: &mut ButtonAction, with_none: b
     let mut changed = false;
     let gap = KIND_GAP;
     let width = (ui.available_width() - gap * (KIND_COLUMNS - 1) as f32) / KIND_COLUMNS as f32;
-    let kinds: Vec<(&str, &str)> = ACTION_KINDS
-        .iter()
-        .copied()
-        .filter(|(k, _)| with_none || *k != "none")
+    let kinds: Vec<ActionKind> = ActionKind::PICKER
+        .into_iter()
+        .filter(|k| with_none || *k != ActionKind::None)
         .collect();
     for row in kinds.chunks(KIND_COLUMNS) {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = gap;
-            for &(kind, label) in row {
-                let on = action_name(a) == kind;
-                if kind_tile(ui, kind, label, on, width, cx).clicked() && !on {
-                    *a = default_action(kind);
+            for &kind in row {
+                let on = ActionKind::of(a) == kind;
+                if kind_tile(ui, kind, on, width, cx).clicked() && !on {
+                    *a = kind.default_action();
                     changed = true;
                 }
             }
@@ -143,13 +140,12 @@ fn kind_grid(ui: &mut egui::Ui, cx: &PaneCtx, a: &mut ButtonAction, with_none: b
 /// Bloco da grade de tipos: ícone em cima, nome embaixo; o escolhido em destaque.
 fn kind_tile(
     ui: &mut egui::Ui,
-    kind: &str,
-    label: &str,
+    kind: ActionKind,
     on: bool,
     width: f32,
     cx: &PaneCtx,
 ) -> egui::Response {
-    let label = t(label);
+    let label = t(kind.label());
     let (rect, resp) =
         ui.allocate_exact_size(egui::vec2(width, KIND_TILE_HEIGHT), egui::Sense::click());
     resp.widget_info(|| {
@@ -171,7 +167,7 @@ fn kind_tile(
         p.rect_stroke(rect, round, egui::Stroke::new(1.5_f32, ink));
     }
     let icon_at = egui::pos2(rect.center().x, rect.top() + KIND_ICON_TOP);
-    icon_picker::paint_any(p, cx.ctx, icon_at, KIND_ICON, kind_icon(kind), fg);
+    icon_picker::paint_any(p, cx.ctx, icon_at, KIND_ICON, kind.icon(), fg);
     p.text(
         egui::pos2(rect.center().x, rect.bottom() - KIND_LABEL_BOTTOM),
         egui::Align2::CENTER_CENTER,
@@ -180,27 +176,4 @@ fn kind_tile(
         fg,
     );
     resp
-}
-
-fn kind_icon(kind: &str) -> &'static str {
-    match kind {
-        "hotkey" => "keyboard",
-        "launch-app" => "app",
-        "http-webhook" => "globe",
-        "media-key" => "music",
-        "switch-page" => "page",
-        "switch-profile" => "user",
-        "open-mixer" => "mixer",
-        "type-text" => "keyboard",
-        "multi-action" => "plus",
-        "next-page" => "next",
-        "previous-page" => "prev",
-        "run-command" => "lucide:terminal",
-        "brightness" => "lucide:sun",
-        "clock" => "lucide:clock",
-        "monitor" => "lucide:activity",
-        "obs" => "lucide:clapperboard",
-        "play-sound" => "lucide:audio-lines",
-        _ => "ban",
-    }
 }

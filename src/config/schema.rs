@@ -67,6 +67,10 @@ pub enum ButtonAction {
         #[serde(default)]
         args: Vec<String>,
     },
+    /// Abre um endereço (http ou https) no navegador padrão.
+    OpenUrl {
+        url: String,
+    },
     HttpWebhook {
         url: String,
         #[serde(default = "get")]
@@ -454,7 +458,8 @@ const LOCK_FILE: &str = "config.lock";
 /// Versão 2: páginas e perfis têm identificador estável e as ações apontam para ele.
 /// Versão 3: cada página guarda o modelo de aparelho (`Page::model`) e a gravação recusa uma
 /// config de versão mais nova que esta (feita por um Keyforge mais novo).
-pub const SCHEMA_VERSION: u32 = 3;
+/// Versão 4: "abrir site" é a ação `OpenUrl` (antes, um `LaunchApp` do `xdg-open`/`explorer`).
+pub const SCHEMA_VERSION: u32 = 4;
 fn legacy_version() -> u32 {
     1
 }
@@ -644,6 +649,9 @@ impl AppConfig {
         // v2 -> v3 não muda dados: `model` ausente já vira o AKP153E ao ler.
         if self.schema_version < 2 {
             self.migrate_index_targets();
+        }
+        if self.schema_version < 4 {
+            self.migrate_open_url();
         }
         // Mais nova que este programa: fica como está, e `save_to` se recusa a gravar.
         self.schema_version = self.schema_version.max(SCHEMA_VERSION);

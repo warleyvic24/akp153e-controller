@@ -4,7 +4,6 @@
 //! mudar, para não buscar a cada letra digitada.
 use super::picker::{ButtonSlot, IconDone};
 use crate::config::schema::{AppConfig, ButtonAction};
-use crate::editor::library::URL_OPENER;
 use reqwest::Url;
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
@@ -22,15 +21,12 @@ const MAX_TRIES: usize = 4;
 /// Ícone padrão das teclas "Abrir site": só ele é trocado; um ícone escolhido pelo usuário fica.
 pub const SITE_ICON: &str = "globe";
 
-/// Site aberto por uma ação "Abrir site" (o abridor do sistema com uma URL http/https).
+/// Site aberto por uma ação "Site", quando o endereço já está completo.
 pub fn site_url(action: &ButtonAction) -> Option<Url> {
-    let ButtonAction::LaunchApp { path, args } = action else {
+    let ButtonAction::OpenUrl { url } = action else {
         return None;
     };
-    if path != URL_OPENER || args.len() != 1 {
-        return None;
-    }
-    let url = Url::parse(args[0].trim()).ok()?;
+    let url = Url::parse(url.trim()).ok()?;
     let host = url.host_str()?;
     // "https://" sozinho (a ação recém-criada) ou um host sem ponto ainda está sendo digitado.
     let typed = host.contains('.') || host == "localhost";
@@ -220,10 +216,7 @@ mod tests {
 
     #[test]
     fn only_open_site_actions_with_a_real_url_count() {
-        let site = |url: &str| ButtonAction::LaunchApp {
-            path: URL_OPENER.into(),
-            args: vec![url.into()],
-        };
+        let site = |url: &str| ButtonAction::OpenUrl { url: url.into() };
         assert!(site_url(&site("https://github.com")).is_some());
         assert!(site_url(&site("https://")).is_none(), "ação recém-criada");
         assert!(site_url(&site("https://git")).is_none(), "ainda digitando");

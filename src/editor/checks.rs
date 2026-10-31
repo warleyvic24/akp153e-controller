@@ -2,6 +2,7 @@
 use crate::config::schema::{ButtonAction, ButtonConfig};
 use crate::editor::action_ui::Targets;
 use crate::engine;
+use crate::engine::actions::is_web_url;
 
 /// Motivo de "Testar" ficar desligado numa tecla sem ação.
 pub(crate) const NO_ACTION: &str = "Esta tecla ainda não tem ação";
@@ -41,7 +42,9 @@ pub(crate) fn action_problem(a: &ButtonAction, targets: &Targets) -> Option<&'st
         ButtonAction::LaunchApp { path, .. } if path.trim().is_empty() => {
             Some("Escolha o programa que a tecla abre")
         }
-        ButtonAction::HttpWebhook { url, .. } if !is_http_url(url) => {
+        ButtonAction::HttpWebhook { url, .. } | ButtonAction::OpenUrl { url }
+            if !is_web_url(url) =>
+        {
             Some("A URL precisa começar com http:// ou https://")
         }
         ButtonAction::SwitchPage { page } if !targets.has_page(*page) => {
@@ -52,13 +55,6 @@ pub(crate) fn action_problem(a: &ButtonAction, targets: &Targets) -> Option<&'st
         }
         _ => None,
     }
-}
-
-fn is_http_url(url: &str) -> bool {
-    let url = url.trim().to_ascii_lowercase();
-    ["http://", "https://"]
-        .iter()
-        .any(|scheme| url.len() > scheme.len() && url.starts_with(scheme))
 }
 
 #[cfg(test)]

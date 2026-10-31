@@ -13,6 +13,10 @@ pub(crate) fn action_summary(a: &ButtonAction, targets: &Targets) -> Option<Stri
             Some(name) => tf("Abre: {}", &[&name]),
             None => t("Abre um programa").to_string(),
         },
+        ButtonAction::OpenUrl { url } => match host(url) {
+            Some(host) => tf("Abre o site {}", &[&host]),
+            None => t("Abre um site").to_string(),
+        },
         ButtonAction::HttpWebhook { url, method, .. } => match host(url) {
             Some(host) => tf("Web: {} {}", &[&method.to_uppercase(), &host]),
             None => t("Chama uma URL").to_string(),

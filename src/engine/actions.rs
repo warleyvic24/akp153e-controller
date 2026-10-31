@@ -5,6 +5,21 @@ use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 
 /// Maior pausa aceita num passo `Delay`; valores maiores são cortados.
 pub const MAX_DELAY_MS: u64 = 60_000;
+
+/// Programa que abre uma URL no navegador padrão. No Windows, o Explorer, não o `cmd /C start`:
+/// o `cmd` trata `&` da URL como separador de comandos. No Linux, o `xdg-open`.
+#[cfg(windows)]
+pub const URL_OPENER: &str = "explorer";
+#[cfg(not(windows))]
+pub const URL_OPENER: &str = "xdg-open";
+
+/// Endereço que "abrir site" aceita: http ou https, com algo depois do esquema.
+pub fn is_web_url(url: &str) -> bool {
+    let lower = url.trim().to_ascii_lowercase();
+    ["http://", "https://"]
+        .iter()
+        .any(|scheme| lower.len() > scheme.len() && lower.starts_with(scheme))
+}
 /// Maior texto que `TypeText` digita de uma vez.
 pub const MAX_TYPE_CHARS: usize = 2_000;
 
@@ -58,6 +73,22 @@ impl Executor {
                     let mut cmd = std::process::Command::new(&path);
                     spawn_detached(hide_console(cmd.args(&args)))
                         .map_err(|e| format!("launch {path}: {e}"))
+                })
+                .await;
+                if let Ok(Err(e)) = spawned {
+                    log::error!("{e}");
+                }
+            }
+            ButtonAction::OpenUrl { url } => {
+                // Só endereços da web: um perfil importado não abre `file://` nem outros esquemas.
+                if !is_web_url(&url) {
+                    log::error!("abrir site: endereço recusado {}", loggable_url(&url));
+                    return;
+                }
+                let spawned = tokio::task::spawn_blocking(move || {
+                    let mut cmd = std::process::Command::new(URL_OPENER);
+                    spawn_detached(hide_console(cmd.arg(&url)))
+                        .map_err(|e| format!("abrir site: {e}"))
                 })
                 .await;
                 if let Ok(Err(e)) = spawned {

@@ -31,7 +31,7 @@ pub(crate) fn category_color(action: &ButtonAction) -> Option<[u8; 3]> {
         | ButtonAction::MultiAction { .. }
         | ButtonAction::Delay { .. }
         | ButtonAction::RunCommand { .. } => KEYS,
-        ButtonAction::LaunchApp { args, .. } if args.len() == 1 && args[0].contains("://") => WEB,
+        ButtonAction::OpenUrl { .. } => WEB,
         ButtonAction::LaunchApp { .. } => APPS,
         ButtonAction::HttpWebhook { .. } => WEB,
         ButtonAction::SwitchPage { .. }
@@ -95,18 +95,8 @@ fn lock_screen() -> ButtonAction {
     };
 }
 
-/// Programa que abre uma URL no navegador padrão. No Windows, o Explorer, não o `cmd /C start`:
-/// o `cmd` trata `&` da URL como separador de comandos. No Linux, o `xdg-open`.
-#[cfg(windows)]
-pub(crate) const URL_OPENER: &str = "explorer";
-#[cfg(not(windows))]
-pub(crate) const URL_OPENER: &str = "xdg-open";
-
 fn open_url(url: &str) -> ButtonAction {
-    ButtonAction::LaunchApp {
-        path: URL_OPENER.into(),
-        args: vec![url.into()],
-    }
+    ButtonAction::OpenUrl { url: url.into() }
 }
 
 impl Preset {

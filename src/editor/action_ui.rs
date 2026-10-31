@@ -1,4 +1,5 @@
 //! Editor da ação de um botão: escolha do tipo (atalho, app, web...) e os campos de cada tipo.
+use super::action_kind::ActionKind;
 use super::{textlist, widgets};
 use crate::config::schema::*;
 use crate::editor::theme::{self, Palette};
@@ -64,41 +65,6 @@ pub(crate) fn media_label(key: &str) -> &str {
         .map_or(key, |(_, label)| label)
 }
 
-pub(super) const ACTION_KINDS: [(&str, &str); 18] = [
-    ("none", "Nenhuma"),
-    ("hotkey", "Atalho"),
-    ("launch-app", "App"),
-    ("http-webhook", "Web"),
-    ("media-key", "Mídia"),
-    ("type-text", "Texto"),
-    ("multi-action", "Multi"),
-    ("switch-page", "Página"),
-    ("next-page", "Pág. +"),
-    ("previous-page", "Pág. −"),
-    ("switch-profile", "Perfil"),
-    ("open-mixer", "Mixer"),
-    ("run-command", "Comando"),
-    ("brightness", "Brilho"),
-    ("clock", "Relógio"),
-    ("monitor", "Monitor"),
-    ("obs", "OBS"),
-    ("play-sound", "Som"),
-];
-
-/// Tipos que podem ser passo de uma multi-ação (navegação não cabe: o serviço a ignora lá dentro).
-const STEP_KINDS: [(&str, &str); 9] = [
-    ("hotkey", "Atalho"),
-    ("play-sound", "Som"),
-    ("obs", "OBS"),
-    ("run-command", "Comando"),
-    ("type-text", "Texto"),
-    ("launch-app", "App"),
-    ("http-webhook", "Web"),
-    ("media-key", "Mídia"),
-    ("delay", "Pausa"),
-];
-
-const DEFAULT_STEP_DELAY_MS: u64 = 500;
 const STEP_BUTTON: f32 = 24.0;
 const TYPE_TEXT_ROWS: usize = 3;
 
@@ -115,78 +81,6 @@ const BODY_ROWS: usize = 3;
 
 /// Explica a ação "Mixer": o que aparece no aparelho e como sair.
 const MIXER_HINT: &str = "Mostra no aparelho os apps com som: ícone com a porcentagem em cima, + no meio e − embaixo. Esta tecla vira SAIR (segure para sair se houver mais de 5 apps).";
-
-pub(super) fn action_name(a: &ButtonAction) -> &'static str {
-    match a {
-        ButtonAction::None => "none",
-        ButtonAction::Hotkey { .. } => "hotkey",
-        ButtonAction::LaunchApp { .. } => "launch-app",
-        ButtonAction::HttpWebhook { .. } => "http-webhook",
-        ButtonAction::MediaKey { .. } => "media-key",
-        ButtonAction::SwitchPage { .. } => "switch-page",
-        ButtonAction::SwitchProfile { .. } => "switch-profile",
-        ButtonAction::OpenMixer => "open-mixer",
-        ButtonAction::TypeText { .. } => "type-text",
-        ButtonAction::MultiAction { .. } => "multi-action",
-        ButtonAction::Delay { .. } => "delay",
-        ButtonAction::NextPage => "next-page",
-        ButtonAction::PreviousPage => "previous-page",
-        ButtonAction::RunCommand { .. } => "run-command",
-        ButtonAction::Brightness { .. } => "brightness",
-        ButtonAction::Clock => "clock",
-        ButtonAction::Monitor { .. } => "monitor",
-        ButtonAction::Obs { .. } => "obs",
-        ButtonAction::PlaySound { .. } => "play-sound",
-    }
-}
-
-pub(super) fn default_action(kind: &str) -> ButtonAction {
-    match kind {
-        "hotkey" => ButtonAction::Hotkey { keys: vec![] },
-        "launch-app" => ButtonAction::LaunchApp {
-            path: String::new(),
-            args: vec![],
-        },
-        "http-webhook" => ButtonAction::HttpWebhook {
-            url: String::new(),
-            method: "GET".into(),
-            body: None,
-        },
-        "media-key" => ButtonAction::MediaKey {
-            key: "playpause".into(),
-        },
-        "switch-page" => ButtonAction::SwitchPage { page: 0 },
-        "switch-profile" => ButtonAction::SwitchProfile { profile: 0 },
-        "open-mixer" => ButtonAction::OpenMixer,
-        "type-text" => ButtonAction::TypeText {
-            text: String::new(),
-        },
-        "multi-action" => ButtonAction::MultiAction { steps: vec![] },
-        "delay" => ButtonAction::Delay {
-            ms: DEFAULT_STEP_DELAY_MS,
-        },
-        "next-page" => ButtonAction::NextPage,
-        "previous-page" => ButtonAction::PreviousPage,
-        "run-command" => ButtonAction::RunCommand {
-            command: String::new(),
-        },
-        "brightness" => ButtonAction::Brightness {
-            delta: BRIGHTNESS_STEP,
-        },
-        "clock" => ButtonAction::Clock,
-        "monitor" => ButtonAction::Monitor {
-            metric: Metric::Overview,
-        },
-        "play-sound" => ButtonAction::PlaySound {
-            path: String::new(),
-        },
-        "obs" => ButtonAction::Obs {
-            command: ObsCommand::Record,
-            target: String::new(),
-        },
-        _ => ButtonAction::None,
-    }
-}
 
 fn pick_target(
     ui: &mut egui::Ui,
@@ -277,6 +171,7 @@ pub fn action_editor(
     changed |= match a {
         ButtonAction::Hotkey { keys } => hotkey_editor(ui, cx, id, keys, rec),
         ButtonAction::LaunchApp { path, args } => launch_editor(ui, cx.pal, id, path, args),
+        ButtonAction::OpenUrl { url } => url_editor(ui, cx, url),
         ButtonAction::HttpWebhook { url, method, body } => {
             webhook_editor(ui, cx, url, method, body)
         }
@@ -310,8 +205,6 @@ pub fn action_editor(
     changed
 }
 
-/// Passo padrão da tecla de brilho (e o que o editor oferece de cara).
-const BRIGHTNESS_STEP: i32 = 10;
 const CLOCK_HINT: &str =
     "Mostra a hora e a data na tecla, atualizadas a cada minuto (no fuso do sistema).";
 #[cfg(windows)]
@@ -440,6 +333,7 @@ fn step_editor(ui: &mut egui::Ui, cx: &PaneCtx, step: &mut ButtonAction) -> bool
             )
         }
         ButtonAction::LaunchApp { path, args } => launch_editor(ui, cx.pal, "step", path, args),
+        ButtonAction::OpenUrl { url } => url_editor(ui, cx, url),
         ButtonAction::HttpWebhook { url, method, body } => {
             webhook_editor(ui, cx, url, method, body)
         }
@@ -477,7 +371,7 @@ fn multi_editor(
                     remove = Some(i);
                 }
                 let title = super::summary::action_summary(step, cx.targets)
-                    .unwrap_or_else(|| t(action_label(step)).to_string());
+                    .unwrap_or_else(|| t(ActionKind::of(step).label()).to_string());
                 ui.label(format!("{}. {title}", i + 1));
             });
             egui::CollapsingHeader::new(t("Editar"))
@@ -497,9 +391,9 @@ fn multi_editor(
     }
     widgets::section(ui, "Adicionar passo", cx.pal);
     ui.horizontal_wrapped(|ui| {
-        for (kind, label) in STEP_KINDS {
-            if widgets::pill(ui, t(label), false, cx.accent, cx.pal).clicked() {
-                steps.push(default_action(kind));
+        for kind in ActionKind::STEPS {
+            if widgets::pill(ui, t(kind.label()), false, cx.accent, cx.pal).clicked() {
+                steps.push(kind.default_action());
                 changed = true;
             }
         }
@@ -513,15 +407,6 @@ fn step_button(ui: &mut egui::Ui, glyph: &str, name: &str, enabled: bool) -> egu
     let name = t(name);
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name));
     resp
-}
-
-/// Nome do tipo (para passar por `t`) quando o passo ainda não tem o que resumir.
-fn action_label(a: &ButtonAction) -> &'static str {
-    let kind = action_name(a);
-    STEP_KINDS
-        .iter()
-        .find(|(k, _)| *k == kind)
-        .map_or("Nenhuma", |(_, label)| label)
 }
 
 fn hotkey_editor(
@@ -636,6 +521,26 @@ fn launch_editor(
     changed
 }
 
+/// Endereço do site, com o aviso no próprio campo enquanto não for um http(s) completo.
+fn url_editor(ui: &mut egui::Ui, cx: &PaneCtx, url: &mut String) -> bool {
+    let label = widgets::section(ui, "Endereço do site", cx.pal);
+    let changed = ui
+        .add(
+            egui::TextEdit::singleline(url)
+                .hint_text("https://exemplo.com")
+                .desired_width(f32::INFINITY),
+        )
+        .labelled_by(label)
+        .changed();
+    if !engine::actions::is_web_url(url) {
+        ui.label(widgets::hint(
+            t("Comece com https:// (ou http://)."),
+            cx.pal,
+        ));
+    }
+    changed
+}
+
 fn webhook_editor(
     ui: &mut egui::Ui,
     cx: &PaneCtx,
@@ -683,6 +588,3 @@ fn media_editor(ui: &mut egui::Ui, cx: &PaneCtx, key: &mut String) -> bool {
     });
     changed
 }
-
-#[cfg(test)]
-mod tests;

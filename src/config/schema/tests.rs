@@ -477,3 +477,33 @@ fn real_config_copy_migrates_without_changing_buttons() {
         }
     }
 }
+
+#[test]
+fn an_old_open_site_becomes_open_url_even_inside_a_multi_action() {
+    let site = |opener: &str| ButtonAction::LaunchApp {
+        path: opener.into(),
+        args: vec!["https://github.com".into()],
+    };
+    let mut cfg = AppConfig {
+        schema_version: 3,
+        ..AppConfig::default()
+    };
+    let b = &mut cfg.profiles[0].pages[0].buttons;
+    b[0].action = site("xdg-open");
+    b[1].action = ButtonAction::MultiAction {
+        steps: vec![site("explorer")],
+    };
+    // Um programa qualquer com uma URL de argumento continua sendo um app.
+    b[2].action = ButtonAction::LaunchApp {
+        path: "firefox".into(),
+        args: vec!["https://a.com".into()],
+    };
+    let cfg = cfg.sanitized();
+    let b = &cfg.page().buttons;
+    let open = ButtonAction::OpenUrl {
+        url: "https://github.com".into(),
+    };
+    assert_eq!(b[0].action, open);
+    assert_eq!(b[1].action, ButtonAction::MultiAction { steps: vec![open] });
+    assert!(matches!(b[2].action, ButtonAction::LaunchApp { .. }));
+}
