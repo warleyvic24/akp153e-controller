@@ -100,3 +100,64 @@ fn the_screen_shows_the_target_key_and_the_answers() {
     assert_eq!(view[0].1, PASS);
     assert_eq!(view[NO_KEY].1, FAIL);
 }
+
+/// Prévia das telas do autoteste (grade 5 x 3 + lateral) em PNG:
+/// `AKP_PREVIEW_OUT=<pasta> cargo test selftest_preview -- --ignored`.
+#[test]
+#[ignore]
+fn selftest_preview() {
+    let out = std::path::PathBuf::from(std::env::var("AKP_PREVIEW_OUT").expect("AKP_PREVIEW_OUT"));
+    let at = Instant::now();
+    let mut run = Run::new(15, true, at);
+    let shot = |run: &Run, name: &str, side: bool| {
+        let px = 100;
+        let gap = 8;
+        let side_w = if side {
+            crate::graphics::side::WIDTH + gap
+        } else {
+            0
+        };
+        let mut img = RgbaImage::from_pixel(
+            5 * (px + gap) + gap + side_w,
+            3 * (px + gap) + gap,
+            Rgba([20, 20, 24, 255]),
+        );
+        for (i, (text, bg)) in run.keys_view().into_iter().enumerate() {
+            let mut b = ButtonConfig::blank();
+            b.appearance.text = text;
+            b.appearance.background = bg;
+            b.appearance.font_size = LABEL_FONT;
+            let key = render_rgba(&b, px, px);
+            let (x, y) = (
+                gap + (i as u32 % 5) * (px + gap),
+                gap + (i as u32 / 5) * (px + gap),
+            );
+            image::imageops::overlay(&mut img, &key, x as i64, y as i64);
+        }
+        if side {
+            let strip = image::imageops::resize(
+                &side_pattern(),
+                crate::graphics::side::WIDTH,
+                3 * px + 2 * gap,
+                image::imageops::FilterType::Triangle,
+            );
+            image::imageops::overlay(&mut img, &strip, (5 * (px + gap) + gap) as i64, gap as i64);
+        }
+        img.save(out.join(format!("selftest-{name}.png"))).unwrap();
+    };
+    for i in 0..4 {
+        tap(&mut run, i, at, 50);
+    }
+    tap(&mut run, 9, at, 50);
+    shot(&run, "1-teclas", false);
+    for i in 5..15 {
+        tap(&mut run, i, at, 50);
+    }
+    shot(&run, "2-segure", false);
+    tap(&mut run, 0, at, 1000);
+    shot(&run, "3-brilho", false);
+    tap(&mut run, 0, at, 50);
+    shot(&run, "4-lateral", true);
+    tap(&mut run, 0, at, 50);
+    shot(&run, "5-fim", false);
+}
