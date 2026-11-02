@@ -10,7 +10,8 @@ const DATA: &str = include_str!("../../assets/lucide-icons.tsv");
 /// Prefixo do id gravado na config (`lucide:camera`); sem ele o nome é um ícone embutido antigo.
 pub const PREFIX: &str = "lucide:";
 /// Ícones mostrados antes de qualquer busca: os que mais aparecem num controlador de live e mesa.
-pub const SUGGESTED: [&str; 40] = [
+pub const SUGGESTED: [&str; 41] = [
+    "keyforge",
     "mic",
     "mic-off",
     "video",
@@ -255,5 +256,15 @@ mod tests {
             render("mic", 64, WHITE).is_none(),
             "sem prefixo é ícone antigo"
         );
+    }
+
+    #[test]
+    fn keyforge_icon_renders() {
+        let icon = find("lucide:keyforge").expect("keyforge exists");
+        assert_eq!(icon.name, "keyforge");
+        let img = render("lucide:keyforge", 96, WHITE).expect("keyforge renders without panic");
+        assert_eq!(img.dimensions(), (96, 96));
+        let inked = img.pixels().filter(|p| p[3] > 200).count();
+        assert!(inked > 100, "keyforge tem traços: {inked}");
     }
 }

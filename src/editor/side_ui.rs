@@ -174,7 +174,9 @@ impl App {
                     .unwrap_or_default();
                 ui.horizontal(|ui| {
                     ui.label(name).on_hover_text(path.as_str());
-                    if ui.button(t("Trocar")).clicked() {
+                    let kind = widgets::ButtonKind::Secondary;
+                    if widgets::button(ui, Some("image"), "Trocar", kind, true, 0.0, pal).clicked()
+                    {
                         if let Some(new) = pick_side_image() {
                             *path = new;
                             changed = true;

@@ -2,10 +2,13 @@
 //! não mudam nada visível na tela (copiar, colar, limpar, excluir).
 use crate::editor::theme::Palette;
 use crate::editor::tokens::{radius, space};
+use crate::editor::widgets;
 use eframe::egui::{self, vec2, Align2, Frame, Margin, Stroke};
 use std::time::{Duration, Instant};
 
 const LIFETIME: Duration = Duration::from_secs(4);
+/// Aviso com botão ("Desfazer") fica mais: dá tempo de chegar nele pelo teclado (WCAG 2.2.1).
+const ACTION_LIFETIME: Duration = Duration::from_secs(10);
 const MAX_VISIBLE: usize = 3;
 /// Duração do surgir e do sumir (opacidade e um leve deslize).
 const FADE: Duration = Duration::from_millis(180);
@@ -44,7 +47,12 @@ impl Toasts {
             text,
             action,
             born: Instant::now(),
-            until: Instant::now() + LIFETIME,
+            until: Instant::now()
+                + if action.is_some() {
+                    ACTION_LIFETIME
+                } else {
+                    LIFETIME
+                },
         });
         let extra = self.0.len().saturating_sub(MAX_VISIBLE);
         self.0.drain(..extra);
@@ -60,22 +68,24 @@ impl Toasts {
     }
 
     /// Desenha os avisos vivos. Devolve `true` se o usuário clicou na ação de algum.
-    pub fn show(&mut self, ctx: &egui::Context, pal: &Palette) -> bool {
+    /// Com `reduce_motion`, o aviso aparece e some sem deslizar nem esmaecer.
+    pub fn show(&mut self, ctx: &egui::Context, pal: &Palette, reduce_motion: bool) -> bool {
         let now = Instant::now();
         self.prune(now);
         if self.0.iter().any(|t| t.presence(now) < 1.0) {
             ctx.request_repaint();
         }
         let mut clicked: Option<usize> = None;
+        let mut held = false;
         egui::Area::new(egui::Id::unique("toasts"))
             .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -BOTTOM_OFFSET))
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
                 for (i, t) in self.0.iter().enumerate() {
-                    let presence = t.presence(now);
+                    let presence = if reduce_motion { 1.0 } else { t.presence(now) };
                     ui.set_opacity(presence);
                     ui.add_space((1.0 - presence) * SLIDE);
-                    Frame::NONE
+                    let card = Frame::NONE
                         .fill(pal.raise)
                         .stroke(Stroke::new(1.0_f32, pal.control))
                         .corner_radius(egui::CornerRadius::from(radius::CARD))
@@ -83,16 +93,30 @@ impl Toasts {
                         .inner_margin(Margin::symmetric(space::MD as i8, space::SM as i8))
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
-                                ui.label(&t.text);
+                                let text = ui.label(&t.text);
+                                // O leitor de tela lê o aviso assim que ele surge (WCAG 4.1.3).
+                                widgets::live_region(ui.ctx(), text.id);
                                 if let Some(a) = t.action {
-                                    if ui.button(crate::strings::t(a)).clicked() {
+                                    let kind = widgets::ButtonKind::Ghost;
+                                    let undo =
+                                        widgets::button(ui, Some("undo"), a, kind, true, 0.0, pal);
+                                    held |= undo.has_focus();
+                                    if undo.clicked() {
                                         clicked = Some(i);
                                     }
                                 }
                             });
                         });
+                    held |= card.response.contains_pointer();
                 }
             });
+        // Com o ponteiro ou o foco num aviso, nenhum some: ninguém perde o "Desfazer" no meio do
+        // caminho (WCAG 2.2.1).
+        if held {
+            for t in &mut self.0 {
+                t.until = t.until.max(now + FADE + FADE);
+            }
+        }
         match clicked {
             Some(i) => {
                 self.0.remove(i);
@@ -139,7 +163,7 @@ mod tests {
     fn messages_expire() {
         let mut t = Toasts::default();
         t.push("x", Some("Desfazer"));
-        t.prune(Instant::now() + LIFETIME + Duration::from_secs(1));
+        t.prune(Instant::now() + ACTION_LIFETIME + Duration::from_secs(1));
         assert!(t.0.is_empty());
     }
 }

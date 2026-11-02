@@ -64,7 +64,8 @@ pub(crate) fn run_action_cli(json: Option<&String>) {
         .enable_all()
         .build()
         .expect("tokio");
-    Executor::new(rt.handle().clone()).run(action);
+    // Fora do serviço não há tecla de origem: os bancos de som vêm da config do disco.
+    Executor::new(rt.handle().clone()).run(action, &AppConfig::load());
     std::thread::sleep(ACTION_CLI_GRACE); // dá tempo de a tarefa assíncrona terminar
 }
 
@@ -95,7 +96,6 @@ pub(crate) fn run_editor() -> eframe::Result {
         .expect("tokio");
     let exec = Executor::new(rt.handle().clone());
     let first_run = !AppConfig::path().is_some_and(|p| p.exists());
-    #[allow(unused_mut)]
     let mut cfg = AppConfig::load();
     // Primeira vez dentro do Omarchy: a interface já nasce com as cores do tema dele.
     if first_run && crate::editor::omarchy::current().is_some() {
@@ -111,6 +111,7 @@ pub(crate) fn run_editor() -> eframe::Result {
         Some("light") => cfg.ui.theme = Theme::Light,
         Some("dark") => cfg.ui.theme = Theme::Dark,
         Some("omarchy") => cfg.ui.theme = Theme::Omarchy,
+        Some("contrast") => cfg.ui.theme = Theme::HighContrast,
         _ => {}
     }
     let sh = runtime::new_state(cfg, usb::ICON_SIZE as u32);

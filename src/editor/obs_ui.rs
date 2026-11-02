@@ -11,7 +11,6 @@ use std::time::{Duration, Instant};
 
 /// De quanto em quanto tempo o editor aberto numa tecla do OBS pergunta o estado ao serviço.
 const INFO_REFRESH: Duration = Duration::from_secs(2);
-const PORT_WIDTH: f32 = 70.0;
 
 /// Estado do OBS para a prévia das teclas no editor (igual ao que o aparelho mostra).
 #[derive(Default)]
@@ -150,32 +149,21 @@ pub fn obs_editor(
             ("Entrada de áudio", &info.inputs, "Escolha a entrada")
         };
         let label = widgets::section(ui, title, cx.pal);
-        let shown = if target.is_empty() {
-            t(empty).to_string()
-        } else {
-            target.clone()
-        };
-        egui::ComboBox::from_id_salt(("obs-target", title))
-            .selected_text(shown)
-            .width(ui.available_width())
-            .show_ui(ui, |ui| {
-                for name in names {
-                    if ui.selectable_label(target == name, name).clicked() {
-                        *target = name.clone();
-                        changed = true;
-                    }
-                }
-            })
-            .response
-            .labelled_by(label);
+        let mut target_clone = target.clone();
+        let options: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
+        if !options.is_empty() {
+            widgets::combo_box(ui, "obs-target", title, &mut target_clone, &options, cx.pal);
+        } else if target.is_empty() {
+            ui.label(widgets::hint(t(empty), cx.pal));
+        }
+        if target_clone != *target {
+            *target = target_clone;
+            changed = true;
+        }
         // Sem conexão a lista fica vazia: aí dá para digitar o nome exato.
         if names.is_empty() {
-            changed |= ui
-                .add(
-                    egui::TextEdit::singleline(target)
-                        .hint_text(widgets::hint("ou digite o nome exato", cx.pal))
-                        .desired_width(ui.available_width()),
-                )
+            changed |= widgets::text_field(ui, target, "ou digite o nome exato", cx.pal, false)
+                .labelled_by(label)
                 .changed();
         }
     }
@@ -213,11 +201,7 @@ pub fn settings_section(ui: &mut egui::Ui, obs: &mut ObsSettings, pal: &Palette)
     widgets::section(ui, "OBS Studio (WebSocket)", pal);
     ui.horizontal(|ui| {
         let host = ui.label(t("Endereço")).id;
-        changed |= ui
-            .add(
-                egui::TextEdit::singleline(&mut obs.host)
-                    .desired_width(ui.available_width() - PORT_WIDTH - 60.0),
-            )
+        changed |= widgets::text_field(ui, &mut obs.host, "", pal, false)
             .labelled_by(host)
             .changed();
         let port = ui.label(t("Porta")).id;
@@ -228,18 +212,15 @@ pub fn settings_section(ui: &mut egui::Ui, obs: &mut ObsSettings, pal: &Palette)
     });
     ui.horizontal(|ui| {
         let pass = ui.label(t("Senha")).id;
-        changed |= ui
-            .add(
-                egui::TextEdit::singleline(&mut obs.password)
-                    .password(true)
-                    .hint_text(widgets::hint(
-                        "vazia se a autenticação estiver desligada",
-                        pal,
-                    ))
-                    .desired_width(ui.available_width()),
-            )
-            .labelled_by(pass)
-            .changed();
+        changed |= widgets::text_field(
+            ui,
+            &mut obs.password,
+            "vazia se a autenticação estiver desligada",
+            pal,
+            true,
+        )
+        .labelled_by(pass)
+        .changed();
     });
     let msg = tf(
         "O serviço conecta sozinho quando alguma tecla usa o OBS. Padrão: este PC, porta {}.",

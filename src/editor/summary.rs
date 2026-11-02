@@ -62,6 +62,15 @@ pub(crate) fn action_summary(a: &ButtonAction, targets: &Targets) -> Option<Stri
             "OBS: {} · {}",
             &[&t(super::obs_ui::command_label(*command)), target],
         ),
+        ButtonAction::PressHold { .. } => t("Press/hold: ação diferente ao segurar").to_string(),
+        ButtonAction::DoubleTap { .. } => {
+            t("Clique duplo: ação em dois toques rápidos").to_string()
+        }
+        ButtonAction::SoundBank { name, .. } => tf("Banco: {}", &[name]),
+        ButtonAction::PlaySoundBank { bank, index, .. } => {
+            tf("Banco {}: som {}", &[bank, &index.to_string()])
+        }
+        ButtonAction::StopAllSounds => t("Parar todos os sons").to_string(),
     };
     Some(text)
 }

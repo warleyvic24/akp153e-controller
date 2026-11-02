@@ -84,9 +84,10 @@ impl App {
                     ui.separator();
                     ui.vertical(|ui| {
                         ui.set_min_height(MODAL_BODY_HEIGHT);
-                        egui::ScrollArea::vertical()
-                            .max_height(MODAL_BODY_HEIGHT)
-                            .show(ui, |ui| self.settings_body(ui, g, pal));
+                        widgets::scroll_area(ui, pal, |ui| {
+                            ui.set_max_height(MODAL_BODY_HEIGHT);
+                            self.settings_body(ui, g, pal)
+                        });
                     });
                 });
             });
@@ -145,6 +146,7 @@ impl App {
         match self.settings_tab {
             SECTION_GENERAL => {
                 self.theme_section(ui, g, pal);
+                self.accessibility_section(ui, g, pal);
                 self.language_section(ui, g, pal);
                 self.startup_section(ui, pal);
             }
@@ -169,6 +171,7 @@ impl App {
                 (Theme::Dark, "Escuro"),
                 (Theme::Light, "Claro"),
                 (Theme::Omarchy, "Omarchy"),
+                (Theme::HighContrast, "Alto contraste"),
             ] {
                 let on = g.cfg.ui.theme == value;
                 // A opção só aparece onde há um tema do Omarchy (ou se já estiver escolhida).
@@ -182,6 +185,13 @@ impl App {
             }
         });
         widgets::section(ui, "Cor de destaque", pal);
+        if g.cfg.ui.theme == Theme::HighContrast {
+            ui.label(widgets::hint(
+                t("No alto contraste o destaque é sempre amarelo"),
+                pal,
+            ));
+            return;
+        }
         if g.cfg.ui.theme == Theme::Omarchy && omarchy::current().is_some() {
             ui.label(widgets::hint(
                 t("A cor de destaque segue o tema do Omarchy"),
@@ -191,7 +201,9 @@ impl App {
         }
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = SWATCH_GAP;
-            if ui.color_edit_button_srgb(&mut g.cfg.ui.accent).changed() {
+            let custom = ui.color_edit_button_srgb(&mut g.cfg.ui.accent);
+            widgets::name(&custom, "Outra cor de destaque");
+            if custom.changed() {
                 self.dirty = true;
             }
             for (name, rgb) in theme::ACCENTS {
@@ -207,6 +219,36 @@ impl App {
                 }
             }
         });
+    }
+
+    /// Tamanho da interface e movimento reduzido.
+    fn accessibility_section(&mut self, ui: &mut egui::Ui, g: &mut runtime::Shared, pal: &Palette) {
+        let accent = theme::accent_color(&g.cfg.ui);
+        widgets::section(ui, "Tamanho da interface", pal);
+        ui.horizontal_wrapped(|ui| {
+            for scale in crate::config::schema::UI_SCALES {
+                let on = g.cfg.ui.ui_scale == scale;
+                let label = format!("{scale}%");
+                if widgets::pill(ui, &label, on, accent, pal).clicked() && !on {
+                    g.cfg.ui.ui_scale = scale;
+                    self.dirty = true;
+                }
+            }
+        });
+        ui.label(widgets::hint(
+            t("Ctrl + e Ctrl − também aumentam e diminuem, até a próxima abertura."),
+            pal,
+        ));
+        widgets::section(ui, "Movimento", pal);
+        if widgets::checkbox(
+            ui,
+            &mut g.cfg.ui.reduce_motion,
+            t("Reduzir movimento (sem deslizes nem transições)"),
+        )
+        .changed()
+        {
+            self.dirty = true;
+        }
     }
 
     fn language_section(&mut self, ui: &mut egui::Ui, g: &mut runtime::Shared, pal: &Palette) {
@@ -227,7 +269,7 @@ impl App {
     fn startup_section(&mut self, ui: &mut egui::Ui, pal: &Palette) {
         widgets::section(ui, "Inicialização", pal);
         let before = self.autostart;
-        ui.checkbox(&mut self.autostart, t(shell::AUTOSTART_LABEL));
+        widgets::checkbox(ui, &mut self.autostart, t(shell::AUTOSTART_LABEL));
         if self.autostart != before {
             let on = self.autostart;
             // O registro pode demorar: fora da thread da interface, como faz a bandeja.
@@ -236,12 +278,20 @@ impl App {
     }
 
     fn device_section(&mut self, ui: &mut egui::Ui, g: &mut runtime::Shared, pal: &Palette) {
-        let label = widgets::section(ui, "Brilho do aparelho", pal);
+        let brightness_label = widgets::section(ui, "Brilho do aparelho", pal);
         ui.spacing_mut().slider_width =
             (ui.available_width() - SLIDER_VALUE_RESERVED).max(TARGET_MIN * 4.0);
-        let slider = egui::Slider::new(&mut g.cfg.ui.brightness, BRIGHTNESS_MIN..=BRIGHTNESS_MAX)
-            .suffix("%");
-        if ui.add(slider).labelled_by(label).changed() {
+        let mut brightness = g.cfg.ui.brightness as f32;
+        if widgets::slider(
+            ui,
+            &mut brightness,
+            BRIGHTNESS_MIN as f32..=BRIGHTNESS_MAX as f32,
+            "%",
+        )
+        .labelled_by(brightness_label)
+        .changed()
+        {
+            g.cfg.ui.brightness = brightness as u8;
             self.dirty = true;
             // Ao vivo: o aparelho muda enquanto arrasta (gravar na config vem depois, sozinho).
             let _ = shell::send(&format!("brightness {}", g.cfg.ui.brightness));
@@ -252,7 +302,7 @@ impl App {
             t("Sem aparelho conectado: vale a partir da próxima conexão.")
         };
         ui.label(RichText::new(note).size(text::CAPTION).color(pal.muted));
-        let label = widgets::section(ui, "Apagar a tela sem uso", pal);
+        widgets::section(ui, "Apagar a tela sem uso", pal);
         let name = |m: u16| {
             if m == 0 {
                 t("Nunca").to_string()
@@ -261,18 +311,29 @@ impl App {
             }
         };
         let current = g.cfg.ui.sleep_minutes;
-        egui::ComboBox::from_id_salt("sleep-minutes")
-            .selected_text(name(current))
-            .show_ui(ui, |ui| {
-                for m in crate::config::schema::SLEEP_CHOICES {
-                    if ui.selectable_label(current == m, name(m)).clicked() {
-                        g.cfg.ui.sleep_minutes = m;
-                        self.dirty = true;
-                    }
-                }
-            })
-            .response
-            .labelled_by(label);
+        let sleep_choices: Vec<String> = crate::config::schema::SLEEP_CHOICES
+            .iter()
+            .map(|m| name(*m))
+            .collect();
+        let sleep_choices_refs: Vec<&str> = sleep_choices.iter().map(|s| s.as_str()).collect();
+        let mut sleep_selected = name(current);
+        widgets::combo_box(
+            ui,
+            "sleep-after",
+            "Apagar a tela sem uso",
+            &mut sleep_selected,
+            &sleep_choices_refs,
+            pal,
+        );
+        if sleep_selected != name(current) {
+            let new_val = crate::config::schema::SLEEP_CHOICES
+                .iter()
+                .position(|m| name(*m) == sleep_selected)
+                .map(|i| i as u16)
+                .unwrap_or(current);
+            g.cfg.ui.sleep_minutes = new_val;
+            self.dirty = true;
+        }
         let hint = t("O primeiro toque só acende a tela, sem disparar a tecla.");
         ui.label(RichText::new(hint).size(text::CAPTION).color(pal.muted));
     }
@@ -281,7 +342,18 @@ impl App {
         widgets::section(ui, "Versão", pal);
         ui.label(tf("Keyforge {}", &[&env!("CARGO_PKG_VERSION")]));
         widgets::section(ui, "Diagnóstico", pal);
-        if ui.button(t("Abrir pasta de logs")).clicked() {
+        let kind = widgets::ButtonKind::Secondary;
+        if widgets::button(
+            ui,
+            Some("folder-open"),
+            "Abrir pasta de logs",
+            kind,
+            true,
+            0.0,
+            pal,
+        )
+        .clicked()
+        {
             open_log_folder();
         }
     }
@@ -289,13 +361,21 @@ impl App {
     /// Reconectar e o autoteste ficam com o aparelho, onde se procura por eles.
     fn device_tools(&mut self, ui: &mut egui::Ui, pal: &Palette) {
         widgets::section(ui, "Problemas com o aparelho", pal);
-        if ui.button(t("Reconectar")).clicked() {
+        let kind = widgets::ButtonKind::Secondary;
+        if widgets::button(ui, Some("refresh-cw"), "Reconectar", kind, true, 0.0, pal).clicked() {
             let _ = shell::send("reconnect");
         }
-        if ui
-            .button(t("Testar aparelho"))
-            .on_hover_text(t(SELFTEST_HINT))
-            .clicked()
+        if widgets::button(
+            ui,
+            Some("lucide:activity"),
+            "Testar aparelho",
+            kind,
+            true,
+            0.0,
+            pal,
+        )
+        .on_hover_text(t(SELFTEST_HINT))
+        .clicked()
         {
             let reply = shell::send("selftest");
             self.toasts

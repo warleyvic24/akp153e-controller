@@ -1,5 +1,13 @@
+//! Esquema do `config.json`: perfis, páginas, teclas e preferências, com a leitura, a gravação
+//! atômica, a trava entre processos e o saneamento/migração de versões antigas.
+//!
+//! As ações das teclas ficam em `action.rs` (reexportadas aqui); migrações em `migrate.rs`.
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+
+use crate::config::schema::migrate::migrate_control_ids;
+
+pub use action::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RGBAColor {
@@ -28,18 +36,13 @@ pub struct ButtonAppearance {
     /// Fundo em degradê suave (mais claro em cima), em vez de cor chapada.
     #[serde(default)]
     pub gradient: bool,
+    /// Se deve mostrar o rótulo de texto na tecla.
+    #[serde(default = "default_true")]
+    pub show_text: bool,
 }
 
-/// O que a tecla "Monitor" mostra.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Metric {
-    /// CPU, RAM e temperatura juntas.
-    #[default]
-    Overview,
-    Cpu,
-    Ram,
-    Temp,
+fn default_true() -> bool {
+    true
 }
 
 /// Posição do rótulo na tecla; o ícone ocupa o espaço que sobra.
@@ -53,126 +56,6 @@ pub enum TextPosition {
     /// No meio, por cima do ícone.
     Middle,
     Bottom,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", rename_all = "kebab-case")]
-pub enum ButtonAction {
-    None,
-    Hotkey {
-        keys: Vec<String>,
-    },
-    LaunchApp {
-        path: String,
-        #[serde(default)]
-        args: Vec<String>,
-    },
-    /// Abre um endereço (http ou https) no navegador padrão.
-    OpenUrl {
-        url: String,
-    },
-    HttpWebhook {
-        url: String,
-        #[serde(default = "get")]
-        method: String,
-        #[serde(default)]
-        body: Option<String>,
-    },
-    MediaKey {
-        key: String,
-    },
-    SwitchPage {
-        page: u64,
-    },
-    SwitchProfile {
-        profile: u64,
-    },
-    /// Mostra no aparelho o mixer de volume dos apps com som.
-    OpenMixer,
-    /// Digita o texto como se fosse no teclado.
-    TypeText {
-        text: String,
-    },
-    /// Várias ações em sequência, na ordem da lista (a "multi-ação" do Stream Deck).
-    MultiAction {
-        steps: Vec<ButtonAction>,
-    },
-    /// Pausa entre os passos de uma multi-ação; sozinha não faz nada.
-    Delay {
-        ms: u64,
-    },
-    /// Próxima página do perfil (depois da última volta à primeira).
-    NextPage,
-    /// Página anterior do perfil (antes da primeira vai à última).
-    PreviousPage,
-    /// Roda uma linha de comando no shell do sistema (`sh -c` no Linux, `cmd /C` no Windows).
-    RunCommand {
-        command: String,
-    },
-    /// Toca um arquivo de som (soundboard), sem esperar terminar.
-    PlaySound {
-        path: String,
-    },
-    /// Muda o brilho do aparelho em `delta` pontos (de 5 a 100 %).
-    Brightness {
-        delta: i32,
-    },
-    /// Tecla viva: mostra a hora e a data, redesenhada a cada minuto. Tocar não faz nada.
-    Clock,
-    /// Tecla viva com o uso do sistema (CPU, RAM, temperatura), atualizada a cada poucos segundos.
-    Monitor {
-        #[serde(default)]
-        metric: Metric,
-    },
-    /// Comando no OBS Studio (obs-websocket). `target` é a cena ou a entrada, quando o comando usa.
-    Obs {
-        command: ObsCommand,
-        #[serde(default)]
-        target: String,
-    },
-}
-
-/// Tecla de mídia "Mic mudo": não é uma tecla do teclado; o serviço muda o microfone padrão.
-pub const MIC_MUTE_KEY: &str = "micmute";
-
-/// O que uma tecla do OBS faz.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ObsCommand {
-    /// Vai para a cena `target`.
-    Scene,
-    /// Liga ou desliga a transmissão.
-    Stream,
-    /// Liga ou desliga a gravação.
-    Record,
-    /// Pausa ou retoma a gravação.
-    RecordPause,
-    /// Muda ou desmuda a entrada de áudio `target`.
-    Mute,
-    /// Liga ou desliga a câmera virtual.
-    VirtualCam,
-    /// Liga ou desliga o buffer de replay.
-    ReplayBuffer,
-    /// Salva o replay.
-    ReplaySave,
-}
-
-impl ObsCommand {
-    pub const ALL: [ObsCommand; 8] = [
-        ObsCommand::Scene,
-        ObsCommand::Stream,
-        ObsCommand::Record,
-        ObsCommand::RecordPause,
-        ObsCommand::Mute,
-        ObsCommand::VirtualCam,
-        ObsCommand::ReplayBuffer,
-        ObsCommand::ReplaySave,
-    ];
-
-    /// O comando age sobre uma cena ou entrada (e precisa de `target`).
-    pub fn needs_target(self) -> bool {
-        matches!(self, ObsCommand::Scene | ObsCommand::Mute)
-    }
 }
 
 /// Onde achar o obs-websocket. No OBS: Ferramentas > Configurações do servidor WebSocket.
@@ -194,10 +77,6 @@ impl Default for ObsSettings {
         }
     }
 }
-fn get() -> String {
-    "GET".into()
-}
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ButtonConfig {
@@ -214,6 +93,16 @@ pub struct ButtonConfig {
     /// Ação do segundo toque de uma tecla de dois estados (ex.: ligar/desligar a live).
     #[serde(default)]
     pub toggled_action: Option<ButtonAction>,
+    /// Ação de clique duplo: dois toques rápidos dentro da janela executam esta ação.
+    #[serde(default)]
+    pub double_tap_action: Option<ButtonAction>,
+    /// Janela máxima entre dois toques para contar como clique duplo (ms).
+    #[serde(default = "threshold")]
+    pub double_tap_window_ms: u64,
+    /// Id do controle do modelo do aparelho (ex.: \\\"k0\\\", \\\"k1\\\", ..., \\\"side\\\").
+    /// Ausente em configs v3: preenchido por índice em `sanitized`.
+    #[serde(default)]
+    pub control_id: Option<String>,
 }
 fn threshold() -> u64 {
     500
@@ -252,6 +141,7 @@ impl ButtonConfig {
                 icon: None,
                 text_position: TextPosition::Auto,
                 gradient: false,
+                show_text: true,
             },
             action: ButtonAction::None,
             long_press_action: None,
@@ -259,6 +149,9 @@ impl ButtonConfig {
             toggle_state: false,
             toggled_appearance: None,
             toggled_action: None,
+            double_tap_action: None,
+            double_tap_window_ms: 500,
+            control_id: None,
         }
     }
 
@@ -339,8 +232,13 @@ impl Page {
     /// Divide a página para um aparelho com `keys` teclas: as que sobram viram páginas seguintes
     /// ("Nome (2)", "Nome (3)"), na mesma ordem; nenhum botão se perde. As novas ficam sem id
     /// (`sanitized` dá um). Com teclas suficientes, devolve a página como está.
-    // Chamado quando o serviço abrir um aparelho de outro tamanho (Fase 4 do plano de aparelhos).
-    #[allow(dead_code)]
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "Fase 4 do plano de aparelhos: chamado quando o serviço abrir um aparelho de outro tamanho"
+        )
+    )]
     pub fn split_for(&self, keys: usize, rows: usize, cols: usize) -> Vec<Page> {
         if keys == 0 || self.buttons.len() <= keys {
             return vec![self.clone()];
@@ -411,6 +309,8 @@ pub enum Theme {
     Light,
     /// Segue o tema ativo do Omarchy (cores, destaque e modo); sem Omarchy, equivale ao escuro.
     Omarchy,
+    /// Alto contraste: preto, branco e amarelo, bordas grossas (WCAG AAA, 7:1 em todo texto).
+    HighContrast,
 }
 
 /// Idioma da interface.
@@ -436,7 +336,20 @@ pub struct UiSettings {
     /// Minutos sem uso até o aparelho apagar a tela; 0 = nunca (o padrão, e o de configs antigas).
     #[serde(default)]
     pub sleep_minutes: u16,
+    /// Tamanho da interface em % (100 = normal). Ausente em configs antigas: 100.
+    #[serde(default = "default_ui_scale")]
+    pub ui_scale: u16,
+    /// Desliga deslizes e transições (troca de página, avisos, tecla apertada).
+    #[serde(default)]
+    pub reduce_motion: bool,
 }
+
+fn default_ui_scale() -> u16 {
+    100
+}
+
+/// Tamanhos de interface oferecidos nas Preferências (%); Ctrl + / Ctrl − também ajustam.
+pub const UI_SCALES: [u16; 5] = [100, 125, 150, 175, 200];
 
 fn default_brightness() -> u8 {
     crate::usb::DEFAULT_BRIGHTNESS
@@ -450,6 +363,8 @@ impl Default for UiSettings {
             brightness: default_brightness(),
             language: Language::default(),
             sleep_minutes: 0,
+            ui_scale: default_ui_scale(),
+            reduce_motion: false,
         }
     }
 }
@@ -475,7 +390,7 @@ const LOCK_FILE: &str = "config.lock";
 /// Versão 3: cada página guarda o modelo de aparelho (`Page::model`) e a gravação recusa uma
 /// config de versão mais nova que esta (feita por um Keyforge mais novo).
 /// Versão 4: "abrir site" é a ação `OpenUrl` (antes, um `LaunchApp` do `xdg-open`/`explorer`).
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 5;
 fn legacy_version() -> u32 {
     1
 }
@@ -700,6 +615,9 @@ impl AppConfig {
         if self.schema_version < 4 {
             self.migrate_open_url();
         }
+        if self.schema_version < 5 {
+            migrate_control_ids(&mut self);
+        }
         // Mais nova que este programa: fica como está, e `save_to` se recusa a gravar.
         self.schema_version = self.schema_version.max(SCHEMA_VERSION);
         self
@@ -839,6 +757,30 @@ impl AppConfig {
     }
 }
 
+/// Bancos de som da config: nome do banco → arquivos, na ordem em que a tecla os lista.
+pub type SoundBanks = std::collections::BTreeMap<String, Vec<String>>;
+
+impl AppConfig {
+    /// Junta os bancos (`ButtonAction::SoundBank`) de todos os perfis e páginas. Bancos sem nome
+    /// ou sem sons ficam de fora; com dois bancos de mesmo nome, vale o último encontrado.
+    pub fn sound_banks(&self) -> SoundBanks {
+        self.profiles
+            .iter()
+            .flat_map(|p| &p.pages)
+            .flat_map(|pg| &pg.buttons)
+            .filter_map(|b| match &b.action {
+                ButtonAction::SoundBank { name, sounds }
+                    if !name.is_empty() && !sounds.is_empty() =>
+                {
+                    Some((name.clone(), sounds.clone()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+mod action;
 mod migrate;
 #[cfg(test)]
 mod tests;

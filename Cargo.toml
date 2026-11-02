@@ -20,7 +20,9 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 directories = "6"
 log = "0.4"
 env_logger = "0.11"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "ico"] }
+thiserror = "2"
+gif = "0.13"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "ico", "gif"] }
 # Ícones em SVG (temas de ícones do Linux e favicons de sites) viram PNG para a tecla.
 resvg = "0.45"
 ab_glyph = "0.2"

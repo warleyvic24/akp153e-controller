@@ -45,6 +45,11 @@ pub(crate) fn category_color(action: &ButtonAction) -> Option<[u8; 3]> {
             DEVICE
         }
         ButtonAction::Obs { .. } => OBS,
+        ButtonAction::PressHold { .. } => KEYS,
+        ButtonAction::DoubleTap { .. } => KEYS,
+        ButtonAction::SoundBank { .. } => MEDIA,
+        ButtonAction::PlaySoundBank { .. } => MEDIA,
+        ButtonAction::StopAllSounds => MEDIA,
     })
 }
 
@@ -169,6 +174,34 @@ pub fn presets() -> Vec<Preset> {
             ButtonAction::PlaySound {
                 path: String::new(),
             },
+        ),
+        p(
+            "Mídia",
+            "Banco de sons",
+            "lucide:database",
+            MEDIA,
+            ButtonAction::SoundBank {
+                name: String::new(),
+                sounds: vec![],
+            },
+        ),
+        p(
+            "Mídia",
+            "Som do banco",
+            "lucide:circle-play",
+            MEDIA,
+            ButtonAction::PlaySoundBank {
+                bank: String::new(),
+                index: 0,
+                volume: 1.0,
+            },
+        ),
+        p(
+            "Mídia",
+            "Parar todos os sons",
+            "lucide:circle-stop",
+            MEDIA,
+            ButtonAction::StopAllSounds,
         ),
         p("Edição", "Copiar", "copy", KEYS, hotkey(&["ctrl", "c"])),
         p("Edição", "Colar", "paste", KEYS, hotkey(&["ctrl", "v"])),

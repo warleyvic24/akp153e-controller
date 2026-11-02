@@ -30,11 +30,16 @@ pub(super) enum ActionKind {
     Obs,
     Sound,
     Delay,
+    PressHold,
+    DoubleTap,
+    SoundBank,
+    PlaySoundBank,
+    StopAllSounds,
 }
 
 impl ActionKind {
     /// Na grade de tipos, nesta ordem (a "Pausa" só existe dentro de uma multi-ação).
-    pub const PICKER: [Self; 19] = [
+    pub const PICKER: [Self; 24] = [
         Self::None,
         Self::Hotkey,
         Self::LaunchApp,
@@ -54,10 +59,15 @@ impl ActionKind {
         Self::Obs,
         Self::Sound,
         Self::Webhook,
+        Self::PressHold,
+        Self::DoubleTap,
+        Self::SoundBank,
+        Self::PlaySoundBank,
+        Self::StopAllSounds,
     ];
 
     /// O que pode ser passo de uma multi-ação (navegação não cabe: o serviço a ignora lá dentro).
-    pub const STEPS: [Self; 10] = [
+    pub const STEPS: [Self; 11] = [
         Self::Hotkey,
         Self::Sound,
         Self::Obs,
@@ -68,6 +78,7 @@ impl ActionKind {
         Self::Webhook,
         Self::Media,
         Self::Delay,
+        Self::PlaySoundBank,
     ];
 
     pub fn of(a: &ButtonAction) -> Self {
@@ -92,6 +103,11 @@ impl ActionKind {
             ButtonAction::Monitor { .. } => Self::Monitor,
             ButtonAction::Obs { .. } => Self::Obs,
             ButtonAction::PlaySound { .. } => Self::Sound,
+            ButtonAction::PressHold { .. } => Self::PressHold,
+            ButtonAction::DoubleTap { .. } => Self::DoubleTap,
+            ButtonAction::SoundBank { .. } => Self::SoundBank,
+            ButtonAction::PlaySoundBank { .. } => Self::PlaySoundBank,
+            ButtonAction::StopAllSounds => Self::StopAllSounds,
         }
     }
 
@@ -118,6 +134,11 @@ impl ActionKind {
             Self::Obs => "OBS",
             Self::Sound => "Som",
             Self::Delay => "Pausa",
+            Self::PressHold => "Pressione/segure",
+            Self::DoubleTap => "Clique duplo",
+            Self::SoundBank => "Banco de sons",
+            Self::PlaySoundBank => "Som do banco",
+            Self::StopAllSounds => "Parar todos",
         }
     }
 
@@ -142,6 +163,11 @@ impl ActionKind {
             Self::Obs => "lucide:clapperboard",
             Self::Sound => "lucide:audio-lines",
             Self::Delay => "lucide:hourglass",
+            Self::PressHold => "lucide:clock",
+            Self::DoubleTap => "lucide:git-pull-request",
+            Self::SoundBank => "lucide:database",
+            Self::PlaySoundBank => "lucide:circle-play",
+            Self::StopAllSounds => "lucide:circle-stop",
         }
     }
 
@@ -194,6 +220,25 @@ impl ActionKind {
                 command: ObsCommand::Record,
                 target: String::new(),
             },
+            Self::PressHold => ButtonAction::PressHold {
+                tap: Box::new(ButtonAction::None),
+                hold: Box::new(ButtonAction::None),
+                threshold_ms: 500,
+            },
+            Self::DoubleTap => ButtonAction::DoubleTap {
+                action: Box::new(ButtonAction::None),
+                window_ms: 300,
+            },
+            Self::SoundBank => ButtonAction::SoundBank {
+                name: String::new(),
+                sounds: vec![],
+            },
+            Self::PlaySoundBank => ButtonAction::PlaySoundBank {
+                bank: String::new(),
+                index: 0,
+                volume: 1.0,
+            },
+            Self::StopAllSounds => ButtonAction::StopAllSounds,
         }
     }
 }

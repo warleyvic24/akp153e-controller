@@ -1,4 +1,10 @@
-use crate::config::schema::ButtonAction;
+//! Executor das ações das teclas que saem do aparelho: atalhos, programas, sites, webhooks,
+//! sons, comandos e OBS. Navegação (página, perfil, mixer) e brilho são do estado do serviço
+//! (`service::runtime`) e nunca chegam aqui.
+//!
+//! Tudo roda no runtime tokio recebido; o que bloqueia (teclado, processos) vai para
+//! `spawn_blocking`. Erros não sobem: vão para o log, porque uma tecla não tem a quem avisar.
+use crate::config::schema::{AppConfig, ButtonAction, SoundBanks};
 use crate::obs::ObsCall;
 use crate::platform::{hide_console, spawn_detached};
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
@@ -48,14 +54,22 @@ impl Executor {
         self
     }
 
-    pub fn run(&self, action: ButtonAction) {
+    /// Dispara `action` sem esperar. `cfg` é a config de onde a ação veio: dela saem os bancos
+    /// de som, lidos na hora (um banco editado vale já no próximo toque, sem cópia desatualizada).
+    pub fn run(&self, action: ButtonAction, cfg: &AppConfig) {
+        let banks = if action.plays_sound_bank() {
+            cfg.sound_banks()
+        } else {
+            SoundBanks::new()
+        };
         let this = self.clone();
-        self.rt.spawn(async move { this.run_step(action).await });
+        self.rt
+            .spawn(async move { this.run_step(action, &banks).await });
     }
 
     /// Executa uma ação e espera terminar (menos `LaunchApp`, que só dispara o programa), para
     /// que os passos de uma multi-ação saiam na ordem.
-    async fn run_step(&self, action: ButtonAction) {
+    async fn run_step(&self, action: ButtonAction, banks: &SoundBanks) {
         match action {
             ButtonAction::Hotkey { keys } => {
                 run_blocking("hotkey", move || hotkey(&keys)).await;
@@ -122,17 +136,14 @@ impl Executor {
             ButtonAction::MultiAction { steps } => {
                 for step in steps {
                     // Box::pin: função assíncrona recursiva.
-                    Box::pin(self.run_step(step)).await;
+                    Box::pin(self.run_step(step, banks)).await;
                 }
             }
             ButtonAction::Delay { ms } => {
                 tokio::time::sleep(std::time::Duration::from_millis(ms.min(MAX_DELAY_MS))).await;
             }
             ButtonAction::PlaySound { path } => {
-                let played = tokio::task::spawn_blocking(move || play_sound(&path)).await;
-                if let Ok(Err(e)) = played {
-                    log::error!("som: {e}");
-                }
+                spawn_sound(path, None).await;
             }
             ButtonAction::RunCommand { command } => {
                 let spawned = tokio::task::spawn_blocking(move || run_command(&command)).await;
@@ -156,6 +167,17 @@ impl Executor {
                     }
                 }
             }
+            ButtonAction::PlaySoundBank {
+                bank,
+                index,
+                volume,
+            } => match banks.get(&bank).and_then(|sounds| sounds.get(index)) {
+                Some(path) => spawn_sound(path.clone(), Some(volume)).await,
+                None => log::error!("som: banco {bank:?} não tem o som {}", index + 1),
+            },
+            ButtonAction::StopAllSounds => {
+                let _ = tokio::task::spawn_blocking(stop_all_sounds).await;
+            }
             ButtonAction::None
             | ButtonAction::Brightness { .. }
             | ButtonAction::Clock
@@ -164,20 +186,51 @@ impl Executor {
             | ButtonAction::SwitchProfile { .. }
             | ButtonAction::NextPage
             | ButtonAction::PreviousPage
-            | ButtonAction::OpenMixer => {}
+            | ButtonAction::OpenMixer
+            | ButtonAction::PressHold { .. }
+            | ButtonAction::DoubleTap { .. }
+            | ButtonAction::SoundBank { .. } => {}
         }
     }
 }
 
-/// Toca o arquivo pelo tocador do sistema: no Linux o `pw-play` (PipeWire) ou o `paplay`
-/// (PulseAudio); no Windows o `SoundPlayer` do .NET pelo PowerShell (só WAV).
-fn play_sound(path: &str) -> Result<(), String> {
+/// Toca o som fora das threads async e registra o erro, se houver.
+async fn spawn_sound(path: String, volume: Option<f32>) {
+    let played = tokio::task::spawn_blocking(move || play_sound(&path, volume)).await;
+    if let Ok(Err(e)) = played {
+        log::error!("som: {e}");
+    }
+}
+
+/// Programas que tocam som no Linux, na ordem de preferência: o `pw-play` (PipeWire) e o
+/// `paplay` (PulseAudio).
+#[cfg(not(windows))]
+const SOUND_PLAYERS: [&str; 2] = ["pw-play", "paplay"];
+
+/// Volume máximo do `paplay` (o `PA_VOLUME_NORM`; o `pw-play` usa 0.0 a 1.0).
+#[cfg(not(windows))]
+const PAPLAY_VOLUME_NORM: f32 = 65_536.0;
+
+/// Argumento de volume de cada tocador, com `volume` já limitado a 0.0..=1.0.
+#[cfg(not(windows))]
+fn volume_arg(player: &str, volume: f32) -> String {
+    if player == "paplay" {
+        format!("--volume={}", (volume * PAPLAY_VOLUME_NORM).round() as u32)
+    } else {
+        format!("--volume={volume:.3}")
+    }
+}
+
+/// Toca o arquivo sem esperar terminar. `volume` (0.0 a 1.0) vale no Linux; `None` = volume
+/// normal. No Windows toca pelo `SoundPlayer` do .NET (só WAV, sem volume).
+fn play_sound(path: &str, volume: Option<f32>) -> Result<(), String> {
     let path = path.trim();
     if path.is_empty() || !std::path::Path::new(path).is_file() {
         return Err(format!("arquivo de som não encontrado: {path}"));
     }
     #[cfg(windows)]
     {
+        let _ = volume;
         // Aspas simples do PowerShell: uma aspa no caminho vira duas.
         let quoted = path.replace('\'', "''");
         let script = format!("(New-Object Media.SoundPlayer '{quoted}').PlaySync()");
@@ -189,14 +242,41 @@ fn play_sound(path: &str) -> Result<(), String> {
     }
     #[cfg(not(windows))]
     {
+        let volume = volume.map(|v| v.clamp(0.0, 1.0));
         let mut last = String::new();
-        for player in ["pw-play", "paplay"] {
-            match spawn_detached(std::process::Command::new(player).arg(path)) {
+        for player in SOUND_PLAYERS {
+            let mut cmd = std::process::Command::new(player);
+            if let Some(v) = volume {
+                cmd.arg(volume_arg(player, v));
+            }
+            match spawn_detached(cmd.arg(path)) {
                 Ok(_) => return Ok(()),
                 Err(e) => last = format!("{player}: {e}"),
             }
         }
         Err(format!("nenhum tocador (pw-play, paplay): {last}"))
+    }
+}
+
+/// Para os sons em andamento (botão de pânico do soundboard). No Linux encerra os processos dos
+/// tocadores do usuário; no Windows o `SoundPlayer` não tem como ser parado de fora.
+fn stop_all_sounds() {
+    #[cfg(not(windows))]
+    {
+        // Só os do usuário atual (o dono de `/proc/self`): nunca os tocadores de outras contas.
+        let uid = match std::fs::metadata("/proc/self") {
+            Ok(meta) => std::os::unix::fs::MetadataExt::uid(&meta).to_string(),
+            Err(e) => {
+                log::error!("parar sons: {e}");
+                return;
+            }
+        };
+        for player in SOUND_PLAYERS {
+            let mut cmd = std::process::Command::new("pkill");
+            if let Err(e) = spawn_detached(cmd.args(["-x", "-U", &uid, player])) {
+                log::error!("parar sons ({player}): {e}");
+            }
+        }
     }
 }
 
@@ -434,24 +514,35 @@ mod tests {
     async fn multi_action_runs_steps_in_order_and_waits_on_delay() {
         let exec = Executor::new(tokio::runtime::Handle::current());
         let started = std::time::Instant::now();
-        exec.run_step(ButtonAction::MultiAction {
-            steps: vec![
-                ButtonAction::Delay { ms: 150 },
-                ButtonAction::TypeText {
-                    text: "x".repeat(MAX_TYPE_CHARS + 1),
-                },
-                ButtonAction::NextPage,
-            ],
-        })
+        exec.run_step(
+            ButtonAction::MultiAction {
+                steps: vec![
+                    ButtonAction::Delay { ms: 150 },
+                    ButtonAction::TypeText {
+                        text: "x".repeat(MAX_TYPE_CHARS + 1),
+                    },
+                    ButtonAction::NextPage,
+                ],
+            },
+            &SoundBanks::new(),
+        )
         .await;
         assert!(started.elapsed() >= std::time::Duration::from_millis(150));
     }
 
     #[test]
     fn a_missing_sound_file_is_refused_before_calling_a_player() {
-        let err = play_sound("/nao/existe/aplausos.ogg").unwrap_err();
+        let err = play_sound("/nao/existe/aplausos.ogg", None).unwrap_err();
         assert!(err.contains("não encontrado"), "{err}");
-        assert!(play_sound("  ").is_err());
+        assert!(play_sound("  ", Some(0.5)).is_err());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn each_player_gets_volume_in_its_own_scale() {
+        assert_eq!(volume_arg("pw-play", 0.5), "--volume=0.500");
+        assert_eq!(volume_arg("paplay", 0.5), "--volume=32768");
+        assert_eq!(volume_arg("paplay", 1.0), "--volume=65536");
     }
 
     #[test]
@@ -508,11 +599,14 @@ mod tests {
                 .unwrap();
         });
         let exec = Executor::new(tokio::runtime::Handle::current());
-        exec.run(ButtonAction::HttpWebhook {
-            url,
-            method: "post".into(),
-            body: Some("ping".into()),
-        });
+        exec.run(
+            ButtonAction::HttpWebhook {
+                url,
+                method: "post".into(),
+                body: Some("ping".into()),
+            },
+            &AppConfig::default(),
+        );
         let req = tokio::task::spawn_blocking(move || {
             rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap()
         })
@@ -539,10 +633,13 @@ mod tests {
             args.pop();
             args.push(out.display().to_string());
         }
-        exec.run(ButtonAction::LaunchApp {
-            path: program.into(),
-            args,
-        });
+        exec.run(
+            ButtonAction::LaunchApp {
+                path: program.into(),
+                args,
+            },
+            &AppConfig::default(),
+        );
         let probe = out.clone();
         assert!(wait_for(move || probe.exists()).await);
         let _ = std::fs::remove_file(out);

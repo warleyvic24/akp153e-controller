@@ -8,8 +8,10 @@ use crate::strings::{display_name, t, tf};
 use eframe::egui::{self, Align, Color32, Frame, Layout, Margin, RichText, Sense};
 
 const CONN_POPUP_WIDTH: f32 = 220.0;
-const WORDMARK_GAP: f32 = 6.0;
-const RENAME_WIDTH: f32 = 120.0;
+const WORDMARK_GAP: f32 = 8.0;
+const TOP_SEPARATOR_HEIGHT: f32 = 18.0;
+const PROFILE_ICON: f32 = 14.0;
+const MANAGE_MENU_WIDTH: f32 = 260.0;
 
 /// Página em renomeação direto na barra (duplo clique ou "Renomear" no menu de contexto).
 pub(crate) struct Rename {
@@ -38,7 +40,7 @@ fn menu_field(
 ) -> egui::Response {
     ui.scope(|ui| {
         ui.visuals_mut().widgets.inactive.bg_stroke = egui::Stroke::new(1.0_f32, pal.control);
-        ui.text_edit_singleline(text).labelled_by(label)
+        widgets::text_field(ui, text, "", pal, false).labelled_by(label)
     })
     .inner
 }
@@ -57,8 +59,8 @@ impl App {
         let frame = Frame::NONE
             .fill(pal.panel)
             .stroke(egui::Stroke::new(1.0_f32, pal.line))
-            .inner_margin(Margin::symmetric(16, 8));
-        egui::Panel::top("top").frame(frame).show(root, |ui| {
+            .inner_margin(Margin::symmetric(16, 10));
+        let shown = egui::Panel::top("top").frame(frame).show(root, |ui| {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if widgets::icon_button(ui, "settings", "Preferências", true, pal).clicked() {
                     self.open_settings();
@@ -75,21 +77,38 @@ impl App {
                     {
                         self.library_open = !self.library_open;
                     }
+                    widgets::brand_mark(ui, accent);
                     if panels.full_top_bar {
                         ui.label(
                             RichText::new("Keyforge")
-                                .font(theme::display_font(TITLE - 3.0))
+                                .font(theme::display_font(TITLE - 2.0))
+                                .color(pal.fg)
                                 .strong(),
                         );
-                        ui.add_space(WORDMARK_GAP * 2.0);
+                        ui.add_space(WORDMARK_GAP);
+                        // Filete vertical entre a marca e o contexto (perfil).
+                        let (sep, _) = ui.allocate_exact_size(
+                            egui::vec2(1.0, TOP_SEPARATOR_HEIGHT),
+                            Sense::hover(),
+                        );
+                        ui.painter().rect_filled(sep, 0.0, pal.line);
+                        ui.add_space(WORDMARK_GAP);
+                        widgets::icon(ui, "user", PROFILE_ICON, pal.muted);
                         ui.label(RichText::new(t("Perfil")).color(pal.muted));
                     }
-                    self.profile_combo(ui, g);
+                    self.profile_combo(ui, g, pal);
                     // Gerenciar fica junto do perfil, que é o que ele gerencia.
                     self.manage_menu(ui, g, pal);
                 });
             });
         });
+        let ctx = shown.response.ctx.clone();
+        widgets::landmark(
+            &ctx,
+            shown.response.id,
+            egui::accesskit::Role::Banner,
+            "Keyforge",
+        );
     }
 
     /// Ícones em ordem visual Desfazer, Refazer (o layout à direita os desenha ao contrário).
@@ -154,30 +173,68 @@ impl App {
                 };
                 ui.label(msg);
                 if !g.service_running {
-                    if ui.button(t("Iniciar serviço")).clicked() {
+                    if widgets::menu_entry(
+                        ui,
+                        Some("power"),
+                        "Iniciar serviço",
+                        "",
+                        true,
+                        false,
+                        pal,
+                    )
+                    .clicked()
+                    {
                         shell::start_service();
                     }
-                } else if ui.button(t("Reconectar")).clicked() {
+                } else if widgets::menu_entry(
+                    ui,
+                    Some("refresh-cw"),
+                    "Reconectar",
+                    "",
+                    true,
+                    false,
+                    pal,
+                )
+                .clicked()
+                {
                     let _ = shell::send("reconnect");
                 }
-                if ui.button(t("Abrir pasta de logs")).clicked() {
+                let logs = widgets::menu_entry(
+                    ui,
+                    Some("folder-open"),
+                    "Abrir pasta de logs",
+                    "",
+                    true,
+                    false,
+                    pal,
+                );
+                if logs.clicked() {
                     settings::open_log_folder();
                 }
             });
     }
 
-    fn profile_combo(&mut self, ui: &mut egui::Ui, g: &mut runtime::Shared) {
-        let mut prof = g.cfg.active_profile;
-        let combo = egui::ComboBox::from_id_salt("prof")
-            .selected_text(display_name(&g.cfg.profiles[prof].name))
-            .show_ui(ui, |ui| {
-                for (i, p) in g.cfg.profiles.iter().enumerate() {
-                    ui.selectable_value(&mut prof, i, display_name(&p.name));
-                }
-            });
-        widgets::name(&combo.response, "Perfil");
-        if prof != g.cfg.active_profile {
-            g.cfg.active_profile = prof;
+    fn profile_combo(&mut self, ui: &mut egui::Ui, g: &mut runtime::Shared, pal: &Palette) {
+        let prof = g.cfg.active_profile;
+        let names: Vec<String> = g
+            .cfg
+            .profiles
+            .iter()
+            .map(|p| display_name(&p.name))
+            .collect();
+        let selected_name = display_name(&g.cfg.profiles[prof].name);
+        let mut selected = selected_name.clone();
+        widgets::combo_box(
+            ui,
+            "profile",
+            "Perfil",
+            &mut selected,
+            &names.iter().map(|s| s.as_str()).collect::<Vec<&str>>(),
+            pal,
+        );
+        let new_prof = names.iter().position(|n| n == &selected).unwrap_or(prof);
+        if new_prof != prof {
+            g.cfg.active_profile = new_prof;
             self.selected = 0;
             self.touch_nav();
         }
@@ -191,7 +248,7 @@ impl App {
             let pages = g.cfg.profiles[prof].pages.len();
             for i in 0..pages {
                 if self.rename.as_ref().is_some_and(|r| r.page == i) {
-                    self.rename_editor(ui, g, prof);
+                    self.rename_editor(ui, g, prof, pal);
                     continue;
                 }
                 let page = &g.cfg.profiles[prof].pages[i];
@@ -227,11 +284,17 @@ impl App {
     }
 
     /// Campo no lugar da pílula: Enter ou perder o foco confirma, Esc cancela.
-    fn rename_editor(&mut self, ui: &mut egui::Ui, g: &mut runtime::Shared, prof: usize) {
+    fn rename_editor(
+        &mut self,
+        ui: &mut egui::Ui,
+        g: &mut runtime::Shared,
+        prof: usize,
+        pal: &Palette,
+    ) {
         let Some(r) = self.rename.as_mut() else {
             return;
         };
-        let edit = ui.add(egui::TextEdit::singleline(&mut r.buf).desired_width(RENAME_WIDTH));
+        let edit = widgets::text_field(ui, &mut r.buf, "", pal, false);
         widgets::name(&edit, "Novo nome da página");
         if !r.focused {
             edit.request_focus();
@@ -261,15 +324,18 @@ impl App {
         index: usize,
         pal: &Palette,
     ) {
-        for (label, delta) in [("Mover para a esquerda", -1), ("Mover para a direita", 1)] {
-            if ui.button(t(label)).clicked() {
+        for (icon, label, delta) in [
+            ("arrow-left", "Mover para a esquerda", -1),
+            ("arrow-right", "Mover para a direita", 1),
+        ] {
+            if widgets::menu_entry(ui, Some(icon), label, "", true, false, pal).clicked() {
                 if g.cfg.profiles[prof].move_page(index, delta).is_some() {
                     self.touch_nav();
                 }
                 ui.close();
             }
         }
-        let delete = ui.button(RichText::new(t("Excluir página")).color(pal.bad));
+        let delete = widgets::menu_entry(ui, Some("trash"), "Excluir página", "", true, true, pal);
         if delete.clicked() {
             if g.cfg.profiles[prof].remove_page(index) {
                 self.selected = 0;
@@ -289,7 +355,8 @@ impl App {
         name: &str,
         pal: &Palette,
     ) {
-        if ui.button(t("Renomear")).clicked() {
+        let rename = widgets::menu_entry(ui, Some("pencil"), "Renomear", "", true, false, pal);
+        if rename.clicked() {
             self.rename = Some(Rename::new(index, name));
             ui.close();
         }
@@ -302,7 +369,10 @@ impl App {
         g: &mut runtime::Shared,
         pal: &Palette,
     ) {
-        ui.menu_button(t("Gerenciar"), |ui| {
+        let kind = widgets::ButtonKind::Ghost;
+        let open = widgets::button(ui, Some("layers"), "Gerenciar", kind, true, 0.0, pal);
+        egui::Popup::menu(&open).show(|ui| {
+            ui.set_min_width(MANAGE_MENU_WIDTH);
             let prof = g.cfg.active_profile;
             let index = g.cfg.profiles[prof].active_page;
             let page_label = ui.label(t("Nome da página")).id;
@@ -329,14 +399,15 @@ impl App {
         }
         self.auto_app_items(ui, g, prof, pal);
         ui.separator();
-        if ui.button(t("Novo perfil")).clicked() {
+        if widgets::menu_entry(ui, Some("user-plus"), "Novo perfil", "", true, false, pal).clicked()
+        {
             let name = tf("Perfil {}", &[&(g.cfg.profiles.len() + 1)]);
             g.cfg.add_profile(&name);
             self.touch();
             ui.close();
         }
-        self.profile_file_items(ui, g, prof);
-        let delete = ui.button(RichText::new(t("Excluir perfil")).color(pal.bad));
+        self.profile_file_items(ui, g, prof, pal);
+        let delete = widgets::menu_entry(ui, Some("trash"), "Excluir perfil", "", true, true, pal);
         if delete.clicked() {
             if g.cfg.remove_profile(prof) {
                 self.selected = 0;

@@ -32,7 +32,7 @@ async fn short_press_runs_normal_action_and_redraws() {
     let (tx, rx) = channel();
     let exec = Executor::new(tokio::runtime::Handle::current());
     let mut sh = two_page_state(ButtonAction::SwitchPage { page: 2 }, None);
-    trigger(&mut sh, &tx, &exec, 0, Duration::from_millis(50));
+    trigger(&mut sh, &tx, &exec, 0, Duration::from_millis(50), false);
     assert_eq!(sh.cfg.profiles[0].active_page, 1);
     assert_eq!(key_frames(&rx), 15);
 }
@@ -45,9 +45,9 @@ async fn long_press_uses_long_action_only_past_threshold() {
         ButtonAction::None,
         Some(ButtonAction::SwitchPage { page: 2 }),
     );
-    trigger(&mut sh, &tx, &exec, 0, Duration::from_millis(100));
+    trigger(&mut sh, &tx, &exec, 0, Duration::from_millis(100), false);
     assert_eq!(sh.cfg.profiles[0].active_page, 0);
-    trigger(&mut sh, &tx, &exec, 0, Duration::from_millis(600));
+    trigger(&mut sh, &tx, &exec, 0, Duration::from_millis(600), false);
     assert_eq!(sh.cfg.profiles[0].active_page, 1);
 }
 
@@ -57,7 +57,7 @@ async fn toggle_with_page_switch_redraws_once() {
     let exec = Executor::new(tokio::runtime::Handle::current());
     let mut sh = two_page_state(ButtonAction::SwitchPage { page: 2 }, None);
     sh.cfg.page_mut().buttons[0].toggled_appearance = Some(ButtonConfig::blank().appearance);
-    trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);
+    trigger(&mut sh, &tx, &exec, 0, Duration::ZERO, false);
     assert_eq!(key_frames(&rx), 15);
 }
 
@@ -67,7 +67,7 @@ async fn toggle_without_page_change_still_redraws() {
     let exec = Executor::new(tokio::runtime::Handle::current());
     let mut sh = two_page_state(ButtonAction::SwitchPage { page: 9 }, None);
     sh.cfg.page_mut().buttons[0].toggled_appearance = Some(ButtonConfig::blank().appearance);
-    trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);
+    trigger(&mut sh, &tx, &exec, 0, Duration::ZERO, false);
     assert!(sh.cfg.page().buttons[0].toggle_state);
     assert_eq!(key_frames(&rx), 15);
 }
@@ -77,7 +77,7 @@ async fn out_of_range_page_is_ignored() {
     let (tx, rx) = channel();
     let exec = Executor::new(tokio::runtime::Handle::current());
     let mut sh = two_page_state(ButtonAction::SwitchPage { page: 9 }, None);
-    trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);
+    trigger(&mut sh, &tx, &exec, 0, Duration::ZERO, false);
     assert_eq!(sh.cfg.profiles[0].active_page, 0);
     assert_eq!(key_frames(&rx), 0);
 }
@@ -87,7 +87,7 @@ async fn open_mixer_action_asks_the_service_to_open_it() {
     let (tx, rx) = channel();
     let exec = Executor::new(tokio::runtime::Handle::current());
     let mut sh = two_page_state(ButtonAction::OpenMixer, None);
-    let followup = trigger_locked(&mut sh, &exec, 0, Duration::ZERO);
+    let followup = trigger_locked(&mut sh, &exec, 0, Duration::ZERO, false);
     assert_eq!(followup.mixer_home(), Some(0));
     followup.run(&tx);
     assert_eq!(key_frames(&rx), 0);
@@ -104,14 +104,14 @@ async fn next_and_previous_page_wrap_around() {
         page.buttons[0].action = ButtonAction::NextPage;
         page.buttons[0].long_press_action = Some(ButtonAction::PreviousPage);
     }
-    trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);
+    trigger(&mut sh, &tx, &exec, 0, Duration::ZERO, false);
     assert_eq!(sh.cfg.profiles[0].active_page, 1);
-    trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);
+    trigger(&mut sh, &tx, &exec, 0, Duration::ZERO, false);
     assert_eq!(
         sh.cfg.profiles[0].active_page, 0,
         "depois da última volta à primeira"
     );
-    trigger(&mut sh, &tx, &exec, 0, Duration::from_secs(5));
+    trigger(&mut sh, &tx, &exec, 0, Duration::from_secs(5), false);
     assert_eq!(
         sh.cfg.profiles[0].active_page, 1,
         "antes da primeira vai à última"
@@ -125,7 +125,7 @@ async fn next_page_does_nothing_in_a_single_page_profile() {
     let exec = Executor::new(tokio::runtime::Handle::current());
     let mut sh = two_page_state(ButtonAction::NextPage, None);
     sh.cfg.profiles[0].pages.truncate(1);
-    trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);
+    trigger(&mut sh, &tx, &exec, 0, Duration::ZERO, false);
     assert_eq!(sh.cfg.profiles[0].active_page, 0);
     assert_eq!(key_frames(&rx), 0);
 }
@@ -138,12 +138,12 @@ async fn second_tap_of_a_two_state_key_runs_its_toggled_action() {
     let key = &mut sh.cfg.page_mut().buttons[0];
     key.toggled_appearance = Some(ButtonConfig::blank().appearance);
     key.toggled_action = Some(ButtonAction::SwitchPage { page: 2 });
-    trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);
+    trigger(&mut sh, &tx, &exec, 0, Duration::ZERO, false);
     assert_eq!(
         sh.cfg.profiles[0].active_page, 0,
         "o primeiro toque usa a ação normal"
     );
-    trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);
+    trigger(&mut sh, &tx, &exec, 0, Duration::ZERO, false);
     assert_eq!(
         sh.cfg.profiles[0].active_page, 1,
         "o segundo usa a do estado ligado"
@@ -164,7 +164,7 @@ async fn a_brightness_key_changes_the_device_and_not_the_page() {
     let exec = Executor::new(tokio::runtime::Handle::current());
     let mut sh = two_page_state(ButtonAction::Brightness { delta: -30 }, None);
     sh.cfg.ui.brightness = 80;
-    trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);
+    trigger(&mut sh, &tx, &exec, 0, Duration::ZERO, false);
     assert_eq!(sh.cfg.ui.brightness, 50);
     let sent: Vec<UsbCmd> = rx.try_iter().collect();
     assert!(matches!(sent.as_slice(), [UsbCmd::Brightness(50)]));
@@ -192,13 +192,13 @@ async fn a_long_press_with_its_own_action_does_not_flip_a_two_state_key() {
         Some(ButtonAction::SwitchPage { page: 2 }),
     );
     sh.cfg.page_mut().buttons[0].toggled_appearance = Some(ButtonConfig::blank().appearance);
-    trigger(&mut sh, &tx, &exec, 0, Duration::from_secs(1));
+    trigger(&mut sh, &tx, &exec, 0, Duration::from_secs(1), false);
     assert_eq!(sh.cfg.profiles[0].active_page, 1, "a ação longa rodou");
     assert!(!sh.cfg.profiles[0].pages[0].buttons[0].toggle_state);
     // Sem ação longa, segurar ainda conta como toque e alterna.
     sh.cfg.profiles[0].active_page = 0;
     sh.cfg.page_mut().buttons[0].long_press_action = None;
-    trigger(&mut sh, &tx, &exec, 0, Duration::from_secs(1));
+    trigger(&mut sh, &tx, &exec, 0, Duration::from_secs(1), false);
     assert!(sh.cfg.page().buttons[0].toggle_state);
 }
 
@@ -216,7 +216,7 @@ async fn a_key_press_waits_for_a_drawing_in_progress() {
         move || {
             // Espera o desenho abaixo já estar em andamento.
             pressed_rx.recv().unwrap();
-            press(&state, &tx, &exec, 0, Duration::ZERO)
+            press(&state, &tx, &exec, 0, Duration::ZERO, false);
         }
     });
     {
@@ -230,7 +230,7 @@ async fn a_key_press_waits_for_a_drawing_in_progress() {
             "o aperto não pode entrar no meio do desenho"
         );
     }
-    assert_eq!(pressed.join().unwrap(), None);
+    pressed.join().unwrap();
     assert_eq!(lock(&state).cfg.profiles[0].active_page, 1);
     assert_eq!(key_frames(&rx), 15);
 }
@@ -364,7 +364,7 @@ async fn a_page_switch_also_redraws_that_pages_side_screen() {
     let exec = Executor::new(tokio::runtime::Handle::current());
     let mut sh = two_page_state(ButtonAction::SwitchPage { page: 2 }, None);
     sh.cfg.profiles[0].pages[1].side = SideScreen::PageName;
-    trigger(&mut sh, &tx, &exec, 0, Duration::ZERO);
+    trigger(&mut sh, &tx, &exec, 0, Duration::ZERO, false);
     let sides: Vec<SideFrame> = rx
         .try_iter()
         .filter_map(|c| match c {

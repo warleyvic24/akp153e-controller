@@ -1,31 +1,43 @@
 //! Aparência da interface: paleta escura/clara, cor de destaque do usuário, fontes do Windows e estilo dos widgets.
 use crate::config::schema::{Theme, UiSettings};
 use crate::editor::omarchy;
+use crate::editor::tokens::{
+    elevation, motion, radius, space, text, COMPONENT_MIN_CONTRAST, TARGET_MIN,
+};
 #[cfg(test)]
-use crate::editor::tokens::TEXT_MIN_CONTRAST;
-use crate::editor::tokens::{radius, space, text, COMPONENT_MIN_CONTRAST};
+use crate::editor::tokens::{TEXT_AAA_CONTRAST, TEXT_MIN_CONTRAST};
 use eframe::egui::{
     self, Color32, Context, FontData, FontDefinitions, FontFamily, FontId, Stroke, TextStyle,
     Visuals,
 };
 
 /// Cores de destaque sugeridas (o usuário também pode escolher qualquer outra).
-pub const ACCENTS: [(&str, [u8; 3]); 6] = [
-    ("Ciano", [0, 229, 255]),
-    ("Magenta", [255, 43, 214]),
-    ("Verde-ácido", [57, 255, 20]),
-    ("Roxo", [176, 110, 255]),
-    ("Laranja", [255, 140, 40]),
-    ("Azul", [70, 130, 255]),
+/// Paleta moderna inspirada em design systems contemporâneos (Linear, Vercel, Stripe).
+pub const ACCENTS: [(&str, [u8; 3]); 8] = [
+    ("Índigo", [99, 102, 241]),    // Modern indigo - professional
+    ("Esmeralda", [16, 185, 129]), // Fresh emerald - success
+    ("Rosa", [236, 72, 153]),      // Modern pink - creative
+    ("Âmbar", [245, 158, 11]),     // Warm amber - warning
+    ("Ciano", [6, 182, 212]),      // Cyan - tech
+    ("Violeta", [168, 85, 247]),   // Purple - creative
+    ("Laranja", [249, 115, 22]),   // Orange - energy
+    ("Vermelho", [239, 68, 68]),   // Red - danger
 ];
 
-const HOVER_TINT: f32 = 0.16;
-const SHADOW_OFFSET_Y: f32 = 8.0;
+const HOVER_TINT: f32 = 0.12; // Subtler hover
 const CONTRAST_STEPS: u8 = 20;
 pub const DEVICE_FG: [u8; 3] = [176, 184, 210];
-const RAIL_TINT: f32 = 0.2;
+const RAIL_TINT: f32 = 0.18; // Softer rail
 /// Base do hover quando o tema vem do Omarchy: um passo da superfície rumo ao texto.
-const OMARCHY_HOVER_BASE_TINT: f32 = 0.1;
+const OMARCHY_HOVER_BASE_TINT: f32 = 0.08;
+/// Base do hover no tema escuro: neutra, um passo acima da superfície elevada.
+const DARK_HOVER_BASE_TINT: f32 = 0.06;
+/// Largura da barra de rolagem flutuante (fina em repouso, cresce ao apontar).
+const SCROLL_BAR_WIDTH: f32 = 6.0;
+/// Espera antes de uma dica aparecer: o bastante para não piscar ao cruzar a tela com o mouse.
+const TOOLTIP_DELAY: f32 = 0.35;
+/// Ao passar de um controle a outro, a dica seguinte aparece sem nova espera durante este tempo.
+const TOOLTIP_GRACE: f32 = 0.4;
 pub const DISPLAY_FAMILY: &str = "display";
 
 /// Superfícies e textos de um tema (o aparelho e as teclas ficam escuros nos dois).
@@ -116,6 +128,7 @@ pub fn is_dark(theme: Theme) -> bool {
     match theme {
         Theme::Dark => true,
         Theme::Light => false,
+        Theme::HighContrast => true,
         Theme::Omarchy => omarchy::current().is_none_or(|t| t.dark),
     }
 }
@@ -129,42 +142,69 @@ fn base_palette(theme: Theme) -> Palette {
             None => base_palette(Theme::Dark),
         },
         Theme::Dark => Palette {
-            bg: c(7, 8, 16),
-            panel: c(13, 15, 28),
-            raise: c(19, 22, 40),
-            field: c(10, 12, 22),
-            line: c(40, 46, 84),
-            fg: c(234, 238, 250),
-            muted: c(140, 150, 185),
-            device: c(4, 5, 12),
-            bezel: c(22, 26, 48),
-            keyoff: c(0, 0, 0),
-            ok: c(52, 211, 153),
-            bad: c(248, 113, 113),
+            // Preto de verdade (OLED), com superfícies neutras em degraus curtos: a hierarquia
+            // vem da elevação e dos filetes, não de um tom azulado.
+            bg: c(0, 0, 0),          // Palco: preto puro, o aparelho "flutua" nele
+            panel: c(0, 0, 0),       // Barras e painéis: também pretos, separados por filetes
+            raise: c(18, 18, 22),    // Cartões, menus, modais, botões
+            field: c(11, 11, 14),    // Campos: um degrau acima do preto, com borda de controle
+            line: c(38, 38, 45),     // Filetes: discretos no preto (a borda de controle tem 3:1)
+            fg: c(244, 244, 246),    // Texto
+            muted: c(163, 163, 175), // Texto secundário (≥ 7:1, AAA, em todas as superfícies)
+            device: c(14, 14, 17),   // Corpo do aparelho
+            bezel: c(40, 40, 46),    // Moldura do aparelho
+            keyoff: c(0, 0, 0),      // Tecla apagada
+            ok: c(52, 211, 153),     // Esmeralda
+            bad: c(252, 129, 129),   // Vermelho suave (7:1 no preto e no elevado)
             control: Color32::TRANSPARENT,
             device_fg,
         },
         Theme::Light => Palette {
-            bg: c(233, 237, 243),
-            panel: c(255, 255, 255),
-            raise: c(244, 246, 250),
-            field: c(241, 244, 248),
-            line: c(213, 219, 229),
-            fg: c(22, 27, 38),
-            muted: c(95, 104, 120),
-            device: c(20, 23, 29),
-            bezel: c(42, 47, 58),
+            bg: c(243, 245, 249),    // Palco: um degrau abaixo dos painéis
+            panel: c(255, 255, 255), // Painéis brancos
+            raise: c(250, 251, 253), // Cartões e menus: distintos do painel
+            field: c(246, 248, 251), // Campos
+            line: c(226, 232, 240),  // Filetes
+            fg: c(15, 23, 42),       // Slate 900
+            muted: c(64, 76, 96),    // Slate 650: ≥ 7:1 (AAA) também sobre o palco
+            device: c(15, 23, 42),   // Deep device surface
+            bezel: c(71, 85, 105),   // Slate 600
             keyoff: c(0, 0, 0),
-            ok: c(16, 110, 74),
-            bad: c(185, 40, 55),
+            ok: c(4, 84, 62),    // Esmeralda escura: 7:1 sobre o branco e o palco
+            bad: c(150, 18, 32), // Vermelho escuro: 7:1 sobre o branco e o palco
             control: Color32::TRANSPARENT,
             device_fg,
+        },
+        // Alto contraste: preto puro, texto branco, filetes claros e bordas grossas (ver `apply`).
+        Theme::HighContrast => Palette {
+            bg: c(0, 0, 0),
+            panel: c(0, 0, 0),
+            raise: c(10, 10, 10),
+            field: c(0, 0, 0),
+            line: c(200, 200, 200),
+            fg: c(255, 255, 255),
+            muted: c(230, 230, 230),
+            device: c(0, 0, 0),
+            bezel: c(128, 128, 128),
+            keyoff: c(0, 0, 0),
+            ok: c(80, 255, 160),
+            bad: c(255, 120, 120),
+            control: Color32::TRANSPARENT,
+            device_fg: c(255, 255, 255),
         },
     }
 }
 
+/// Destaque do alto contraste: amarelo, 15:1 sobre o preto (a escolha do usuário volta ao sair).
+pub const HIGH_CONTRAST_ACCENT: Color32 = Color32::from_rgb(255, 214, 0);
+/// Espessura das bordas de controle no alto contraste (no normal, 1 px).
+const HIGH_CONTRAST_STROKE: f32 = 2.0;
+
 /// A cor de destaque: a escolhida pelo usuário, ou a do tema quando ele vem do Omarchy.
 pub fn accent_color(ui: &UiSettings) -> Color32 {
+    if ui.theme == Theme::HighContrast {
+        return HIGH_CONTRAST_ACCENT;
+    }
     if ui.theme == Theme::Omarchy {
         if let Some(t) = omarchy::current() {
             return t.accent;
@@ -232,6 +272,17 @@ pub fn readable_on(bg: Color32) -> Color32 {
 pub fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
     let m = |x: u8, y: u8| (x as f32 * (1.0 - t) + y as f32 * t).round() as u8;
     Color32::from_rgb(m(a.r(), b.r()), m(a.g(), b.g()), m(a.b(), b.b()))
+}
+
+/// Sombra de um degrau de `tokens::elevation`; no escuro mais densa (sobre o preto, só ela não
+/// some), no claro bem leve.
+pub fn shadow((offset, blur): (i8, u8), dark: bool) -> egui::epaint::Shadow {
+    egui::epaint::Shadow {
+        offset: [0, offset],
+        blur,
+        spread: 0,
+        color: Color32::from_black_alpha(if dark { 190 } else { 34 }),
+    }
 }
 
 pub fn display_font(size: f32) -> FontId {
@@ -340,49 +391,91 @@ pub fn apply(ctx: &Context, ui: &UiSettings) {
     v.override_text_color = Some(p.fg);
     let ink = ink(accent, &p);
     v.window_corner_radius = egui::CornerRadius::from(radius::CARD);
-    v.window_stroke = Stroke::new(1.0_f32, p.control);
-    let shadow = egui::epaint::Shadow {
-        offset: [0, SHADOW_OFFSET_Y as i8],
-        blur: 24,
-        spread: 0,
-        color: Color32::from_black_alpha(if dark { 150 } else { 45 }),
-    };
-    v.window_shadow = shadow;
-    v.popup_shadow = shadow;
+    v.window_shadow = shadow(elevation::MODAL, dark);
+    v.popup_shadow = shadow(elevation::POPUP, dark);
+    v.window_stroke = Stroke::new(1.0_f32, p.line);
     v.menu_corner_radius = egui::CornerRadius::from(radius::CARD);
+    v.text_cursor.stroke = Stroke::new(2.0_f32, ink);
+    v.striped = false;
     let round = egui::CornerRadius::from(radius::CONTROL);
     let base = match ui.theme {
         Theme::Omarchy => mix(p.raise, p.fg, OMARCHY_HOVER_BASE_TINT),
-        _ if dark => Color32::from_rgb(32, 37, 58),
-        _ => Color32::from_rgb(232, 237, 245),
+        _ if dark => mix(p.raise, p.fg, DARK_HOVER_BASE_TINT),
+        _ => Color32::from_rgb(242, 245, 250),
     };
     let hover_fill = mix(base, accent, HOVER_TINT);
+    // `open` é o combo com a lista aberta: sem ele o egui pinta o cinza padrão no meio do preto.
     for (w, fill) in [
         (&mut v.widgets.noninteractive, p.panel),
         (&mut v.widgets.inactive, p.raise),
         (&mut v.widgets.hovered, hover_fill),
         (&mut v.widgets.active, hover_fill),
+        (&mut v.widgets.open, hover_fill),
     ] {
         w.bg_fill = fill;
         w.weak_bg_fill = fill;
         w.bg_stroke = Stroke::new(1.0_f32, p.line);
         w.corner_radius = round;
         w.fg_stroke = Stroke::new(1.0_f32, p.fg);
+        w.expansion = 0.0;
     }
+    // Separadores e filetes de painel: o tom mais baixo da paleta.
+    v.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, p.line);
+    v.widgets.noninteractive.fg_stroke = Stroke::new(1.0_f32, p.muted);
     // A trilha do slider usa `bg_fill`; com o mesmo cinza do painel ela some.
     v.widgets.inactive.bg_fill = mix(p.raise, p.fg, RAIL_TINT);
     // Controles em repouso precisam de borda com 3:1 (WCAG 1.4.11); `line` fica para separadores.
     v.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, p.control);
     v.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, ink);
     v.widgets.active.bg_stroke = Stroke::new(1.0_f32, ink);
+    v.widgets.open.bg_stroke = Stroke::new(1.0_f32, ink);
+    v.interact_cursor = Some(egui::CursorIcon::PointingHand);
     v.selection.bg_fill = accent;
     v.selection.stroke = Stroke::new(1.0_f32, readable_on(accent));
+    if ui.theme == Theme::HighContrast {
+        // Bordas e cursor grossos: nenhum controle depende de um filete de 1 px para ser achado.
+        let w = HIGH_CONTRAST_STROKE;
+        v.widgets.inactive.bg_stroke = Stroke::new(w, p.control);
+        v.widgets.hovered.bg_stroke = Stroke::new(w, accent);
+        v.widgets.active.bg_stroke = Stroke::new(w, accent);
+        v.widgets.open.bg_stroke = Stroke::new(w, accent);
+        v.window_stroke = Stroke::new(w, p.line);
+        v.text_cursor.stroke = Stroke::new(w + 1.0, accent);
+    }
+    v.window_highlight_topmost = false;
     v.hyperlink_color = ink;
     ctx.set_visuals(v);
+    // Tamanho da interface (WCAG 1.4.4): texto e alvos de clique crescem juntos.
+    ctx.set_zoom_factor(f32::from(ui.ui_scale.clamp(50, 300)) / 100.0);
     ctx.all_styles_mut(|s| {
-        s.spacing.item_spacing = egui::vec2(space::SM, space::SM);
-        s.spacing.button_padding = egui::vec2(space::MD, 6.0);
-        s.spacing.interact_size.y = 28.0;
+        s.spacing.item_spacing = egui::vec2(space::SM + 2.0, space::SM + 2.0);
+        s.spacing.button_padding = egui::vec2(space::MD + 2.0, 7.0);
+        s.spacing.interact_size.y = TARGET_MIN;
+        s.spacing.menu_margin = egui::Margin::same(space::SM as i8);
+        s.spacing.window_margin = egui::Margin::same(space::LG as i8);
+        s.spacing.combo_width = 0.0;
+        s.spacing.icon_width = text::BODY + 2.0;
+        s.spacing.icon_width_inner = text::BODY - 4.0;
+        s.spacing.slider_rail_height = 4.0;
+        // A barra flutuante some quando o ponteiro sai; com movimento reduzido ou alto contraste
+        // ela fica sempre à vista (achar a barra não pode depender do hover).
+        let mut scroll = if ui.reduce_motion || ui.theme == Theme::HighContrast {
+            egui::style::ScrollStyle::solid()
+        } else {
+            egui::style::ScrollStyle::floating()
+        };
+        scroll.bar_width = if ui.theme == Theme::HighContrast {
+            SCROLL_BAR_WIDTH * 2.0
+        } else {
+            SCROLL_BAR_WIDTH
+        };
+        s.spacing.scroll = scroll;
+        s.interaction.selectable_labels = false;
+        s.interaction.tooltip_delay = TOOLTIP_DELAY;
+        s.interaction.tooltip_grace_time = TOOLTIP_GRACE;
+        // Abrir/fechar seções, rolagem e realces seguem o mesmo ritmo dos controles desenhados à mão.
+        // Movimento reduzido (WCAG 2.3.3): sem animação de abrir/fechar em lugar nenhum.
+        s.animation_time = if ui.reduce_motion { 0.0 } else { motion::BASE };
         s.visuals.slider_trailing_fill = true;
         s.text_styles
             .insert(TextStyle::Heading, display_font(text::DISPLAY));
@@ -393,7 +486,7 @@ pub fn apply(ctx: &Context, ui: &UiSettings) {
         s.text_styles
             .insert(TextStyle::Small, FontId::proportional(text::CAPTION));
         s.text_styles
-            .insert(TextStyle::Monospace, FontId::monospace(text::CAPTION));
+            .insert(TextStyle::Monospace, FontId::monospace(text::SMALL));
     });
 }
 
@@ -462,7 +555,7 @@ mod tests {
 
     #[test]
     fn palettes_meet_wcag_for_text_and_controls() {
-        for t in [Theme::Dark, Theme::Light] {
+        for t in [Theme::Dark, Theme::Light, Theme::HighContrast] {
             let p = palette(t);
             for (name, fg) in [
                 ("fg", p.fg),
@@ -472,8 +565,9 @@ mod tests {
             ] {
                 for (surface, bg) in [("panel", p.panel), ("raise", p.raise), ("bg", p.bg)] {
                     let ratio = contrast(fg, bg);
+                    // AAA (1.4.6): 7:1 em todo texto, inclusive o secundário e os de estado.
                     assert!(
-                        ratio >= TEXT_MIN_CONTRAST,
+                        ratio >= TEXT_AAA_CONTRAST,
                         "{name} sobre {surface} ({t:?}): {ratio:.2}:1"
                     );
                 }

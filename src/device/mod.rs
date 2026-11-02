@@ -61,6 +61,11 @@ pub fn find(vid: u16, pid: u16) -> Option<&'static DeviceModel> {
     catalog().iter().find(|m| m.matches(vid, pid))
 }
 
+/// O modelo do aparelho pelo id (ex.: \"ajazz-akp153e\").
+pub fn find_by_id(id: &str) -> Option<&'static DeviceModel> {
+    catalog().iter().find(|m| m.id == id)
+}
+
 /// Todos os pares VID/PID conhecidos.
 pub fn known_ids() -> Vec<(u16, u16)> {
     catalog()

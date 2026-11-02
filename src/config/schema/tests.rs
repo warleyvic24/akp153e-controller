@@ -297,15 +297,25 @@ fn brightness_above_the_maximum_is_clamped_on_load() {
 
 #[test]
 fn old_config_without_ui_settings_gets_the_defaults() {
-    let json = serde_json::to_string(&AppConfig::default())
-        .unwrap()
-        .replace(
-            ",\"ui\":{\"theme\":\"dark\",\"accent\":[0,229,255],\"brightness\":100,\"language\":\"pt\",\"sleep_minutes\":0}",
-            "",
-        );
+    let mut value = serde_json::to_value(AppConfig::default()).unwrap();
+    value.as_object_mut().unwrap().remove("ui");
+    let json = value.to_string();
     assert!(!json.contains("\"ui\""));
     let cfg: AppConfig = serde_json::from_str(&json).unwrap();
     assert_eq!(cfg.ui, UiSettings::default());
+}
+
+#[test]
+fn old_ui_settings_get_normal_size_and_motion() {
+    let ui: UiSettings = serde_json::from_str(
+        r#"{"theme":"dark","accent":[0,229,255],"brightness":100,"language":"pt","sleep_minutes":0}"#,
+    )
+    .unwrap();
+    assert_eq!(ui.ui_scale, 100);
+    assert!(!ui.reduce_motion);
+    let contrast: UiSettings =
+        serde_json::from_str(r#"{"theme":"high-contrast","accent":[0,0,0]}"#).unwrap();
+    assert_eq!(contrast.theme, Theme::HighContrast);
 }
 
 #[test]
@@ -530,4 +540,55 @@ fn a_folder_comes_with_a_back_key_and_next_page_skips_it() {
     // Uma config antiga (sem o campo) lê como página comum e não grava o campo à toa.
     let json = serde_json::to_string(&AppConfig::default()).unwrap();
     assert!(!json.contains("folder"));
+}
+
+fn bank(name: &str, sounds: &[&str]) -> ButtonConfig {
+    let mut b = ButtonConfig::blank();
+    b.action = ButtonAction::SoundBank {
+        name: name.into(),
+        sounds: sounds.iter().map(|s| s.to_string()).collect(),
+    };
+    b
+}
+
+#[test]
+fn sound_banks_come_from_every_page_and_skip_empty_ones() {
+    let mut cfg = AppConfig::default();
+    cfg.page_mut().buttons[0] = bank("Risos", &["/a.ogg", "/b.ogg"]);
+    cfg.page_mut().buttons[1] = bank("", &["/sem-nome.ogg"]);
+    cfg.page_mut().buttons[2] = bank("Vazio", &[]);
+    cfg.add_profile("Outro");
+    cfg.profiles[1].pages[0].buttons[0] = bank("Vinhetas", &["/v.ogg"]);
+    let banks = cfg.sound_banks();
+    assert_eq!(banks.keys().collect::<Vec<_>>(), ["Risos", "Vinhetas"]);
+    assert_eq!(banks["Risos"], ["/a.ogg", "/b.ogg"]);
+}
+
+#[test]
+fn plays_sound_bank_looks_inside_steps_and_gestures() {
+    let play = ButtonAction::PlaySoundBank {
+        bank: "Risos".into(),
+        index: 0,
+        volume: 1.0,
+    };
+    assert!(play.plays_sound_bank());
+    assert!(ButtonAction::MultiAction {
+        steps: vec![ButtonAction::Delay { ms: 1 }, play.clone()],
+    }
+    .plays_sound_bank());
+    assert!(ButtonAction::PressHold {
+        tap: Box::new(ButtonAction::None),
+        hold: Box::new(play.clone()),
+        threshold_ms: 500,
+    }
+    .plays_sound_bank());
+    assert!(ButtonAction::DoubleTap {
+        action: Box::new(play),
+        window_ms: 300,
+    }
+    .plays_sound_bank());
+    assert!(!ButtonAction::PlaySound {
+        path: "/a.ogg".into()
+    }
+    .plays_sound_bank());
 }

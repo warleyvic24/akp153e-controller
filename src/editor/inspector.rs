@@ -12,7 +12,6 @@ use eframe::egui::{self, vec2, Color32, CornerRadius, Frame, Margin, RichText, S
 use std::time::Duration;
 
 const APP_ROW_HEIGHT: f32 = 36.0;
-const APP_LIST_MAX_HEIGHT: f32 = 320.0;
 const APP_BADGE: f32 = 24.0;
 const APP_ROW_HOVER_TINT: f32 = 0.10;
 const INSPECTOR_MARGIN: f32 = 14.0;
@@ -20,8 +19,10 @@ const PREVIEW_KEY: f32 = 72.0;
 // O que a tecla faz vem antes de como ela parece.
 const TAB_NAMES: [&str; 2] = ["Ação", "Aparência"];
 pub(crate) const TAB_ACTION: usize = 0;
-const TEST_HEIGHT: f32 = 32.0;
 const MORE_MENU_WIDTH: f32 = 180.0;
+const BANNER_TINT: f32 = 0.10;
+const BANNER_STROKE_TINT: f32 = 0.45;
+const BANNER_ICON: f32 = 18.0;
 const LIVE_UNTESTABLE: &str = "Esta tecla só mostra informação; não há o que testar";
 
 /// Título do inspetor: o rótulo (numa linha só); sem ele, um nome curto do que a tecla faz (o
@@ -138,40 +139,49 @@ fn app_list(
 ) -> Option<apps::InstalledApp> {
     let q = query.to_lowercase();
     let mut chosen = None;
-    egui::ScrollArea::vertical()
-        .max_height(APP_LIST_MAX_HEIGHT)
-        .show(ui, |ui| {
-            let mut shown = 0;
-            for app in list
-                .iter()
-                .filter(|a| q.is_empty() || a.name.to_lowercase().contains(&q))
-            {
-                shown += 1;
-                // Só as linhas visíveis pedem o ícone (a lista pode ter centenas de apps).
-                let visible = ui.is_rect_visible(egui::Rect::from_min_size(
-                    ui.cursor().min,
-                    vec2(ui.available_width(), APP_ROW_HEIGHT),
-                ));
-                let icon = visible.then(|| icons.get(ui.ctx(), app)).flatten();
-                if app_row(ui, app, icon, pal).clicked() {
-                    chosen = Some(app.clone());
-                }
+    widgets::scroll_area(ui, pal, |ui| {
+        let mut shown = 0;
+        for app in list
+            .iter()
+            .filter(|a| q.is_empty() || a.name.to_lowercase().contains(&q))
+        {
+            shown += 1;
+            // Só as linhas visíveis pedem o ícone (a lista pode ter centenas de apps).
+            let visible = ui.is_rect_visible(egui::Rect::from_min_size(
+                ui.cursor().min,
+                vec2(ui.available_width(), APP_ROW_HEIGHT),
+            ));
+            let icon = visible.then(|| icons.get(ui.ctx(), app)).flatten();
+            if app_row(ui, app, icon, pal).clicked() {
+                chosen = Some(app.clone());
             }
-            if shown == 0 {
-                let msg = if list.is_empty() {
-                    t(crate::editor::picker::NO_APPS_FOUND).to_string()
-                } else {
-                    tf("Nada encontrado para “{}”.", &[&query])
-                };
-                ui.label(RichText::new(msg).color(pal.muted));
-            }
-        });
+        }
+        if shown == 0 {
+            let msg = if list.is_empty() {
+                t(crate::editor::picker::NO_APPS_FOUND).to_string()
+            } else {
+                tf("Nada encontrado para “{}”.", &[&query])
+            };
+            ui.label(RichText::new(msg).color(pal.muted));
+        }
+    });
     chosen
 }
 
 /// Item de menu com o atalho à direita.
-fn menu_item(ui: &mut egui::Ui, label: &str, shortcut: &str, enabled: bool) -> egui::Response {
-    ui.add_enabled(enabled, egui::Button::new(t(label)).shortcut_text(shortcut))
+fn menu_item(
+    ui: &mut egui::Ui,
+    label: &str,
+    shortcut: &str,
+    enabled: bool,
+    pal: &Palette,
+) -> egui::Response {
+    let icon = match label {
+        "Copiar" => Some("copy"),
+        "Colar" => Some("paste"),
+        _ => None,
+    };
+    widgets::menu_entry(ui, icon, label, shortcut, enabled, false, pal)
 }
 
 /// Id da janela da lista de apps (o título muda com o idioma).
@@ -212,6 +222,7 @@ impl App {
             open = false;
         }
         if let Some(app) = chosen {
+            widgets::modal_closed(ctx, APP_PICKER_ID);
             let at = self.picker.at;
             if let Some(b) = g.cfg.page_mut().buttons.get_mut(at.2) {
                 apply_app(b, &app, at, &self.picker.jobs);
@@ -244,17 +255,29 @@ impl App {
                 "Iniciar serviço",
             )
         };
+        let icon = if service_running { "unplug" } else { "power" };
+        let action_icon = if service_running {
+            "refresh-cw"
+        } else {
+            "play"
+        };
         ui.allocate_ui(egui::vec2(width, 0.0), |ui| {
             Frame::NONE
-                .fill(pal.bad.gamma_multiply(0.15))
-                .stroke(Stroke::new(1.0_f32, pal.bad.gamma_multiply(0.5)))
+                .fill(theme::mix(pal.panel, pal.bad, BANNER_TINT))
+                .stroke(Stroke::new(
+                    1.0_f32,
+                    theme::mix(pal.line, pal.bad, BANNER_STROKE_TINT),
+                ))
                 .corner_radius(CornerRadius::from(tokens::radius::CARD))
                 .inner_margin(Margin::symmetric(14, 10))
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.button(t(button)).clicked() {
+                            let kind = widgets::ButtonKind::Secondary;
+                            if widgets::button(ui, Some(action_icon), button, kind, true, 0.0, pal)
+                                .clicked()
+                            {
                                 if service_running {
                                     let _ = shell::send("reconnect");
                                 } else {
@@ -264,6 +287,12 @@ impl App {
                             ui.with_layout(
                                 egui::Layout::left_to_right(egui::Align::Center),
                                 |ui| {
+                                    let ink = theme::ensure_contrast(
+                                        pal.bad,
+                                        theme::mix(pal.panel, pal.bad, BANNER_TINT),
+                                        tokens::COMPONENT_MIN_CONTRAST,
+                                    );
+                                    widgets::icon(ui, icon, BANNER_ICON, ink);
                                     ui.horizontal_wrapped(|ui| {
                                         ui.label(RichText::new(t(title)).strong());
                                         ui.label(t(body));
@@ -283,7 +312,6 @@ impl App {
         g: &mut runtime::Shared,
         untestable: Option<&'static str>,
         pal: &Palette,
-        accent: Color32,
     ) {
         let sel = self.selected;
         ui.horizontal(|ui| {
@@ -294,48 +322,38 @@ impl App {
                 let more = widgets::icon_button(ui, "more", "Mais ações da tecla", true, pal);
                 egui::Popup::menu(&more).show(|ui| {
                     ui.set_min_width(MORE_MENU_WIDTH);
-                    if menu_item(ui, "Copiar", "Ctrl+C", true).clicked() {
+                    if menu_item(ui, "Copiar", "Ctrl+C", true, pal).clicked() {
                         self.copy_key(ui.ctx(), g, sel);
                     }
                     let can_paste = self.clipboard.is_some();
-                    if menu_item(ui, "Colar", "Ctrl+V", can_paste).clicked() {
+                    if menu_item(ui, "Colar", "Ctrl+V", can_paste, pal).clicked() {
                         self.paste_key(g, sel);
                     }
                     ui.separator();
-                    let clear = egui::Button::new(RichText::new(t("Limpar tecla")).color(pal.bad))
-                        .shortcut_text("Del");
-                    if ui.add(clear).clicked() {
+                    let clear = widgets::menu_entry(
+                        ui,
+                        Some("eraser"),
+                        "Limpar tecla",
+                        "Del",
+                        true,
+                        true,
+                        pal,
+                    );
+                    if clear.clicked() {
                         self.clear_key(g, sel);
                     }
                 });
-                // Sem o que testar, o botão perde o preenchimento: um primário apagado ainda
-                // parece clicável. Neutro com borda deixa claro que está desligado.
-                // Secundário: testar é ocasional, não a ação principal do painel.
-                let (fill, ink, stroke) = if untestable.is_none() {
-                    (
-                        pal.raise,
-                        theme::ink(accent, pal),
-                        Stroke::new(1.0_f32, pal.control),
-                    )
-                } else {
-                    (pal.field, pal.muted, Stroke::new(1.0_f32, pal.control))
-                };
-                let label = RichText::new(format!("▶  {}", t("Testar")))
-                    .strong()
-                    .color(ink);
-                let test = egui::Button::new(label)
-                    .fill(fill)
-                    .stroke(stroke)
-                    .min_size(vec2(ui.available_width(), TEST_HEIGHT));
-                let test = ui.add_enabled(untestable.is_none(), test);
-                let test = match untestable {
-                    Some(why) => test.on_disabled_hover_text(t(why)),
-                    None => test.on_hover_text(t("Executa a ação agora")),
-                };
-                test.widget_info(|| {
-                    egui::WidgetInfo::labeled(egui::Role::Button, untestable.is_none(), t("Testar"))
+                // Sem o que testar, o botão fica desligado (neutro, sem preenchimento): um
+                // primário apagado ainda pareceria clicável. A dica diz por que está desligado.
+                let kind = widgets::ButtonKind::Primary;
+                let width = ui.available_width();
+                let enabled = untestable.is_none();
+                let test = widgets::button(ui, Some("play"), "Testar", kind, enabled, width, pal);
+                let test = test.on_hover_text(match untestable {
+                    Some(why) => t(why).to_string(),
+                    None => t("Executa a ação agora").to_string(),
                 });
-                if test.clicked() {
+                if test.clicked() && untestable.is_none() {
                     self.test_key(g, sel);
                 }
             });
@@ -344,7 +362,7 @@ impl App {
 
     fn test_key(&mut self, g: &mut runtime::Shared, sel: usize) {
         let brightness = g.cfg.ui.brightness;
-        runtime::trigger(g, &self.tx, &self.exec, sel, Duration::ZERO);
+        runtime::trigger(g, &self.tx, &self.exec, sel, Duration::ZERO, false);
         // O brilho é do aparelho: muda aqui e vai a ele pelo salvamento (o "reload" do serviço).
         if g.cfg.ui.brightness != brightness {
             self.touch();
@@ -371,19 +389,34 @@ impl App {
     }
 
     /// Atalhos sobre a tecla selecionada: Del limpa, Ctrl+C copia, Ctrl+V cola. Ficam desligados
-    /// enquanto se digita, se grava um atalho ou há uma janela aberta.
+    /// enquanto grava um atalho ou há uma janela aberta. O Del é sempre verificado (mesmo com um
+    /// campo de texto focado, egui consome o Delete para apagar caractere e o consume_key não
+    /// retorna true, então não apaga a tecla por engano).
     pub(crate) fn key_shortcuts(&mut self, ctx: &egui::Context, g: &mut runtime::Shared) {
         let busy = self.recording.is_some() || self.picker.open || self.settings_open;
-        if busy || ctx.egui_wants_keyboard_input() {
+        if busy {
             return;
         }
-        let (copy, paste, clear) = ctx.input_mut(|i| {
-            let copy = i.events.iter().any(|e| matches!(e, egui::Event::Copy));
-            let paste = i.events.iter().any(|e| matches!(e, egui::Event::Paste(_)));
-            let clear = i.consume_key(egui::Modifiers::NONE, egui::Key::Delete);
-            (copy, paste, clear)
-        });
+
+        // Del é sempre verificado; se um campo de texto estiver focado, egui consome o Delete
+        // primeiro e o consume_key não retorna true, portanto não limpamos a tecla por engano.
+        let clear = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Delete));
+
+        // Copiar/colar só quando nenhum widget quer o teclado (não há campo de texto focado).
+        let (copy, paste) = if ctx.egui_wants_keyboard_input() {
+            (false, false)
+        } else {
+            ctx.input_mut(|i| {
+                let copy = i.events.iter().any(|e| matches!(e, egui::Event::Copy));
+                let paste = i.events.iter().any(|e| matches!(e, egui::Event::Paste(_)));
+                (copy, paste)
+            })
+        };
+
         let sel = self.selected.min(g.cfg.page().buttons.len() - 1);
+        if !ctx.egui_wants_keyboard_input() {
+            self.move_key_shortcut(ctx, g, sel);
+        }
         if copy {
             self.copy_key(ctx, g, sel);
         } else if paste {
@@ -391,6 +424,71 @@ impl App {
         } else if clear && !is_blank(&g.cfg.page().buttons[sel]) {
             self.clear_key(g, sel);
         }
+    }
+
+    /// Atalhos de navegação que valem em todo o editor (WCAG 2.1.1, tudo pelo teclado): Ctrl+F vai à
+    /// busca de ações, Ctrl+, abre as Preferências, F6 volta à tecla selecionada e Ctrl+1/Ctrl+2
+    /// trocam a aba do inspetor.
+    pub(crate) fn global_shortcuts(&mut self, ctx: &egui::Context) {
+        if self.recording.is_some() || self.picker.open || self.settings_open {
+            return;
+        }
+        let (ctrl, none) = (egui::Modifiers::CTRL, egui::Modifiers::NONE);
+        let (find, prefs, to_key, action_tab, look_tab) = ctx.input_mut(|i| {
+            (
+                i.consume_key(ctrl, egui::Key::F),
+                i.consume_key(ctrl, egui::Key::Comma),
+                i.consume_key(none, egui::Key::F6),
+                i.consume_key(ctrl, egui::Key::Num1),
+                i.consume_key(ctrl, egui::Key::Num2),
+            )
+        });
+        if find {
+            self.focus_search = true;
+            // Janela estreita: a biblioteca só aparece no lugar do inspetor.
+            self.library_open = true;
+        }
+        if prefs {
+            self.open_settings();
+        }
+        if to_key {
+            self.focus_key = true;
+        }
+        if action_tab {
+            self.tab = TAB_ACTION;
+        } else if look_tab {
+            self.tab = TAB_ACTION + 1;
+        }
+    }
+
+    /// Alt+setas: troca a tecla selecionada com a vizinha naquela direção. É a alternativa de
+    /// teclado ao arrastar uma tecla sobre outra (WCAG 2.5.7).
+    fn move_key_shortcut(&mut self, ctx: &egui::Context, g: &mut runtime::Shared, sel: usize) {
+        let alt = egui::Modifiers::ALT;
+        let dir = ctx.input_mut(|i| {
+            [
+                (egui::Key::ArrowLeft, vec2(-1.0, 0.0)),
+                (egui::Key::ArrowRight, vec2(1.0, 0.0)),
+                (egui::Key::ArrowUp, vec2(0.0, -1.0)),
+                (egui::Key::ArrowDown, vec2(0.0, 1.0)),
+            ]
+            .into_iter()
+            .find(|(k, _)| i.consume_key(alt, *k))
+            .map(|(_, d)| d)
+        });
+        let Some(to) = dir.and_then(|d| super::stage::neighbor(&self.key_rects, sel, d)) else {
+            return;
+        };
+        let buttons = &mut g.cfg.page_mut().buttons;
+        if to >= buttons.len() {
+            return;
+        }
+        buttons.swap(sel, to);
+        self.selected = to;
+        self.focus_key = true;
+        self.touch();
+        let msg = tf("Tecla {} movida para a {}", &[&(sel + 1), &(to + 1)]);
+        self.toasts.push(msg, Some("Desfazer"));
     }
 
     fn paste_key(&mut self, g: &mut runtime::Shared, sel: usize) {
@@ -430,7 +528,7 @@ impl App {
             .fill(pal.panel)
             .stroke(Stroke::new(1.0_f32, pal.line))
             .inner_margin(Margin::same(INSPECTOR_MARGIN as i8));
-        egui::Panel::right("insp")
+        let shown = egui::Panel::right("insp")
             .exact_size(width)
             .resizable(false)
             .frame(frame)
@@ -447,10 +545,12 @@ impl App {
                 // Primeiro qual tecla é e o que faz; depois o que dá para fazer com ela.
                 self.key_header(ui, ctx, b, sel, (icon_px, &targets), pal, accent);
                 if let Some(problem) = checks::button_problem(b, &targets) {
+                    let ink = theme::ensure_contrast(pal.bad, pal.panel, tokens::TEXT_MIN_CONTRAST);
                     let msg = RichText::new(format!("! {}", t(problem)))
                         .size(tokens::text::CAPTION)
-                        .color(pal.bad);
-                    ui.label(msg);
+                        .color(ink);
+                    let shown = ui.label(msg);
+                    widgets::live_region(ctx, shown.id);
                 }
                 let untestable = match b.action {
                     ButtonAction::None => Some(checks::NO_ACTION),
@@ -458,7 +558,7 @@ impl App {
                     _ => checks::action_problem(&b.action, &targets),
                 };
                 ui.add_space(tokens::space::XS);
-                self.quick_actions(ui, g, untestable, pal, accent);
+                self.quick_actions(ui, g, untestable, pal);
                 ui.add_space(tokens::space::SM);
                 let Some(b) = g.cfg.page_mut().buttons.get_mut(sel) else {
                     return;
@@ -471,13 +571,38 @@ impl App {
                     accent,
                     targets: &targets,
                 };
-                if self.tab_body(ui, &cx, b, sel) {
+                // O que o painel mudou precisa voltar daqui: descartado, a edição não era gravada
+                // nem entrava no desfazer.
+                let changed = widgets::scroll_area(ui, cx.pal, |ui| {
+                    let mut local_changed = false;
+                    match self.tab {
+                        TAB_ACTION => {
+                            local_changed |= action_pane(
+                                ui,
+                                &cx,
+                                b,
+                                &mut self.recording,
+                                &mut self.picker,
+                                &mut self.open_page,
+                            )
+                        }
+                        _ => local_changed |= appearance_pane(ui, b, cx.pal, cx.accent),
+                    };
+                    local_changed
+                });
+                if changed {
                     self.touch();
                 }
                 if let Some(id) = self.open_page.take() {
                     self.go_to_page(g, id);
                 }
             });
+        widgets::landmark(
+            ctx,
+            shown.response.id,
+            egui::accesskit::Role::Complementary,
+            "Tecla selecionada",
+        );
     }
 
     /// Miniatura da tecla, número, nome e o resumo da ação; a dica quando ainda está vazia.
@@ -529,7 +654,8 @@ impl App {
 
     fn tab_bar(&mut self, ui: &mut egui::Ui, pal: &Palette) {
         // Abas do mesmo tamanho, ocupando a largura do painel (trilho de 3 px de cada lado).
-        let width = (ui.available_width() - 6.0 - 2.0 * (TAB_NAMES.len() - 1) as f32)
+        // Trilho: 3 px de margem e 1 px de filete de cada lado.
+        let width = (ui.available_width() - 8.0 - 2.0 * (TAB_NAMES.len() - 1) as f32)
             / TAB_NAMES.len() as f32;
         widgets::segmented(ui, pal, |ui| {
             for (i, name) in TAB_NAMES.iter().enumerate() {
@@ -538,32 +664,5 @@ impl App {
                 }
             }
         });
-    }
-
-    /// Conteúdo da aba ativa; devolve `true` se algo mudou.
-    fn tab_body(
-        &mut self,
-        ui: &mut egui::Ui,
-        cx: &PaneCtx,
-        b: &mut ButtonConfig,
-        sel: usize,
-    ) -> bool {
-        let mut changed = false;
-        // Um estado de rolagem por botão e aba: trocar de um para outro volta ao topo.
-        let scroll = egui::ScrollArea::vertical().id_salt(("inspector", sel, self.tab));
-        scroll.show(ui, |ui| match self.tab {
-            TAB_ACTION => {
-                changed |= action_pane(
-                    ui,
-                    cx,
-                    b,
-                    &mut self.recording,
-                    &mut self.picker,
-                    &mut self.open_page,
-                )
-            }
-            _ => changed |= appearance_pane(ui, b, cx.pal, cx.accent),
-        });
-        changed
     }
 }

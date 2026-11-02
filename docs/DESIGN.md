@@ -35,7 +35,7 @@ espaçamento artificial entre letras (só o logotipo "Keyforge" o tem).
 
 | Papel | Uso |
 |---|---|
-| `bg` / `panel` / `raise` / `field` | fundo do palco e da bandeja / barra superior / inspetor e cartões / campos |
+| `bg` / `panel` / `raise` / `field` | fundo do palco / barras e painéis laterais / cartões, menus, modais e botões / campos. No tema escuro `bg` e `panel` são **preto puro** (#000): a hierarquia vem de filetes (`line`) e da elevação (`raise`), não de cinzas azulados |
 | `fg` / `muted` | texto / texto secundário e dicas (≥ 4,5:1 sobre `bg`, `panel` e `raise`) |
 | `line` | separadores e decoração. **Não** use como borda de controle |
 | `control` | borda de controles interativos, derivada de `line` até dar 3:1 |
@@ -57,6 +57,12 @@ espaçamento artificial entre letras (só o logotipo "Keyforge" o tem).
 | botão "Testar" | única ação sólida da tela (cor de destaque + texto preto ou branco por contraste). Sem o que testar fica neutro (fundo de campo, borda, texto apagado), não um destaque esmaecido |
 | ícone de app ou site na tecla | se o contraste médio com o fundo da tecla ficar abaixo de 2:1 (o logo escuro do GitHub na tecla preta), ganha uma placa arredondada clara ou escura (`renderer::plate_for`) |
 | `search_field` | campo de busca com lupa na margem esquerda; a dica é o nome falado |
+| `ui_icon` / `icon` | ícones de interface são Lucide de verdade (`assets/lucide-icons.tsv`), renderizados pelo `resvg` no tamanho exato em pixels físicos, em textura branca tingida na hora (cache por id e tamanho). Nomes curtos antigos (`close`, `undo`, `more`...) são mapeados em `UI_ICONS`; ids `lucide:nome` valem direto. Ícones **de tecla** continuam com `paint_icon` (a traço), fiéis ao que o aparelho desenha |
+| `button` (`ButtonKind`) | botão de texto com ícone Lucide opcional: `Primary` (destaque sólido + sombra suave + filete de luz), `Secondary` (superfície elevada + borda de controle), `Ghost` (sem borda). Repouso, hover, pressionado e desligado distintos; desligado = campo + texto apagado, nunca um primário esmaecido |
+| `menu_entry` | linha de menu com ícone, rótulo e atalho à direita; `danger` pinta em vermelho (excluir, limpar) |
+| `checkbox` | quadrado com borda de controle; marcado = destaque sólido com o `check` do Lucide; rótulo inteiro clicável |
+| `brand_mark` | marca do topo: quadrado no destaque com o teclado Lucide |
+| `fold` | seção recolhível com chevron Lucide (direita/baixo) |
 | grade de ícones (`editor/icon_picker.rs`) | 2000 ícones Lucide com busca (português ou inglês); sem busca, 40 sugestões para live; o ícone atual fica sempre visível na grade |
 | linha da biblioteca | sem alça de arrastar em repouso; ao passar o mouse, o selo "+ Tecla N" e o cursor de arrastar |
 

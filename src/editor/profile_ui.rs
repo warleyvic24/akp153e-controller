@@ -1,5 +1,5 @@
 //! Opções do perfil no menu "Perfil e página": troca automática pelo app em foco e exportar/importar.
-use super::{tokens, App};
+use super::{tokens, widgets, App};
 use crate::config::profile_io;
 use crate::config::schema::AppConfig;
 use crate::editor::theme::Palette;
@@ -75,12 +75,7 @@ impl App {
         let mut rule = g.cfg.profiles[prof].auto_app.clone().unwrap_or_default();
         let field = ui.scope(|ui| {
             ui.visuals_mut().widgets.inactive.bg_stroke = egui::Stroke::new(1.0_f32, pal.control);
-            ui.add(
-                egui::TextEdit::singleline(&mut rule)
-                    .hint_text(super::widgets::hint("ex.: obs, firefox", pal))
-                    .desired_width(RULE_FIELD_WIDTH),
-            )
-            .labelled_by(label)
+            widgets::text_field(ui, &mut rule, "ex.: obs, firefox", pal, false).labelled_by(label)
         });
         let mut changed = field.inner.changed();
         if !focus_supported() {
@@ -101,8 +96,10 @@ impl App {
                 );
                 ui.horizontal_wrapped(|ui| {
                     ui.set_max_width(RULE_FIELD_WIDTH + 40.0);
+                    let accent = ui.visuals().selection.bg_fill;
                     for app in recent {
-                        if ui.small_button(&app).clicked() {
+                        // Pílula, não `small_button`: alvo de 28 px (WCAG 2.5.8) com nome falado.
+                        if widgets::pill(ui, &app, false, accent, pal).clicked() {
                             rule = add_to_rule(&rule, &app);
                             changed = true;
                         }
@@ -123,8 +120,18 @@ impl App {
         ui: &mut egui::Ui,
         g: &mut runtime::Shared,
         prof: usize,
+        pal: &crate::editor::theme::Palette,
     ) {
-        if ui.button(t("Exportar perfil…")).clicked() {
+        let export = widgets::menu_entry(
+            ui,
+            Some("lucide:download"),
+            "Exportar perfil…",
+            "",
+            true,
+            false,
+            pal,
+        );
+        if export.clicked() {
             ui.close();
             let profile = &g.cfg.profiles[prof];
             let file = rfd::FileDialog::new()
@@ -139,7 +146,16 @@ impl App {
                 self.toasts.push(msg, None);
             }
         }
-        if ui.button(t("Importar perfil…")).clicked() {
+        let import = widgets::menu_entry(
+            ui,
+            Some("lucide:upload"),
+            "Importar perfil…",
+            "",
+            true,
+            false,
+            pal,
+        );
+        if import.clicked() {
             ui.close();
             let file = rfd::FileDialog::new()
                 .add_filter(t("Perfil do Keyforge"), &["json"])

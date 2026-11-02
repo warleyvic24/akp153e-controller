@@ -112,6 +112,31 @@ impl KeyTextures {
         if is_blank(b) {
             return None;
         }
+
+        // GIF animado: sempre re-render (o frame muda com o tempo) e pede repaint.
+        let is_gif = b
+            .appearance
+            .icon_path
+            .as_deref()
+            .is_some_and(|p| p.to_lowercase().ends_with(".gif"));
+        if is_gif {
+            ctx.request_repaint();
+            let stamp = Stamp {
+                button: b.clone(),
+                px,
+                minute: 0,
+                live: None,
+            };
+            let tex = upload(ctx, index, &stamp.draw());
+            let slot = &mut self.keys[index];
+            *slot = Some(CachedKey {
+                stamp,
+                tex,
+                pending: None,
+            });
+            return slot.as_ref().map(|c| c.tex.id());
+        }
+
         let stamp = Stamp {
             button: b.clone(),
             px,

@@ -1,4 +1,6 @@
 //! Campos de texto que editam uma lista (argumentos, teclas) sem perder o separador enquanto se digita.
+use crate::editor::theme::Palette;
+use crate::editor::widgets;
 use eframe::egui;
 
 /// Separa por espaços; aspas agrupam (`"a b"` é um argumento) e `""` é um argumento vazio.
@@ -65,13 +67,13 @@ pub fn list_field(
     items: &mut Vec<String>,
     parse: fn(&str) -> Vec<String>,
     join: fn(&[String]) -> String,
+    pal: &Palette,
 ) -> bool {
     let mut raw: String = ui.data_mut(|d| d.get_temp(id)).unwrap_or_default();
     if parse(&raw) != *items {
         raw = join(items);
     }
-    let changed = ui
-        .add(egui::TextEdit::singleline(&mut raw).desired_width(ui.available_width()))
+    let changed = widgets::text_field(ui, &mut raw, "", pal, false)
         .labelled_by(label)
         .changed();
     if changed {

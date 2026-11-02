@@ -80,3 +80,36 @@ fn the_editor_opens_dialogs_only_through_the_shared_modal() {
         .collect();
     assert!(raw.is_empty(), "janela crua no editor: {raw:?}");
 }
+
+/// Componentes de interface cruas do egui só podem viver em `widgets.rs`. Todo o resto do editor
+/// usa os wrappers canônicos (`text_field`, `secondary_button`, `slider`,
+/// `combo_box`, `scroll_area`, `checkbox`, `pill`, `icon_button`, `segment`, `status_chip`,
+/// `swatch`, `fold`, `modal`), que padronizam altura, raio, contraste e rótulo falado.
+#[test]
+fn no_raw_egui_widgets_outside_widgets_rs() {
+    let raw_widgets = [
+        "egui::TextEdit",
+        "egui::Button::new",
+        "egui::Slider::new",
+        "egui::ComboBox::from",
+        "egui::ScrollArea::",
+        "egui::CollapsingHeader::new",
+        "egui::Checkbox::new",
+    ];
+    let mut wrong = Vec::new();
+    for (file, src) in crate::test_support::sources_without_tests() {
+        if file == "editor/widgets.rs" || !file.starts_with("editor/") {
+            continue;
+        }
+        for rw in &raw_widgets {
+            if src.contains(rw) {
+                wrong.push(format!("{file} usa {rw}"));
+            }
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "componentes cruos do egui fora de widgets.rs:\\n{}",
+        wrong.join("\\n")
+    );
+}

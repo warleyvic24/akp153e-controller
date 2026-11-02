@@ -4,7 +4,7 @@ use crate::config::schema::{AppConfig, ButtonAction, ButtonConfig, RGBAColor, Si
 use crate::engine::actions::Executor;
 use crate::graphics::live_art::render_live;
 use crate::graphics::mixer_art::render_mixer_key;
-use crate::graphics::renderer::{encode_frame, render_button_frame};
+use crate::graphics::renderer::encode_frame;
 use crate::graphics::side::SideInfo;
 use crate::mixer::{MixerKey, MixerView};
 use crate::platform::live::Live;
@@ -60,13 +60,6 @@ pub fn lock(state: &SharedState) -> MutexGuard<'_, Shared> {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
-
-const PATTERN_FONT: f32 = 40.0;
-const CALIBRATION_SIZES: [u32; 15] = [
-    80, 85, 90, 95, 96, 100, 104, 108, 112, 116, 120, 124, 126, 128, 132,
-];
-const SWEEP_START: u32 = 118;
-const SWEEP_STEP: u32 = 2;
 
 /// Cópia dos botões da página ativa. Desenhar e codificar JPEG é lento: com a cópia, isso roda
 /// depois de soltar o lock, e o servidor de controle continua respondendo a `status`.
@@ -188,56 +181,6 @@ pub fn change_and_draw<R>(
 pub fn forget_mixer_drawing(state: &SharedState) {
     if let Some(mixer) = &lock(state).mixer {
         mixer.invalidate();
-    }
-}
-
-/// Padrão de diagnóstico: cada tecla com cor própria e o número dela (revela teclas que não atualizam,
-/// espelhamento e rotação). A configuração do usuário não é alterada; "reload" restaura as imagens.
-/// Calibração: com `px` fixo, todas as teclas recebem o mesmo tamanho; sem ele, cada tecla recebe um
-/// tamanho diferente de CALIBRATION_SIZES (na ordem da grade) para comparar numa foto só.
-pub fn render_calibration(key_count: usize, tx: &Sender<UsbCmd>, px: Option<u32>) {
-    for index in 0..key_count {
-        let size = px.unwrap_or(CALIBRATION_SIZES[index % CALIBRATION_SIZES.len()]);
-        let data = crate::graphics::renderer::encode_frame(
-            &crate::graphics::renderer::calibration_rgba(size),
-        );
-        let _ = tx.send(UsbCmd::Frame { index, data });
-    }
-}
-
-pub fn render_pattern(key_count: usize, tx: &Sender<UsbCmd>, px: Option<u32>) {
-    const HUES: [[u8; 3]; 6] = [
-        [200, 40, 40],
-        [40, 160, 60],
-        [50, 90, 210],
-        [200, 160, 30],
-        [150, 60, 190],
-        [30, 160, 170],
-    ];
-    for index in 0..key_count {
-        let mut b = ButtonConfig::blank();
-        let [r, g, bl] = HUES[index % HUES.len()];
-        b.appearance.background = RGBAColor {
-            r,
-            g,
-            b: bl,
-            a: 255,
-        };
-        b.appearance.text_color = RGBAColor {
-            r: 255,
-            g: 255,
-            b: 255,
-            a: 255,
-        };
-        let size = px.unwrap_or(SWEEP_START + SWEEP_STEP * index as u32);
-        b.appearance.text = if px.is_some() {
-            format!("{}", index + 1)
-        } else {
-            size.to_string()
-        };
-        b.appearance.font_size = PATTERN_FONT;
-        let data = render_button_frame(&b, size, size);
-        let _ = tx.send(UsbCmd::Frame { index, data });
     }
 }
 
@@ -405,7 +348,7 @@ fn dispatch(sh: &mut Shared, exec: &Executor, index: usize, action: ButtonAction
             if matches!(other, ButtonAction::MediaKey { .. }) {
                 live::wake();
             }
-            exec.run(other);
+            exec.run(other, &sh.cfg);
             return Followup::default();
         }
     }
@@ -425,25 +368,42 @@ pub fn trigger(
     exec: &Executor,
     index: usize,
     held: Duration,
+    is_double_tap: bool,
 ) {
-    trigger_locked(sh, exec, index, held).run(tx);
+    trigger_locked(sh, exec, index, held, is_double_tap).run(tx);
 }
 
 /// Parte do disparo que precisa do lock; `held` decide entre ação normal e de pressão longa.
-pub fn trigger_locked(sh: &mut Shared, exec: &Executor, index: usize, held: Duration) -> Followup {
+/// `is_double_tap` indica que a soltura foi dentro da janela de clique duplo da tecla.
+pub fn trigger_locked(
+    sh: &mut Shared,
+    exec: &Executor,
+    index: usize,
+    held: Duration,
+    is_double_tap: bool,
+) -> Followup {
     let Some(b) = sh.cfg.page().buttons.get(index).cloned() else {
         return Followup::default();
     };
     let long = held >= Duration::from_millis(b.long_press_threshold_ms);
     let long_action = b.long_press_action.as_ref().filter(|_| long);
+    // Clique duplo tem prioridade sobre toque curto, mas não sobre pressão longa.
+    let double_action = if is_double_tap && !long {
+        b.double_tap_action.as_ref()
+    } else {
+        None
+    };
     // A pressão longa com ação própria não é um toque: não alterna a tecla de dois estados.
-    let toggles = b.toggles() && long_action.is_none();
+    let toggles = b.toggles() && long_action.is_none() && double_action.is_none();
     // Tecla de dois estados: no segundo toque (já ligada) vale a ação do estado ligado, se houver.
     let tap = match (&b.toggled_action, b.toggle_state) {
         (Some(a), true) => a,
         _ => &b.action,
     };
-    let action = long_action.unwrap_or(tap).clone();
+    let action = double_action
+        .cloned()
+        .or_else(|| long_action.cloned())
+        .unwrap_or_else(|| tap.clone());
     if toggles {
         sh.cfg.page_mut().buttons[index].toggle_state = !b.toggle_state;
     }
@@ -464,11 +424,12 @@ fn press(
     exec: &Executor,
     index: usize,
     held: Duration,
+    is_double_tap: bool,
 ) -> Option<usize> {
     let _order = DRAW_ORDER
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let followup = trigger_locked(&mut lock(state), exec, index, held);
+    let followup = trigger_locked(&mut lock(state), exec, index, held, is_double_tap);
     let mixer_home = followup.mixer_home();
     followup.run(tx);
     mixer_home
@@ -635,6 +596,8 @@ pub fn spawn_status_poll(state: SharedState) {
 pub fn spawn(state: SharedState, tx: Sender<UsbCmd>, rx: Receiver<UsbEvent>, exec: Executor) {
     std::thread::spawn(move || {
         let mut down: [Option<Instant>; MAX_KEYS] = [None; MAX_KEYS];
+        // Último instante de soltura de cada tecla, para detecção de clique duplo.
+        let mut last_release: [Option<Instant>; MAX_KEYS] = [None; MAX_KEYS];
         let mut hold: Option<StepHold> = None;
         let mut next_refresh = Instant::now() + mixer_runtime::REFRESH;
         let mut was_open = false;
@@ -644,6 +607,7 @@ pub fn spawn(state: SharedState, tx: Sender<UsbCmd>, rx: Receiver<UsbEvent>, exe
                 // Uma tecla apertada num modo e solta no outro não vale: agiria na tela errada.
                 was_open = mixer_open;
                 down = [None; MAX_KEYS];
+                last_release = [None; MAX_KEYS];
                 hold = None;
             }
             let sleep_due = {
@@ -765,7 +729,21 @@ pub fn spawn(state: SharedState, tx: Sender<UsbCmd>, rx: Receiver<UsbEvent>, exe
                         down[index] = Some(Instant::now());
                         show_pressed(&state, &tx, index);
                     } else if let Some(since) = down[index].take() {
-                        let opener = press(&state, &tx, &exec, index, since.elapsed());
+                        let now = Instant::now();
+                        // Clique duplo: soltura dentro da janela após a soltura anterior da mesma tecla.
+                        let is_double_tap = {
+                            let sh = lock(&state);
+                            let b = sh.cfg.page().buttons.get(index);
+                            last_release[index].is_some_and(|t| {
+                                now.duration_since(t)
+                                    <= Duration::from_millis(
+                                        b.map_or(500, |b| b.double_tap_window_ms),
+                                    )
+                            })
+                        };
+                        last_release[index] = Some(now);
+                        let opener =
+                            press(&state, &tx, &exec, index, since.elapsed(), is_double_tap);
                         // Solta: a tecla volta ao desenho normal (o da página nova, se ela mudou).
                         redraw_key(&state, &tx, index);
                         if let Some(opener) = opener {
@@ -779,7 +757,10 @@ pub fn spawn(state: SharedState, tx: Sender<UsbCmd>, rx: Receiver<UsbEvent>, exe
     });
 }
 
+mod diagnostic;
 pub mod live;
+
+pub use diagnostic::{render_calibration, render_pattern};
 
 #[cfg(test)]
 mod tests;

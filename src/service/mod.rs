@@ -1,8 +1,15 @@
-//! Serviço em segundo plano: aparelho USB, ações, bandeja do sistema e servidor de controle
+//! Serviço em segundo plano: aparelho USB, ações, bandeja do sistema e porta de controle
 //! para o editor. Não cria janela, então não consome CPU quando está ocioso.
+//!
+//! Este módulo só monta as threads (`run`) e cuida do reinício após pânico; cada parte vive no
+//! seu arquivo: estado e teclas em `runtime.rs`, porta de controle em `control.rs` (formato em
+//! `protocol.rs`), OBS em `obs_runtime.rs`, mixer em `mixer_runtime.rs`, perfil automático em
+//! `auto_profile.rs`, descanso da tela em `sleep.rs` e autoteste em `selftest.rs`.
 mod auto_profile;
+mod control;
 pub(crate) mod mixer_runtime;
 mod obs_runtime;
+mod protocol;
 pub(crate) mod runtime;
 mod selftest;
 mod sleep;
@@ -10,20 +17,12 @@ mod sleep;
 use crate::config::schema::AppConfig;
 use crate::engine::actions::Executor;
 use crate::platform::shell;
-use crate::usb::{self, UsbCmd};
-use runtime::SharedState;
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use crate::usb;
+use std::net::TcpListener;
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::mpsc::{channel, Sender};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::channel;
 use std::time::{Duration, Instant};
-
-const CONTROL_DEADLINE: Duration = Duration::from_millis(500);
-const MAX_COMMAND_BYTES: usize = 256;
-const MAX_CONNECTIONS: usize = 8;
-const DIAGNOSTIC_PX: std::ops::RangeInclusive<u32> = 16..=256;
 
 /// Quedas seguidas por pânico antes de desistir de reiniciar (o contador viaja na variável `RESTART_ENV`).
 const MAX_QUICK_RESTARTS: u32 = 3;
@@ -128,7 +127,7 @@ pub fn run(open_editor: bool) {
     crate::platform::focus::spawn_watch(focus_tx);
     auto_profile::spawn(state.clone(), cmd_tx.clone(), focus_rx);
     obs_runtime::spawn(state.clone(), cmd_tx.clone(), obs_rx);
-    spawn_control_server(listener, state, cmd_tx, obs_tx);
+    control::spawn(listener, state, cmd_tx, obs_tx);
 
     let _tray = shell::create_tray();
     if open_editor {
@@ -138,184 +137,9 @@ pub fn run(open_editor: bool) {
     drop(rt);
 }
 
-/// Uma thread por conexão, com teto: um cliente lento não trava os demais comandos.
-fn spawn_control_server(
-    listener: TcpListener,
-    state: SharedState,
-    tx: Sender<UsbCmd>,
-    obs: Sender<crate::obs::ObsCall>,
-) {
-    std::thread::spawn(move || {
-        let active = Arc::new(AtomicUsize::new(0));
-        for conn in listener.incoming().flatten() {
-            if active.fetch_add(1, Ordering::SeqCst) >= MAX_CONNECTIONS {
-                active.fetch_sub(1, Ordering::SeqCst);
-                log::warn!("conexões de controle demais; descartada");
-                continue;
-            }
-            let (state, tx, active, obs) = (state.clone(), tx.clone(), active.clone(), obs.clone());
-            std::thread::spawn(move || {
-                handle(conn, &state, &tx, &obs);
-                active.fetch_sub(1, Ordering::SeqCst);
-            });
-        }
-    });
-}
-
-/// Lê uma linha de comando com tamanho e tempo totais limitados. Qualquer processo local pode
-/// conectar na porta; um cliente que mande 1 byte por vez não pode prender a thread nem a memória.
-fn read_command(conn: &mut TcpStream) -> Option<String> {
-    let deadline = Instant::now() + CONTROL_DEADLINE;
-    let mut line = Vec::with_capacity(32);
-    let mut byte = [0u8; 1];
-    loop {
-        let left = deadline.checked_duration_since(Instant::now())?;
-        conn.set_read_timeout(Some(left)).ok()?;
-        match conn.read(&mut byte) {
-            Ok(0) => break,
-            Ok(_) if byte[0] == b'\n' => break,
-            Ok(_) if line.len() < MAX_COMMAND_BYTES => line.push(byte[0]),
-            _ => return None,
-        }
-    }
-    String::from_utf8(line).ok()
-}
-
-/// Argumento de `calib`/`pattern`: vazio = varredura de tamanhos; senão, tamanho dentro de `DIAGNOSTIC_PX`.
-/// A porta aceita qualquer processo local, então o valor é limitado antes de alocar a imagem.
-fn parse_px(arg: &str) -> Result<Option<u32>, ()> {
-    let arg = arg.trim();
-    if arg.is_empty() {
-        return Ok(None);
-    }
-    match arg.parse::<u32>() {
-        Ok(px) if DIAGNOSTIC_PX.contains(&px) => Ok(Some(px)),
-        _ => {
-            log::warn!("tamanho fora de {DIAGNOSTIC_PX:?}: {arg}");
-            Err(())
-        }
-    }
-}
-
-/// Adota a config relida do disco e redesenha. `None` (arquivo sumido, travado num instante ou
-/// inválido) mantém a atual: cair na config padrão apagaria as teclas do aparelho até o próximo
-/// "reload". O backup de uma config inválida fica a cargo do editor, que usa `AppConfig::load`.
-fn reload(state: &SharedState, tx: &Sender<UsbCmd>, cfg: Option<AppConfig>) {
-    let Some(cfg) = cfg else {
-        log::warn!("reload: config ilegível ou inválida; mantida a atual");
-        return;
-    };
-    let brightness = cfg.ui.brightness;
-    let language = cfg.ui.language;
-    let brightness_changed = runtime::change_and_draw(state, tx, |sh| {
-        let changed = sh.cfg.ui.brightness != brightness;
-        sh.cfg = cfg;
-        // Com o mixer aberto, "reload" é o que restaura a tela: reenvia as 15 teclas dele.
-        if let Some(mixer) = &sh.mixer {
-            mixer.invalidate();
-        }
-        (changed, true)
-    });
-    usb::set_brightness(brightness);
-    // A mudança feita no editor tem de aparecer: acende a tela se ela estava em descanso.
-    runtime::lock(state).sleep.wake(brightness, tx);
-    // O menu da bandeja só muda de idioma quando o serviço reinicia; o resto vale já.
-    crate::strings::set_language(language);
-    if brightness_changed {
-        let _ = tx.send(UsbCmd::Brightness(brightness));
-    }
-}
-
-fn handle(
-    mut conn: TcpStream,
-    state: &SharedState,
-    tx: &Sender<UsbCmd>,
-    obs: &Sender<crate::obs::ObsCall>,
-) {
-    // A porta é TCP local: outro usuário da mesma máquina também conecta.
-    if !crate::platform::same_user(&conn) {
-        log::warn!("conexão de controle de outro usuário recusada");
-        return;
-    }
-    let Some(line) = read_command(&mut conn) else {
-        return;
-    };
-    match line.trim() {
-        "show" => shell::open_editor(),
-        "reconnect" => {
-            let _ = tx.send(UsbCmd::Reconnect);
-        }
-        "reload" => reload(state, tx, AppConfig::load_existing()),
-        // Estado do OBS para o editor (conectado, cenas, entradas), numa linha de JSON.
-        "obs-info" => {
-            let info = runtime::lock(state).obs.info_json();
-            let _ = writeln!(conn, "{info}");
-        }
-        other if other.starts_with("obs-run ") => {
-            match crate::obs::ObsCall::from_control(&other["obs-run ".len()..]) {
-                Some(call) => {
-                    let _ = obs.send(call);
-                }
-                None => log::warn!("comando do OBS desconhecido: {other}"),
-            }
-        }
-        // Apps que ganharam o foco há pouco, um por linha: o editor os sugere na troca automática.
-        "apps" => {
-            let recent = runtime::lock(state).recent_apps.join("\t");
-            let _ = writeln!(conn, "{recent}");
-        }
-        // Brilho ao vivo enquanto o usuário arrasta nas Preferências (a config grava depois).
-        other if other.starts_with("brightness ") => {
-            match other["brightness ".len()..].trim().parse::<u8>() {
-                Ok(level) if level <= crate::usb::MAX_BRIGHTNESS => {
-                    let _ = tx.send(UsbCmd::Brightness(level));
-                }
-                _ => log::warn!("brilho inválido: {other}"),
-            }
-        }
-        // Autoteste guiado no aparelho; responde "ok" ou o motivo de não começar.
-        "selftest" => {
-            let reply = selftest::start(state, tx);
-            let _ = writeln!(conn, "{reply}");
-        }
-        "status" => {
-            let sh = runtime::lock(state);
-            let _ = writeln!(conn, "{} {}", u8::from(sh.connected), sh.icon_px);
-        }
-        other if other.starts_with("calib") => {
-            let Ok(px) = parse_px(other.trim_start_matches("calib")) else {
-                return;
-            };
-            let key_count = runtime::lock(state).cfg.page().buttons.len();
-            runtime::render_calibration(key_count, tx, px);
-            runtime::forget_mixer_drawing(state);
-        }
-        other if other.starts_with("pattern") => {
-            let Ok(px) = parse_px(other.trim_start_matches("pattern")) else {
-                return;
-            };
-            let key_count = runtime::lock(state).cfg.page().buttons.len();
-            runtime::render_pattern(key_count, tx, px);
-            runtime::forget_mixer_drawing(state);
-        }
-        other => log::warn!("comando desconhecido: {other}"),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Abre uma conexão local; o lado do servidor é entregue a `read_command`.
-    fn serve_once(client: impl FnOnce(TcpStream) + Send + 'static) -> Option<String> {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap();
-        let client = std::thread::spawn(move || client(TcpStream::connect(addr).unwrap()));
-        let (mut server, _) = listener.accept().unwrap();
-        let line = read_command(&mut server);
-        client.join().unwrap();
-        line
-    }
 
     #[test]
     fn restarts_stop_after_three_quick_crashes_and_reset_when_stable() {
@@ -323,159 +147,5 @@ mod tests {
         assert_eq!(next_restart_count(2, false), Some(3));
         assert_eq!(next_restart_count(3, false), None);
         assert_eq!(next_restart_count(3, true), Some(1));
-    }
-
-    #[test]
-    fn a_normal_command_line_is_read() {
-        let line = serve_once(|mut c| c.write_all(b"status\n").unwrap());
-        assert_eq!(line.as_deref(), Some("status"));
-    }
-
-    #[test]
-    fn an_oversized_line_is_rejected() {
-        let line = serve_once(|mut c| c.write_all(&[b'a'; 400]).unwrap());
-        assert_eq!(line, None);
-    }
-
-    #[test]
-    fn a_client_dripping_bytes_hits_the_total_deadline() {
-        let started = Instant::now();
-        let line = serve_once(|mut c| {
-            for _ in 0..8 {
-                if c.write_all(b"a").is_err() {
-                    break;
-                }
-                std::thread::sleep(CONTROL_DEADLINE / 4);
-            }
-        });
-        assert_eq!(line, None);
-        assert!(started.elapsed() < CONTROL_DEADLINE * 3);
-    }
-
-    /// Manda `request` à porta como um cliente faria; devolve a resposta e o que foi ao USB.
-    fn command(request: &[u8], connected: bool) -> (String, Vec<UsbCmd>) {
-        let state = runtime::new_state(AppConfig::default(), 100);
-        runtime::lock(&state).connected = connected;
-        let (tx, rx) = channel();
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap();
-        let request = request.to_vec();
-        let client = std::thread::spawn(move || {
-            let mut c = TcpStream::connect(addr).unwrap();
-            // Um pedido recusado pode fechar a conexão antes de tudo ser enviado.
-            let _ = c.write_all(&request);
-            let mut reply = String::new();
-            let _ = c.read_to_string(&mut reply);
-            reply
-        });
-        let (server, _) = listener.accept().unwrap();
-        let (obs, _obs_rx) = channel();
-        handle(server, &state, &tx, &obs);
-        let reply = client.join().unwrap();
-        (reply, rx.try_iter().collect())
-    }
-
-    fn frames(sent: &[UsbCmd]) -> usize {
-        sent.iter()
-            .filter(|c| matches!(c, UsbCmd::Frame { .. }))
-            .count()
-    }
-
-    #[test]
-    fn a_line_exactly_at_the_limit_is_accepted_and_one_byte_more_is_not() {
-        let at_limit = serve_once(|mut c| {
-            c.write_all(&[b'a'; MAX_COMMAND_BYTES]).unwrap();
-            c.write_all(b"\n").unwrap();
-        });
-        assert_eq!(at_limit.map(|l| l.len()), Some(MAX_COMMAND_BYTES));
-        let over = serve_once(|mut c| {
-            let _ = c.write_all(&[b'a'; MAX_COMMAND_BYTES + 1]);
-            let _ = c.write_all(b"\n");
-        });
-        assert_eq!(over, None);
-    }
-
-    #[test]
-    fn a_line_closed_without_newline_is_still_read() {
-        let line = serve_once(|mut c| c.write_all(b"reconnect").unwrap());
-        assert_eq!(line.as_deref(), Some("reconnect"));
-    }
-
-    #[test]
-    fn invalid_utf8_is_rejected() {
-        let line = serve_once(|mut c| c.write_all(b"st\xFFtus\n").unwrap());
-        assert_eq!(line, None);
-    }
-
-    #[test]
-    fn status_reports_connection_and_key_size() {
-        assert_eq!(command(b"status\n", true).0, "1 100\n");
-        assert_eq!(command(b"  status  \n", false).0, "0 100\n");
-    }
-
-    #[test]
-    fn reconnect_asks_the_usb_thread_and_replies_nothing() {
-        let (reply, sent) = command(b"reconnect\n", false);
-        assert_eq!(reply, "");
-        assert!(matches!(sent.as_slice(), [UsbCmd::Reconnect]));
-    }
-
-    #[test]
-    fn unknown_or_oversized_commands_do_nothing() {
-        let oversized = [b'x'; MAX_COMMAND_BYTES * 2];
-        for request in [&b"rm -rf /\n"[..], b"STATUS\n", b"\n", &oversized] {
-            let (reply, sent) = command(request, true);
-            assert_eq!(reply, "", "{request:?}");
-            assert!(sent.is_empty(), "{request:?}");
-        }
-    }
-
-    #[test]
-    fn live_brightness_reaches_the_device_only_with_a_valid_level() {
-        let sent = command(b"brightness 40\n", true).1;
-        assert!(matches!(sent.as_slice(), [UsbCmd::Brightness(40)]));
-        for bad in [
-            &b"brightness 101\n"[..],
-            b"brightness -1\n",
-            b"brightness x\n",
-        ] {
-            assert!(command(bad, true).1.is_empty(), "{bad:?}");
-        }
-    }
-
-    #[test]
-    fn calibration_draws_every_key_only_with_a_valid_size() {
-        let keys = AppConfig::default().page().buttons.len();
-        assert_eq!(frames(&command(b"calib 100\n", true).1), keys);
-        assert_eq!(frames(&command(b"pattern 64\n", true).1), keys);
-        for bad in [&b"calib 9999\n"[..], b"calib abc\n", b"pattern 0\n"] {
-            assert_eq!(frames(&command(bad, true).1), 0, "{bad:?}");
-        }
-    }
-
-    #[test]
-    fn an_unreadable_config_on_reload_keeps_the_current_one() {
-        let mut current = AppConfig::default();
-        current.page_mut().buttons[0].appearance.text = "OBS".into();
-        let state = runtime::new_state(current.clone(), 100);
-        let (tx, rx) = channel();
-        reload(&state, &tx, None);
-        assert_eq!(runtime::lock(&state).cfg, current);
-        assert_eq!(rx.try_iter().count(), 0, "nada redesenhado");
-        reload(&state, &tx, Some(AppConfig::default()));
-        assert_eq!(runtime::lock(&state).cfg, AppConfig::default());
-        assert_eq!(
-            frames(&rx.try_iter().collect::<Vec<_>>()),
-            current.page().buttons.len()
-        );
-    }
-
-    #[test]
-    fn diagnostic_size_is_bounded() {
-        assert_eq!(parse_px(""), Ok(None));
-        assert_eq!(parse_px(" 100 "), Ok(Some(100)));
-        for bad in ["0", "15", "257", "4000000000", "-1", "abc"] {
-            assert_eq!(parse_px(bad), Err(()), "{bad}");
-        }
     }
 }

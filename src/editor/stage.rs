@@ -27,6 +27,10 @@ const LED_TOP: f32 = 9.0;
 const LED_HALO: f32 = 3.0;
 const LED_HALO_RADIUS: f32 = 4.0;
 const LED_RADIUS: f32 = 2.0;
+const GUIDE_ICON: f32 = 18.0;
+const DEVICE_SHADOW_ALPHA: u8 = 90;
+const BEZEL_SHEEN_ALPHA: u8 = 6;
+const BEZEL_RIM_ALPHA: u8 = 22;
 
 /// O que está sendo arrastado: uma ação da biblioteca ou o conteúdo de uma tecla.
 #[derive(Clone, Copy)]
@@ -111,18 +115,43 @@ fn paint_device_body(p: &egui::Painter, rect: Rect, pal: &Palette, accent: Color
     let screen = rect.shrink(BEZEL_INSET);
     let outer = CornerRadius::from(radius::DEVICE);
     let inner = CornerRadius::from(SCREEN_RADIUS);
+    // Sombra de contato (some no preto, dá chão ao aparelho no tema claro).
+    p.add(
+        egui::epaint::Shadow {
+            offset: [0, 18],
+            blur: 48,
+            spread: 0,
+            color: Color32::from_black_alpha(DEVICE_SHADOW_ALPHA),
+        }
+        .as_shape(rect, outer),
+    );
     p.rect_filled(rect, outer, pal.bezel);
+    // Metade de cima um tom mais clara: luz vinda de cima, como alumínio escovado.
+    let top = Rect::from_min_max(rect.min, pos2(rect.max.x, rect.center().y));
+    let r = radius::DEVICE as u8;
+    p.rect_filled(
+        top,
+        CornerRadius {
+            nw: r,
+            ne: r,
+            sw: 0,
+            se: 0,
+        },
+        Color32::from_white_alpha(BEZEL_SHEEN_ALPHA),
+    );
     p.rect_filled(screen, inner, pal.device);
     p.rect_stroke(
         screen,
         inner,
         Stroke::new(1.0_f32, Color32::from_black_alpha(160)),
-        egui::StrokeKind::Inside,
+        egui::StrokeKind::Outside,
     );
+    // Filete claro na borda: separa o aparelho do fundo preto sem brilho colorido (o brilho
+    // do destaque é reservado à tecla selecionada).
     p.rect_stroke(
         rect,
         outer,
-        Stroke::new(1.5_f32, accent.gamma_multiply(0.4)),
+        Stroke::new(1.0_f32, Color32::from_white_alpha(BEZEL_RIM_ALPHA)),
         egui::StrokeKind::Inside,
     );
     let led = if on { accent } else { pal.bad };
@@ -182,14 +211,36 @@ impl PageSlide {
 }
 
 /// Atalhos do palco (tecla e o que faz).
-const SHORTCUTS: [(&str, &str); 6] = [
+const SHORTCUTS: [(&str, &str); 10] = [
     ("Del", "limpar"),
     ("Ctrl C", "copiar"),
     ("Ctrl V", "colar"),
     ("Arraste", "trocar teclas"),
     ("Ctrl Z", "desfazer"),
     ("Setas", "andar entre as teclas"),
+    ("Alt Setas", "mover a tecla"),
+    ("Ctrl F", "buscar ação"),
+    ("F6", "voltar às teclas"),
+    ("Ctrl ,", "preferências"),
 ];
+
+/// Tecla vizinha de `from` na direção `dir` (um dos quatro eixos), pelos centros das teclas:
+/// a mais próxima à frente, preferindo a da mesma fileira ou coluna.
+pub(crate) fn neighbor(keys: &[Rect], from: usize, dir: egui::Vec2) -> Option<usize> {
+    let origin = keys.get(from)?.center();
+    let min_step = keys[from].width().min(keys[from].height()) / 2.0;
+    keys.iter()
+        .enumerate()
+        .filter(|(i, _)| *i != from)
+        .filter_map(|(i, r)| {
+            let d = r.center() - origin;
+            let along = d.x * dir.x + d.y * dir.y;
+            let across = (d.x * dir.y - d.y * dir.x).abs();
+            (along >= min_step).then_some((i, along + 2.0 * across))
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(i, _)| i)
+}
 
 /// Atalhos do palco em forma de tecla, para quem não sabe que eles existem.
 fn shortcut_hints(ui: &mut Ui, pal: &Palette) {
@@ -215,10 +266,13 @@ fn shortcut_hints(ui: &mut Ui, pal: &Palette) {
 
 /// Os atalhos do palco num balão, depois que a barra de dicas some.
 fn shortcuts_button(ui: &mut Ui, pal: &Palette) {
-    let resp = ui
-        .button(RichText::new("?").strong())
-        .on_hover_text(t("Atalhos do teclado"));
-    widgets::name(&resp, "Atalhos do teclado");
+    let resp = widgets::icon_button(
+        ui,
+        "lucide:circle-question-mark",
+        "Atalhos do teclado",
+        true,
+        pal,
+    );
     egui::Popup::from_toggle_button_response(&resp).show(|ui| {
         egui::Grid::new("shortcuts")
             .spacing(vec2(space::MD, space::SM))
@@ -240,35 +294,37 @@ fn empty_guide(ui: &mut Ui, pal: &Palette, accent: Color32, width: f32) -> Optio
     // Da largura do aparelho e alinhado à esquerda, como as páginas, não ao centro do palco.
     ui.allocate_ui(vec2(width, 0.0), |ui| {
         ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-            Frame::NONE
-                .fill(pal.raise)
-                .stroke(Stroke::new(1.0_f32, pal.control))
-                .corner_radius(CornerRadius::from(radius::CARD))
-                .inner_margin(Margin::same(space::MD as i8))
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    ui.label(RichText::new(t("Comece por aqui")).strong());
-                    let steps = [
-                        "Clique numa tecla do aparelho",
-                        "Escolha uma ação em Ações, ou arraste-a até a tecla",
-                        "Ajuste texto, cor e ícone no painel à direita",
-                    ];
-                    for (n, step) in steps.iter().enumerate() {
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new(format!("{}", n + 1)).monospace().color(ink));
-                            ui.label(t(step));
-                        });
-                    }
-                    ui.add_space(space::SM);
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label(t("Ou comece com uma página pronta:"));
-                        for (i, template) in super::templates::TEMPLATES.iter().enumerate() {
-                            if widgets::pill(ui, template.name, false, accent, pal).clicked() {
-                                chosen = Some(i);
-                            }
-                        }
-                    });
+            widgets::card(ui, pal, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    widgets::icon(ui, "lucide:sparkles", GUIDE_ICON, ink);
+                    ui.label(
+                        RichText::new(t("Comece por aqui"))
+                            .size(text::BODY_LG)
+                            .strong(),
+                    );
                 });
+                let steps = [
+                    "Clique numa tecla do aparelho",
+                    "Escolha uma ação em Ações, ou arraste-a até a tecla",
+                    "Ajuste texto, cor e ícone no painel à direita",
+                ];
+                for (n, step) in steps.iter().enumerate() {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(format!("{}", n + 1)).monospace().color(ink));
+                        ui.label(t(step));
+                    });
+                }
+                ui.add_space(space::SM);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(t("Ou comece com uma página pronta:"));
+                    for (i, template) in super::templates::TEMPLATES.iter().enumerate() {
+                        if widgets::pill(ui, template.name, false, accent, pal).clicked() {
+                            chosen = Some(i);
+                        }
+                    }
+                });
+            });
         });
     });
     chosen
@@ -287,15 +343,19 @@ impl App {
             .fill(pal.bg)
             .inner_margin(Margin::same(STAGE_MARGIN as i8));
         let mut events = DeviceEvents::default();
-        egui::CentralPanel::default().frame(frame).show(root, |ui| {
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    ui.vertical_centered(|ui| {
-                        events = self.device_column(ui, ctx, g, pal, accent);
-                    })
-                });
+        let shown = egui::CentralPanel::default().frame(frame).show(root, |ui| {
+            widgets::scroll_area(ui, pal, |ui| {
+                ui.vertical_centered(|ui| {
+                    events = self.device_column(ui, ctx, g, pal, accent);
+                })
+            });
         });
+        widgets::landmark(
+            ctx,
+            shown.response.id,
+            egui::accesskit::Role::Main,
+            "Aparelho",
+        );
         self.apply_dropped_files(ctx, g, events.under_pointer);
         self.apply_device_events(g, events);
     }
@@ -378,10 +438,17 @@ impl App {
                     ui.horizontal(|ui| {
                         // O botão fica à direita; as dicas usam o que sobra à esquerda.
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let clicked = ui
-                                .button(t("Organizar cores"))
-                                .on_hover_text(t(BEAUTIFY_HINT))
-                                .clicked();
+                            let clicked = widgets::button(
+                                ui,
+                                Some("wand-sparkles"),
+                                "Organizar cores",
+                                widgets::ButtonKind::Ghost,
+                                true,
+                                0.0,
+                                pal,
+                            )
+                            .on_hover_text(t(BEAUTIFY_HINT))
+                            .clicked();
                             let hints = self.memory.shows_hints();
                             ui.with_layout(
                                 egui::Layout::left_to_right(egui::Align::Center),
@@ -426,7 +493,14 @@ impl App {
             g.cfg.active_profile,
             g.cfg.profiles[g.cfg.active_profile].active_page,
         );
-        let (slide, opacity) = self.page_slide.frame(page_at);
+        let reduce_motion = g.cfg.ui.reduce_motion;
+        let (slide, opacity) = if reduce_motion {
+            (0.0, 1.0)
+        } else {
+            self.page_slide.frame(page_at)
+        };
+        self.key_rects = keys.to_vec();
+        let focus_key = std::mem::take(&mut self.focus_key);
         if opacity < 1.0 {
             ctx.request_repaint();
         }
@@ -438,6 +512,9 @@ impl App {
             let button = &g.cfg.page().buttons[i];
             let problem = checks::button_problem(button, &targets);
             resp.widget_info(|| key_widget_info(i, button, i == self.selected, problem));
+            if focus_key && i == self.selected {
+                resp.request_focus();
+            }
             // Tab e setas (navegação nativa do egui) movem o foco; a seleção o acompanha.
             if resp.has_focus() {
                 self.selected = i;
@@ -461,11 +538,15 @@ impl App {
             let tex = self.key_tex.get(ctx, i, &live, g.icon_px);
             let view = key_view(button, Some(i + 1), tex, problem.is_some());
             let hot = resp.hovered() || drop_target;
-            let down = ctx.animate_bool_with_time(
-                resp.id.with("down"),
-                resp.is_pointer_button_down_on(),
-                PRESS_TIME,
-            );
+            let down = if reduce_motion {
+                0.0
+            } else {
+                ctx.animate_bool_with_time(
+                    resp.id.with("down"),
+                    resp.is_pointer_button_down_on(),
+                    PRESS_TIME,
+                )
+            };
             let shown = kr
                 .translate(vec2(slide * key, 0.0))
                 .shrink(key * (1.0 - PRESSED_SCALE) / 2.0 * down);
@@ -548,5 +629,33 @@ impl App {
                 self.toasts.push("Teclas trocadas", Some("Desfazer"));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Grade 3 x 2 de teclas de 10 px com 2 px de folga, como no aparelho.
+    fn grid() -> Vec<Rect> {
+        (0..6)
+            .map(|i| {
+                let (col, row) = ((i % 3) as f32, (i / 3) as f32);
+                Rect::from_min_size(pos2(col * 12.0, row * 12.0), vec2(10.0, 10.0))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn alt_arrows_find_the_key_next_to_the_selected_one() {
+        let keys = grid();
+        assert_eq!(neighbor(&keys, 0, vec2(1.0, 0.0)), Some(1));
+        assert_eq!(neighbor(&keys, 1, vec2(-1.0, 0.0)), Some(0));
+        assert_eq!(neighbor(&keys, 1, vec2(0.0, 1.0)), Some(4));
+        assert_eq!(neighbor(&keys, 4, vec2(0.0, -1.0)), Some(1));
+        // Na borda não há vizinha: nada se move (em vez de dar a volta sem aviso).
+        assert_eq!(neighbor(&keys, 2, vec2(1.0, 0.0)), None);
+        assert_eq!(neighbor(&keys, 0, vec2(0.0, -1.0)), None);
+        assert_eq!(neighbor(&keys, 9, vec2(1.0, 0.0)), None);
     }
 }

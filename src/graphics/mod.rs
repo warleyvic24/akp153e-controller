@@ -1,4 +1,5 @@
 pub mod appicon;
+pub mod gif;
 pub mod icon_library;
 pub mod icons;
 pub mod live_art;

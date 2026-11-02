@@ -4,7 +4,7 @@
 pub type Polyline = Vec<(f32, f32)>;
 
 /// (id gravado na configuração, nome exibido)
-pub const ICONS: [(&str, &str); 16] = [
+pub const ICONS: [(&str, &str); 17] = [
     ("play", "Play"),
     ("next", "Próxima"),
     ("prev", "Anterior"),
@@ -21,6 +21,7 @@ pub const ICONS: [(&str, &str); 16] = [
     ("folder", "Pasta"),
     ("app", "Aplicativo"),
     ("user", "Perfil"),
+    ("keyforge", "Keyforge"),
 ];
 
 fn rect(x0: f32, y0: f32, x1: f32, y1: f32) -> Polyline {
@@ -130,6 +131,12 @@ pub fn strokes(name: &str) -> Vec<Polyline> {
         "user" => vec![
             arc(12.0, 8.0, 4.0, 4.0, 0.0, 360.0),
             arc(12.0, 21.0, 8.0, 8.0, 180.0, 360.0),
+        ],
+        "keyforge" => vec![
+            vec![(6.0, 5.0), (6.0, 19.0)], // K vertical
+            vec![(6.0, 12.0), (10.0, 8.0), (10.0, 16.0)], // K diagonals
+            vec![(13.0, 5.0), (17.0, 19.0)], // F diagonal
+            vec![(13.0, 12.0), (17.0, 12.0)], // F middle
         ],
         _ => ui_strokes(name),
     }

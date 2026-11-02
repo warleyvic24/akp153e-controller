@@ -61,6 +61,11 @@ fn library_row(
     let size = vec2(ui.available_width(), ROW_HEIGHT);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click_and_drag());
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
+    // O selo "+ Tecla N" só aparece ao apontar; quem usa teclado ou leitor de tela ouve o destino
+    // na descrição, lida depois do nome (que fica igual ao texto visível, WCAG 2.5.3).
+    let target = tf("Aplica na tecla {}", &[&(key + 1)]);
+    resp.ctx
+        .accesskit_node_builder(resp.id, |node| node.set_description(target));
     let hot = resp.hovered() || resp.has_focus();
     let painter = ui.painter();
     if hot {
@@ -125,23 +130,34 @@ impl App {
             .stroke(Stroke::new(1.0_f32, pal.line))
             .inner_margin(Margin::same(PANEL_MARGIN as i8));
         let mut picked = Picked::default();
-        egui::Panel::left("library")
+        let shown = egui::Panel::left("library")
             .exact_size(super::layout::LIBRARY_WIDTH)
             .resizable(false)
             .frame(frame)
             .show(root, |ui| {
-                ui.label(RichText::new(t("Ações")).size(text::BODY + 1.0).strong());
+                let title = ui.label(RichText::new(t("Ações")).size(text::BODY_LG).strong());
+                widgets::heading(ctx, title.id);
                 ui.label(
                     widgets::hint("Clique para aplicar ou arraste até uma tecla", pal)
                         .size(text::CAPTION),
                 );
                 ui.add_space(space::SM);
-                widgets::search_field(ui, &mut self.query, "Buscar ação", pal);
+                let search = widgets::search_field(ui, &mut self.query, "Buscar ação", pal);
+                // Ctrl+F leva o foco à busca (ver `App::global_shortcuts`).
+                if std::mem::take(&mut self.focus_search) {
+                    search.request_focus();
+                }
                 ui.add_space(space::XS);
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| picked = self.library_list(ui, ctx, pal, accent));
+                widgets::scroll_area(ui, pal, |ui| {
+                    picked = self.library_list(ui, ctx, pal, accent)
+                });
             });
+        widgets::landmark(
+            ctx,
+            shown.response.id,
+            egui::accesskit::Role::Navigation,
+            "Biblioteca de ações",
+        );
         if let Some(i) = picked.preset {
             self.apply_preset(g, self.selected, i);
         }
@@ -212,8 +228,8 @@ impl App {
         }
         if q.is_empty() {
             widgets::section(ui, "Outras", pal);
-            let custom = egui::Button::new(t("+ Ação personalizada")).frame(false);
-            picked.custom = ui.add(custom).clicked();
+            let custom = widgets::secondary_button(ui, "+ Ação personalizada", pal);
+            picked.custom = custom.clicked();
         }
         picked
     }

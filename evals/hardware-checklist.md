@@ -18,17 +18,17 @@ Preparação: abra o editor, ponha uma ação visível em cada botão testado (p
 | 8 | Lateral sem teclas | Toque e aperte a faixa lateral, à direita das 15 teclas | Nada acontece: no AKP153E ela é só uma tela (ver abaixo) | não verificado |
 | 9 | Brilho | Preferências > Brilho do aparelho: arraste de 100% até 5% e volte | O aparelho escurece e clareia ao salvar, sem reiniciar nem apagar as imagens; após reconectar o cabo, volta ao último valor | não verificado |
 | 10 | Tecla afunda | Segure qualquer tecla com ação | Enquanto segura, a imagem fica menor sobre preto; ao soltar, volta ao normal | ok em 2026-10-31 (usuário, Linux, AKP153E 0300:3010) |
-| 11 | Descanso da tela | Preferências > Apagar a tela sem uso: 1 min; espere 1 min sem tocar | A tela apaga; o primeiro toque só acende (a ação não roda); o segundo roda | não verificado |
-| 12 | Teclas de brilho | Biblioteca > Aparelho > "Brilho −" numa tecla; aperte 3 vezes | O aparelho escurece 10% a cada toque; as Preferências mostram o valor novo | não verificado |
+| 11 | Descanso da tela | Preferências > Apagar a tela sem uso: 1 min; espere 1 min sem tocar | A tela apaga; o primeiro toque só acende (a ação não roda); o segundo roda | ok 2026-10-31 (usuário, Linux, AKP153E 0300:3010) |
+| 12 | Teclas de brilho | Biblioteca > Aparelho > "Brilho −" numa tecla; aperte 3 vezes | O aparelho escurece 10% a cada toque; as Preferências mostram o valor novo | ok 2026-10-31 (usuário, Linux, AKP153E 0300:3010) |
 | 13 | Relógio | Biblioteca > Aparelho > "Relógio" | A tecla mostra a hora e a data e muda sozinha na virada do minuto | ok em 2026-10-31 (usuário, Linux, AKP153E 0300:3010) |
-| 14 | OBS | Ligue o WebSocket do OBS (Ferramentas > Configurações do servidor WebSocket); tecla "Gravar" | O OBS começa a gravar e a tecla fica vermelha; outro toque para e ela volta | não verificado |
-| 15 | Perfil automático | Perfil e página > "Ativar sozinho quando este app estiver em foco": escolha um app recente | Ao focar o app, o aparelho troca de perfil; ao sair dele, volta ao anterior | não verificado |
-| 16 | Tela lateral | Clique na faixa à direita das teclas no editor > "Nome da página"; depois "Imagem" com uma foto | A faixa do aparelho mostra o nome da página (e os pontos), e depois a foto inteira, sem emendas nem corte; trocar de página atualiza | não verificado |
-| 17 | Volume ao vivo | Teclas Vol+, Vol− e Mudo (Biblioteca > Mídia); mude o volume pelo teclado do PC | Em até 2 s as três mostram a % nova e a barra; com o mudo ligado, Mudo fica vermelha e diz MUDO | não verificado |
-| 18 | Tocando agora | Tecla Play/Pause; toque uma música no Spotify ou navegador (Linux) | A tecla mostra a capa, o título e o artista; pausar troca o símbolo do canto em até 2 s | não verificado |
-| 19 | Monitor do sistema | Biblioteca > Aparelho > "Monitor"; outra tecla Monitor em "CPU" | As barras e números mudam a cada ~2 s; rode algo pesado e a barra da CPU fica âmbar/vermelha | não verificado |
-| 20 | Lateral "Sistema" | Faixa lateral no editor > "Sistema" | A faixa mostra CPU, RAM e temperatura em pé, atualizando sem piscar as teclas | não verificado |
-| 21 | Embelezar página | Rodapé do palco > "Embelezar página" | Teclas ganham cor por categoria e degradê no editor e no aparelho; Ctrl+Z volta como estava | não verificado |
+| 14 | OBS | Ligue o WebSocket do OBS (Ferramentas > Configurações do servidor WebSocket); tecla "Gravar" | O OBS começa a gravar e a tecla fica vermelha; outro toque para e ela volta | ok 2026-10-31 (usuário, Linux, AKP153E 0300:3010) |
+| 15 | Perfil automático | Perfil e página > "Ativar sozinho quando este app estiver em foco": escolha um app recente | Ao focar o app, o aparelho troca de perfil; ao sair dele, volta ao anterior | ok 2026-10-31 (usuário, Linux, AKP153E 0300:3010) |
+| 16 | Tela lateral | Clique na faixa à direita das teclas no editor > "Nome da página"; depois "Imagem" com uma foto | A faixa do aparelho mostra o nome da página (e os pontos), e depois a foto inteira, sem emendas nem corte; trocar de página atualiza | ok 2026-10-31 (usuário, Linux, AKP153E 0300:3010) |
+| 17 | Volume ao vivo | Teclas Vol+, Vol− e Mudo (Biblioteca > Mídia); mude o volume pelo teclado do PC | Em até 2 s as três mostram a % nova e a barra; com o mudo ligado, Mudo fica vermelha e diz MUDO | ok 2026-10-31 (usuário, Linux, AKP153E 0300:3010) |
+| 18 | Tocando agora | Tecla Play/Pause; toque uma música no Spotify ou navegador (Linux) | A tecla mostra a capa, o título e o artista; pausar troca o símbolo do canto em até 2 s | ok 2026-10-31 (usuário, Linux, AKP153E 0300:3010) |
+| 19 | Monitor do sistema | Biblioteca > Aparelho > "Monitor"; outra tecla Monitor em "CPU" | As barras e números mudam a cada ~2 s; rode algo pesado e a barra da CPU fica âmbar/vermelha | ok 2026-10-31 (usuário, Linux, AKP153E 0300:3010) |
+| 20 | Lateral "Sistema" | Faixa lateral no editor > "Sistema" | A faixa mostra CPU, RAM e temperatura em pé, atualizando sem piscar as teclas | ok 2026-10-31 (usuário, Linux, AKP153E 0300:3010) |
+| 21 | Embelezar página | Rodapé do palco > "Embelezar página" | Teclas ganham cor por categoria e degradê no editor e no aparelho; Ctrl+Z volta como estava | funciona; usuário prefere fundo preto puro (gosto pessoal, não defeito) |
 
 ## Tela lateral (atualizado em 2026-10-31)
 

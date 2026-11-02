@@ -1,6 +1,6 @@
 //! Editor da ação de um botão: escolha do tipo (atalho, app, web...) e os campos de cada tipo.
 use super::action_kind::ActionKind;
-use super::{textlist, widgets};
+use super::{sound_ui, textlist, widgets};
 use crate::config::schema::*;
 use crate::editor::theme::{self, Palette};
 use crate::editor::tokens::text;
@@ -16,10 +16,12 @@ pub struct PaneCtx<'a> {
     pub targets: &'a Targets,
 }
 
-/// Destinos possíveis das ações de navegação (id estável + nome exibido).
+/// O que as ações podem referenciar na config: páginas e perfis (id estável + nome exibido) e
+/// os bancos de som. Montado a cada quadro a partir da config, nunca fica desatualizado.
 pub struct Targets {
     pages: Vec<(u64, String)>,
     profiles: Vec<(u64, String)>,
+    sound_banks: SoundBanks,
 }
 
 impl Targets {
@@ -34,7 +36,16 @@ impl Targets {
             .iter()
             .map(|p| (p.id, display_name(&p.name)))
             .collect();
-        Self { pages, profiles }
+        Self {
+            pages,
+            profiles,
+            sound_banks: cfg.sound_banks(),
+        }
+    }
+
+    /// Bancos de som da config, por nome.
+    pub fn sound_banks(&self) -> &SoundBanks {
+        &self.sound_banks
     }
 
     pub fn has_page(&self, id: u64) -> bool {
@@ -65,7 +76,6 @@ pub(crate) fn media_label(key: &str) -> &str {
         .map_or(key, |(_, label)| label)
 }
 
-const STEP_BUTTON: f32 = 24.0;
 const TYPE_TEXT_ROWS: usize = 3;
 
 const MEDIA_KEYS: [(&str, &str); 7] = [
@@ -87,27 +97,26 @@ const MIXER_HINT: &str = "Mostra no aparelho os apps com som: ícone com a porce
 
 fn pick_target(
     ui: &mut egui::Ui,
+    pal: &Palette,
     id: &str,
     label: egui::Id,
     value: &mut u64,
     options: &[(u64, String)],
 ) -> bool {
     let mut changed = false;
-    let shown = options
+    let mut shown = options
         .iter()
         .find(|o| o.0 == *value)
         .map_or(t("(escolha)").to_string(), |o| o.1.clone());
-    let combo = egui::ComboBox::from_id_salt((id, "dest"))
-        .selected_text(shown)
-        .show_ui(ui, |ui| {
-            for (oid, name) in options {
-                if ui.selectable_label(*value == *oid, name).clicked() && *value != *oid {
-                    *value = *oid;
-                    changed = true;
-                }
-            }
-        });
-    combo.response.labelled_by(label);
+    let options_names: Vec<&str> = options.iter().map(|o| o.1.as_str()).collect();
+    widgets::combo_box(ui, id, "Destino", &mut shown, &options_names, pal).labelled_by(label);
+    // Find the selected value from the shown name
+    if let Some(pos) = options_names.iter().position(|n| *n == shown) {
+        if *value != options[pos].0 {
+            *value = options[pos].0;
+            changed = true;
+        }
+    }
     changed
 }
 
@@ -181,11 +190,11 @@ pub fn action_editor(
         ButtonAction::MediaKey { key } => media_editor(ui, cx, key),
         ButtonAction::SwitchPage { page } => {
             let label = widgets::section(ui, "Página de destino", cx.pal);
-            pick_target(ui, id, label, page, &cx.targets.pages)
+            pick_target(ui, cx.pal, id, label, page, &cx.targets.pages)
         }
         ButtonAction::SwitchProfile { profile } => {
             let label = widgets::section(ui, "Perfil de destino", cx.pal);
-            pick_target(ui, id, label, profile, &cx.targets.profiles)
+            pick_target(ui, cx.pal, id, label, profile, &cx.targets.profiles)
         }
         ButtonAction::OpenMixer => {
             ui.label(widgets::hint(t(MIXER_HINT), cx.pal));
@@ -197,11 +206,26 @@ pub fn action_editor(
         ButtonAction::RunCommand { command } => command_editor(ui, cx, command),
         ButtonAction::Brightness { delta } => brightness_editor(ui, cx, delta),
         ButtonAction::Obs { command, target } => super::obs_ui::obs_editor(ui, cx, command, target),
-        ButtonAction::PlaySound { path } => sound_editor(ui, cx, path),
+        ButtonAction::PlaySound { path } => sound_ui::sound_file_editor(ui, cx, path),
+        ButtonAction::SoundBank { name, sounds } => sound_ui::bank_editor(ui, cx, name, sounds),
+        ButtonAction::PlaySoundBank {
+            bank,
+            index,
+            volume,
+        } => sound_ui::bank_sound_editor(ui, cx, bank, index, volume),
+        ButtonAction::StopAllSounds => sound_ui::stop_sounds_hint(ui, cx),
         ButtonAction::Monitor { metric } => super::monitor_ui::monitor_editor(ui, cx, metric),
         ButtonAction::Clock => {
             ui.label(widgets::hint(t(CLOCK_HINT), cx.pal));
             false
+        }
+        ButtonAction::PressHold {
+            tap,
+            hold,
+            threshold_ms,
+        } => press_hold_editor(ui, cx, tap, hold, threshold_ms),
+        ButtonAction::DoubleTap { action, window_ms } => {
+            double_tap_editor(ui, cx, action, window_ms)
         }
         ButtonAction::None | ButtonAction::NextPage | ButtonAction::PreviousPage => false,
     };
@@ -217,56 +241,57 @@ const COMMAND_HINT: &str =
 const COMMAND_HINT: &str =
     "Roda no sh (ex.: playerctl play-pause, notify-send oi). A saída não aparece.";
 
-/// Formatos que o tocador do sistema lê (no Windows, só WAV).
-#[cfg(windows)]
-const SOUND_EXTENSIONS: [&str; 1] = ["wav"];
-#[cfg(not(windows))]
-const SOUND_EXTENSIONS: [&str; 5] = ["wav", "ogg", "oga", "flac", "mp3"];
-#[cfg(windows)]
-const SOUND_HINT: &str = "Arquivo WAV. Tocado sem esperar: a tecla responde na hora.";
-#[cfg(not(windows))]
-const SOUND_HINT: &str = "WAV, OGG, FLAC ou MP3, pelo pw-play (ou paplay). Tocado sem esperar.";
-
-fn sound_editor(ui: &mut egui::Ui, cx: &PaneCtx, path: &mut String) -> bool {
+/// Uma ação aninhada (o toque ou o segurar de `PressHold`, a ação de `DoubleTap`) num bloco
+/// recolhível com o editor de passo.
+fn nested_action(
+    ui: &mut egui::Ui,
+    cx: &PaneCtx,
+    id: &'static str,
+    title: &str,
+    action: &mut ButtonAction,
+) -> bool {
     let mut changed = false;
-    widgets::section(ui, "Arquivo de som", cx.pal);
-    ui.horizontal(|ui| {
-        let name = std::path::Path::new(path.as_str())
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned());
-        match name {
-            Some(name) => {
-                ui.label(name).on_hover_text(path.as_str());
-            }
-            None => {
-                ui.label(RichText::new(t("Nenhum")).color(cx.pal.muted));
-            }
-        }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button(t("Escolher")).clicked() {
-                let file = rfd::FileDialog::new()
-                    .add_filter(t("Som"), &SOUND_EXTENSIONS)
-                    .pick_file();
-                if let Some(file) = file {
-                    *path = file.display().to_string();
-                    changed = true;
-                }
-            }
+    ui.push_id(id, |ui| {
+        widgets::fold(ui, id, title, None, false, cx.pal, |ui| {
+            changed = step_editor(ui, cx, action);
         });
     });
-    ui.label(widgets::hint(t(SOUND_HINT), cx.pal));
+    changed
+}
+
+/// `PressHold`: tocar faz uma ação, segurar além do limiar faz outra.
+fn press_hold_editor(
+    ui: &mut egui::Ui,
+    cx: &PaneCtx,
+    tap: &mut ButtonAction,
+    hold: &mut ButtonAction,
+    threshold_ms: &mut u64,
+) -> bool {
+    widgets::section(ui, "Pressione / segure", cx.pal);
+    let mut changed = nested_action(ui, cx, "presshold-tap", "Ao tocar (tap)", tap);
+    changed |= nested_action(ui, cx, "presshold-hold", "Ao segurar (hold)", hold);
+    widgets::section(ui, "Limiar de segurar (ms)", cx.pal);
+    changed |= widgets::numeric_field(ui, threshold_ms, "Limiar de segurar (ms)", cx.pal, 80.0);
+    changed
+}
+
+/// `DoubleTap`: dois toques dentro da janela fazem a ação.
+fn double_tap_editor(
+    ui: &mut egui::Ui,
+    cx: &PaneCtx,
+    action: &mut ButtonAction,
+    window_ms: &mut u64,
+) -> bool {
+    widgets::section(ui, "Clique duplo", cx.pal);
+    let mut changed = nested_action(ui, cx, "doubletap", "Ação do clique duplo", action);
+    widgets::section(ui, "Janela máxima (ms)", cx.pal);
+    changed |= widgets::numeric_field(ui, window_ms, "Janela máxima (ms)", cx.pal, 80.0);
     changed
 }
 
 fn command_editor(ui: &mut egui::Ui, cx: &PaneCtx, command: &mut String) -> bool {
     let label = widgets::section(ui, "Linha de comando", cx.pal);
-    let changed = ui
-        .add(
-            egui::TextEdit::multiline(command)
-                .code_editor()
-                .desired_width(ui.available_width())
-                .desired_rows(2),
-        )
+    let changed = widgets::text_area(ui, command, "", cx.pal, 2)
         .labelled_by(label)
         .changed();
     ui.label(widgets::hint(t(COMMAND_HINT), cx.pal));
@@ -288,10 +313,10 @@ fn brightness_editor(ui: &mut egui::Ui, cx: &PaneCtx, delta: &mut i32) -> bool {
             changed = true;
         }
     });
-    let mut step = delta.unsigned_abs().clamp(1, 50);
+    let mut step = delta.unsigned_abs() as f32;
+    step = step.clamp(1.0, 50.0);
     let label = widgets::section(ui, "Passo (%)", cx.pal);
-    if ui
-        .add(egui::Slider::new(&mut step, 1..=50).suffix(" %"))
+    if widgets::slider(ui, &mut step, 1.0..=50.0, " %")
         .labelled_by(label)
         .changed()
     {
@@ -303,13 +328,9 @@ fn brightness_editor(ui: &mut egui::Ui, cx: &PaneCtx, delta: &mut i32) -> bool {
 
 fn type_text_editor(ui: &mut egui::Ui, cx: &PaneCtx, text: &mut String) -> bool {
     let label = widgets::section(ui, "Texto a digitar", cx.pal);
-    ui.add(
-        egui::TextEdit::multiline(text)
-            .desired_width(ui.available_width())
-            .desired_rows(TYPE_TEXT_ROWS),
-    )
-    .labelled_by(label)
-    .changed()
+    widgets::text_area(ui, text, "", cx.pal, TYPE_TEXT_ROWS as u32)
+        .labelled_by(label)
+        .changed()
 }
 
 fn delay_editor(ui: &mut egui::Ui, cx: &PaneCtx, ms: &mut u64) -> bool {
@@ -333,6 +354,7 @@ fn step_editor(ui: &mut egui::Ui, cx: &PaneCtx, step: &mut ButtonAction) -> bool
                 keys,
                 textlist::parse_keys,
                 textlist::join_keys,
+                cx.pal,
             )
         }
         ButtonAction::LaunchApp { path, args } => launch_editor(ui, cx.pal, "step", path, args),
@@ -345,7 +367,21 @@ fn step_editor(ui: &mut egui::Ui, cx: &PaneCtx, step: &mut ButtonAction) -> bool
         ButtonAction::Delay { ms } => delay_editor(ui, cx, ms),
         ButtonAction::RunCommand { command } => command_editor(ui, cx, command),
         ButtonAction::Obs { command, target } => super::obs_ui::obs_editor(ui, cx, command, target),
-        ButtonAction::PlaySound { path } => sound_editor(ui, cx, path),
+        ButtonAction::PlaySound { path } => sound_ui::sound_file_editor(ui, cx, path),
+        ButtonAction::PlaySoundBank {
+            bank,
+            index,
+            volume,
+        } => sound_ui::bank_sound_editor(ui, cx, bank, index, volume),
+        ButtonAction::StopAllSounds => sound_ui::stop_sounds_hint(ui, cx),
+        ButtonAction::PressHold {
+            tap,
+            hold,
+            threshold_ms,
+        } => press_hold_editor(ui, cx, tap, hold, threshold_ms),
+        ButtonAction::DoubleTap { action, window_ms } => {
+            double_tap_editor(ui, cx, action, window_ms)
+        }
         _ => false,
     }
 }
@@ -364,22 +400,31 @@ fn multi_editor(
     for (i, step) in steps.iter_mut().enumerate() {
         ui.push_id((id, i), |ui| {
             ui.horizontal(|ui| {
-                if step_button(ui, "↑", "Subir passo", i > 0).clicked() {
+                if step_button(ui, cx.pal, "lucide:arrow-up", "Subir passo", i > 0).clicked() {
                     up = Some(i);
                 }
-                if step_button(ui, "↓", "Descer passo", i < last).clicked() {
+                if step_button(ui, cx.pal, "lucide:arrow-down", "Descer passo", i < last).clicked()
+                {
                     down = Some(i);
                 }
-                if widgets::icon_button(ui, "trash", t("Remover passo"), true, cx.pal).clicked() {
+                let remove_step = widgets::icon_button_tinted(
+                    ui,
+                    "trash",
+                    "Remover passo",
+                    true,
+                    cx.pal.bad,
+                    cx.pal,
+                );
+                if remove_step.clicked() {
                     remove = Some(i);
                 }
                 let title = super::summary::action_summary(step, cx.targets)
                     .unwrap_or_else(|| t(ActionKind::of(step).label()).to_string());
                 ui.label(format!("{}. {title}", i + 1));
             });
-            egui::CollapsingHeader::new(t("Editar"))
-                .id_salt("step-body")
-                .show(ui, |ui| changed |= step_editor(ui, cx, step));
+            widgets::fold(ui, "step-body", "Editar", None, false, cx.pal, |ui| {
+                changed |= step_editor(ui, cx, step)
+            });
         });
     }
     if let Some(i) = remove {
@@ -404,12 +449,14 @@ fn multi_editor(
     changed
 }
 
-fn step_button(ui: &mut egui::Ui, glyph: &str, name: &str, enabled: bool) -> egui::Response {
-    let button = egui::Button::new(glyph).min_size(egui::vec2(STEP_BUTTON, STEP_BUTTON));
-    let resp = ui.add_enabled(enabled, button);
-    let name = t(name);
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, name));
-    resp
+fn step_button(
+    ui: &mut egui::Ui,
+    pal: &Palette,
+    icon: &str,
+    name: &str,
+    enabled: bool,
+) -> egui::Response {
+    widgets::icon_button(ui, icon, name, enabled, pal)
 }
 
 fn hotkey_editor(
@@ -452,6 +499,7 @@ fn hotkey_editor(
                 keys,
                 textlist::parse_keys,
                 textlist::join_keys,
+                pal,
             );
         },
     );
@@ -462,10 +510,14 @@ fn hotkey_editor(
         .collect();
     if !invalid.is_empty() {
         let msg = tf("Tecla desconhecida: {}", &[&invalid.join(", ")]);
-        ui.label(RichText::new(msg).size(text::CAPTION).color(pal.bad));
+        let shown = ui.label(RichText::new(msg).size(text::CAPTION).color(pal.bad));
+        widgets::live_region(ui.ctx(), shown.id);
     }
     changed
 }
+
+/// Chave do pedido de devolver o foco ao "Gravar atalho" quando a gravação termina.
+const REFOCUS_RECORDER: &str = "refocus-recorder";
 
 /// "Gravar atalho": captura as próximas teclas pressionadas, ou limpa o atalho.
 fn hotkey_recorder(
@@ -478,11 +530,18 @@ fn hotkey_recorder(
     let mut changed = false;
     if *rec == Some(id) {
         // Gravar não é erro: vermelho aqui diria "algo deu errado" a quem só digita um atalho.
-        ui.label(
-            RichText::new(t("● Pressione as teclas… (Esc cancela)"))
-                .strong()
-                .color(theme::ink(cx.accent, cx.pal)),
-        );
+        // Sem "●" de texto: o ícone Lucide é decoração, o texto diz o estado. Região viva: o leitor
+        // de tela avisa que a gravação começou (o foco continua no botão).
+        let ink = theme::ink(cx.accent, cx.pal);
+        ui.horizontal(|ui| {
+            widgets::icon(ui, "lucide:circle-dot", text::BODY, ink);
+            let msg = ui.label(
+                RichText::new(t("Pressione as teclas… (Esc cancela)"))
+                    .strong()
+                    .color(ink),
+            );
+            widgets::live_region(ui.ctx(), msg.id);
+        });
         match capture_hotkey(cx.ctx) {
             Some(Capture::Keys(k)) => {
                 *keys = k;
@@ -492,13 +551,44 @@ fn hotkey_recorder(
             Some(Capture::Cancel) => *rec = None,
             None => {}
         }
+        if rec.is_none() {
+            // O botão sumiu durante a gravação e o foco foi junto: devolve-o a ele (WCAG 2.4.3).
+            cx.ctx
+                .data_mut(|d| d.insert_temp(egui::Id::unique(REFOCUS_RECORDER).with(id), true));
+        }
         return changed;
     }
     ui.horizontal(|ui| {
-        if ui.button(t("● Gravar atalho")).clicked() {
+        let kind = widgets::ButtonKind::Secondary;
+        let record = widgets::button(
+            ui,
+            Some("lucide:circle-dot"),
+            "Gravar atalho",
+            kind,
+            true,
+            0.0,
+            cx.pal,
+        );
+        let refocus = egui::Id::unique(REFOCUS_RECORDER).with(id);
+        if cx
+            .ctx
+            .data_mut(|d| d.remove_temp::<bool>(refocus))
+            .unwrap_or(false)
+        {
+            record.request_focus();
+        }
+        if record.clicked() {
             *rec = Some(id);
         }
-        let clear = ui.button(t("Limpar"));
+        let clear = widgets::button(
+            ui,
+            Some("eraser"),
+            "Limpar",
+            widgets::ButtonKind::Ghost,
+            true,
+            0.0,
+            cx.pal,
+        );
         clear.widget_info(|| {
             egui::WidgetInfo::labeled(egui::Role::Button, true, t("Limpar atalho"))
         });
@@ -556,8 +646,7 @@ pub(super) fn launch_advanced(
         pal,
         |ui| {
             let path_label = widgets::section(ui, "Programa (caminho ou nome)", pal);
-            changed |= ui
-                .add(egui::TextEdit::singleline(path).desired_width(ui.available_width()))
+            changed |= widgets::text_field(ui, path, "", pal, false)
                 .labelled_by(path_label)
                 .changed();
             let args_label = widgets::section(ui, "Argumentos", pal);
@@ -569,6 +658,7 @@ pub(super) fn launch_advanced(
                 args,
                 textlist::parse_args,
                 textlist::join_args,
+                pal,
             );
         },
     );
@@ -578,12 +668,7 @@ pub(super) fn launch_advanced(
 /// Endereço do site, com o aviso no próprio campo enquanto não for um http(s) completo.
 fn url_editor(ui: &mut egui::Ui, cx: &PaneCtx, url: &mut String) -> bool {
     let label = widgets::section(ui, "Endereço do site", cx.pal);
-    let changed = ui
-        .add(
-            egui::TextEdit::singleline(url)
-                .hint_text("https://exemplo.com")
-                .desired_width(f32::INFINITY),
-        )
+    let changed = widgets::text_field(ui, url, "https://exemplo.com", cx.pal, false)
         .labelled_by(label)
         .changed();
     if !engine::actions::is_web_url(url) {
@@ -603,8 +688,7 @@ fn webhook_editor(
     body: &mut Option<String>,
 ) -> bool {
     let url_label = widgets::section(ui, "URL", cx.pal);
-    let mut changed = ui
-        .add(egui::TextEdit::singleline(url).desired_width(ui.available_width()))
+    let mut changed = widgets::text_field(ui, url, "", cx.pal, false)
         .labelled_by(url_label)
         .changed();
     if !engine::actions::is_web_url(url) {
@@ -634,10 +718,10 @@ fn webhook_editor(
             });
             let body_label = widgets::section(ui, "Corpo da requisição", cx.pal);
             let mut s = body.clone().unwrap_or_default();
-            let edit = egui::TextEdit::multiline(&mut s)
-                .desired_width(ui.available_width())
-                .desired_rows(BODY_ROWS);
-            if ui.add(edit).labelled_by(body_label).changed() {
+            let changed_body = widgets::text_area(ui, &mut s, "", cx.pal, BODY_ROWS as u32)
+                .labelled_by(body_label)
+                .changed();
+            if changed_body {
                 *body = (!s.is_empty()).then_some(s);
                 changed = true;
             }

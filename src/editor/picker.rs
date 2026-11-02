@@ -1,7 +1,8 @@
 //! Lista de programas instalados e extração de ícones em segundo plano.
 use crate::config::schema::{ButtonAction, ButtonConfig, BLANK_BACKGROUND};
+use crate::editor::theme::Palette;
+use crate::editor::widgets;
 use crate::platform::apps;
-use crate::strings::t;
 use eframe::egui;
 use std::sync::mpsc::{channel, Receiver, Sender};
 
@@ -91,7 +92,12 @@ pub const NO_APPS_FOUND: &str = "Nenhum programa encontrado. Use “Procurar .ex
 #[cfg(not(windows))]
 pub const NO_APPS_FOUND: &str = "Nenhum programa encontrado. Use “Procurar programa”.";
 
-pub fn app_buttons(ui: &mut egui::Ui, b: &mut ButtonConfig, picker: &mut AppPicker) -> bool {
+pub fn app_buttons(
+    ui: &mut egui::Ui,
+    b: &mut ButtonConfig,
+    picker: &mut AppPicker,
+    pal: &Palette,
+) -> bool {
     let mut changed = false;
     ui.horizontal_wrapped(|ui| {
         let empty =
@@ -101,10 +107,21 @@ pub fn app_buttons(ui: &mut egui::Ui, b: &mut ButtonConfig, picker: &mut AppPick
         } else {
             "Trocar app…"
         };
-        if ui.button(t(choose)).clicked() {
+        let kind = widgets::ButtonKind::Secondary;
+        if widgets::button(ui, Some("app"), choose, kind, true, 0.0, pal).clicked() {
             picker.show();
         }
-        if ui.button(t(BROWSE_PROGRAM)).clicked() {
+        if widgets::button(
+            ui,
+            Some("folder-open"),
+            BROWSE_PROGRAM,
+            kind,
+            true,
+            0.0,
+            pal,
+        )
+        .clicked()
+        {
             let dialog = rfd::FileDialog::new();
             // Programas do Linux não têm extensão: sem filtro, qualquer arquivo pode ser escolhido.
             #[cfg(windows)]

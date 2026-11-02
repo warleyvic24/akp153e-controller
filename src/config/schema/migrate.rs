@@ -107,6 +107,43 @@ fn to_open_url(a: &mut ButtonAction) {
     }
 }
 
+pub(super) fn migrate_control_ids(config: &mut AppConfig) {
+    use crate::device::find_by_id;
+
+    for profile in &mut config.profiles {
+        for page in &mut profile.pages {
+            // Carrega o modelo do aparelho para esta página
+            let Some(model) = find_by_id(&page.model) else {
+                log::warn!(
+                    "modelo '{}' não encontrado para migrar control_ids",
+                    page.model
+                );
+                continue;
+            };
+
+            // Mapeia índice do botão -> control_id do modelo
+            // Teclas: k0, k1, k2... (ordem de `model.keys()`)
+            // Lateral: side
+            let keys = model.keys();
+            let strip = model.strip();
+
+            for (idx, button) in page.buttons.iter_mut().enumerate() {
+                if button.control_id.is_some() {
+                    continue; // já tem control_id (config v5+)
+                }
+                if idx < keys.len() {
+                    button.control_id = Some(keys[idx].id.clone());
+                } else if strip.is_some() && idx == keys.len() {
+                    button.control_id = Some(strip.unwrap().id.clone());
+                } else {
+                    // Índice além do que o modelo suporta: deixa vazio (sanitized vai limpar)
+                    button.control_id = None;
+                }
+            }
+        }
+    }
+}
+
 /// Copia `old` para `new` se `new` não existe e `old` tem uma config; devolve o que registrar.
 pub(super) fn migrate_dir(old: &std::path::Path, new: &std::path::Path) -> Option<String> {
     if new.exists() || !old.join("config.json").is_file() {

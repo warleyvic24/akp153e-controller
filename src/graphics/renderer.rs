@@ -1,8 +1,9 @@
 use crate::config::schema::{ButtonConfig, RGBAColor, TextPosition};
-use crate::graphics::icon_library;
+use crate::graphics::{gif, icon_library};
 use ab_glyph::{point, Font, FontArc, PxScale, ScaleFont};
 use image::{imageops, Rgba, RgbaImage};
 use std::sync::OnceLock;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Fontes do Windows primeiro; depois as mais comuns nas distribuições Linux.
 const FONT_FILES: [&str; 6] = [
@@ -364,7 +365,7 @@ pub fn render_rgba(button: &ButtonConfig, width: u32, height: u32) -> RgbaImage 
         draw_clock(&mut img, ap.text_color);
         return img;
     }
-    let has_text = !ap.text.trim().is_empty();
+    let has_text = !ap.text.trim().is_empty() && ap.show_text;
     let (band_top, band_h) = icon_band(ap.text_position, has_text, height as f32);
     let center_x = width as f32 / 2.0;
     let center_y = band_top + band_h / 2.0 + 1.0;
@@ -398,15 +399,18 @@ pub fn render_rgba(button: &ButtonConfig, width: u32, height: u32) -> RgbaImage 
         );
         has_icon = true;
     } else if let Some(path) = ap.icon_path.as_deref().filter(|p| !p.is_empty()) {
-        match image::open(path) {
-            Ok(icon) => {
-                let icon = icon
-                    .resize(
-                        (width as f32 * IMAGE_ICON_FILL) as u32,
-                        (band_h * IMAGE_ICON_FILL) as u32,
-                        imageops::FilterType::Triangle,
-                    )
-                    .to_rgba8();
+        if path.to_lowercase().ends_with(".gif") {
+            // GIF animado: devolve o frame certo para o instante atual.
+            let now_ms = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |d| d.as_millis() as u64);
+            if let Some((frame, _delay_ms)) = gif::current_frame(path, Some(now_ms)) {
+                let icon = imageops::resize(
+                    &frame,
+                    (width as f32 * IMAGE_ICON_FILL) as u32,
+                    (band_h * IMAGE_ICON_FILL) as u32,
+                    imageops::FilterType::Triangle,
+                );
                 let x = (center_x - icon.width() as f32 / 2.0).round() as i64;
                 let y = (band_top + (band_h - icon.height() as f32) / 2.0).round() as i64;
                 if let Some(plate) = plate_for(&icon, bg) {
@@ -420,7 +424,31 @@ pub fn render_rgba(button: &ButtonConfig, width: u32, height: u32) -> RgbaImage 
                 imageops::overlay(&mut img, &icon, x, y);
                 has_icon = true;
             }
-            Err(e) => log::warn!("ícone inválido {path}: {e}"),
+        } else {
+            match image::open(path) {
+                Ok(icon) => {
+                    let icon = icon
+                        .resize(
+                            (width as f32 * IMAGE_ICON_FILL) as u32,
+                            (band_h * IMAGE_ICON_FILL) as u32,
+                            imageops::FilterType::Triangle,
+                        )
+                        .to_rgba8();
+                    let x = (center_x - icon.width() as f32 / 2.0).round() as i64;
+                    let y = (band_top + (band_h - icon.height() as f32) / 2.0).round() as i64;
+                    if let Some(plate) = plate_for(&icon, bg) {
+                        let pad = (icon.width().max(icon.height()) as f32 * PLATE_PAD) as i64;
+                        let (w, h) = (
+                            icon.width() as i64 + 2 * pad,
+                            icon.height() as i64 + 2 * pad,
+                        );
+                        fill_rounded(&mut img, (x - pad, y - pad, w, h), plate);
+                    }
+                    imageops::overlay(&mut img, &icon, x, y);
+                    has_icon = true;
+                }
+                Err(e) => log::warn!("ícone inválido {path}: {e}"),
+            }
         }
     }
     if has_text {

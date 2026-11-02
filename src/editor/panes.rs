@@ -55,11 +55,23 @@ fn lit_variant(a: &ButtonAppearance) -> ButtonAppearance {
     lit
 }
 
+/// Nome falado de cada cor de `library::SWATCHES`, na mesma ordem ("#9A4A78" não diz nada a quem
+/// ouve a tela).
+const SWATCH_NAMES: [&str; 7] = [
+    "Magenta", "Azul", "Verde", "Âmbar", "Violeta", "Grafite", "Preto",
+];
+
 fn color_picker(ui: &mut egui::Ui, label: &str, c: &mut RGBAColor) -> bool {
     let mut changed = false;
-    ui.label(t(label));
+    let label_id = ui.label(t(label)).id;
     let mut rgb = [c.r, c.g, c.b];
-    if ui.color_edit_button_srgb(&mut rgb).changed() {
+    let button = ui.color_edit_button_srgb(&mut rgb).labelled_by(label_id);
+    // O valor falado é a cor em hexadecimal: quem não vê a amostra sabe qual está escolhida.
+    let hex = format!("#{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]);
+    button
+        .ctx
+        .accesskit_node_builder(button.id, |node| node.set_value(hex));
+    if button.changed() {
         (c.r, c.g, c.b) = (rgb[0], rgb[1], rgb[2]);
         changed = true;
     }
@@ -70,18 +82,15 @@ fn color_picker(ui: &mut egui::Ui, label: &str, c: &mut RGBAColor) -> bool {
 fn label_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette) -> bool {
     let mut changed = false;
     let label = widgets::section(ui, "Rótulo", pal);
-    changed |= ui
-        .add(
-            egui::TextEdit::multiline(&mut b.appearance.text)
-                .hint_text(widgets::hint(
-                    "Texto na tecla (ex.: Mudo). Enter quebra a linha",
-                    pal,
-                ))
-                .desired_rows(1)
-                .desired_width(ui.available_width()),
-        )
-        .labelled_by(label)
-        .changed();
+    changed |= widgets::text_area(
+        ui,
+        &mut b.appearance.text,
+        "Texto na tecla (ex.: Mudo). Enter quebra a linha",
+        pal,
+        1,
+    )
+    .labelled_by(label)
+    .changed();
     let positions = [
         (TextPosition::Top, "Topo"),
         (TextPosition::Middle, "Meio"),
@@ -98,12 +107,14 @@ fn label_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette) -> bool
         (ui.available_width() - 6.0 - 2.0 * (positions.len() - 1) as f32) / positions.len() as f32;
     widgets::segmented(ui, pal, |ui| {
         for (position, name) in positions {
-            if widgets::segment(ui, name, shown == position, width, pal).clicked() {
+            if widgets::radio_segment(ui, name, shown == position, width, pal).clicked() {
                 b.appearance.text_position = position;
                 changed = true;
             }
         }
     });
+    // Toggle para mostrar/ocultar o rótulo
+    changed |= widgets::checkbox(ui, &mut b.appearance.show_text, t("Mostrar rótulo")).changed();
     changed
 }
 
@@ -112,7 +123,7 @@ fn color_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette) -> bool
     widgets::section(ui, "Cor do botão", pal);
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = vec2(SWATCH_GAP, SWATCH_GAP);
-        for sw in library::SWATCHES {
+        for (sw, swatch_name) in library::SWATCHES.iter().zip(SWATCH_NAMES) {
             let color = RGBAColor {
                 r: sw[0],
                 g: sw[1],
@@ -120,7 +131,6 @@ fn color_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette) -> bool
                 a: 255,
             };
             let on = b.appearance.background == color;
-            let name = format!("#{:02X}{:02X}{:02X}", sw[0], sw[1], sw[2]);
             let swatch = widgets::swatch(
                 ui,
                 SWATCH_SIZE,
@@ -128,8 +138,9 @@ fn color_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette) -> bool
                 c32(color),
                 on,
                 pal.fg,
-                &name,
-            );
+                t(swatch_name),
+            )
+            .on_hover_text(t(swatch_name));
             if swatch.clicked() {
                 b.appearance.background = color;
                 changed = true;
@@ -141,9 +152,7 @@ fn color_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette) -> bool
         ui.add_space(SWATCH_GAP);
         changed |= color_picker(ui, "Texto", &mut b.appearance.text_color);
     });
-    changed |= ui
-        .checkbox(&mut b.appearance.gradient, t("Fundo em degradê"))
-        .changed();
+    changed |= widgets::checkbox(ui, &mut b.appearance.gradient, t("Fundo em degradê")).changed();
     changed
 }
 
@@ -167,7 +176,8 @@ fn image_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette) -> bool
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if !path.is_empty() {
-                let clear = ui.button(t("Limpar"));
+                let kind = widgets::ButtonKind::Ghost;
+                let clear = widgets::button(ui, Some("eraser"), "Limpar", kind, true, 0.0, pal);
                 // O nome falado contém o texto visível (WCAG 2.5.3) e diz o que será limpo.
                 clear.widget_info(|| {
                     egui::WidgetInfo::labeled(egui::Role::Button, true, t("Limpar imagem"))
@@ -177,7 +187,8 @@ fn image_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette) -> bool
                     changed = true;
                 }
             }
-            if ui.button(t("Escolher")).clicked() {
+            let kind = widgets::ButtonKind::Secondary;
+            if widgets::button(ui, Some("image"), "Escolher", kind, true, 0.0, pal).clicked() {
                 if let Some(p) = pick_icon() {
                     b.appearance.icon_path = Some(p);
                     b.appearance.icon = None;
@@ -199,15 +210,11 @@ fn font_section(ui: &mut egui::Ui, b: &mut ButtonConfig, pal: &Palette) -> bool 
     let mut changed = false;
     let label = widgets::section(ui, "Tamanho da fonte", pal);
     fill_slider_width(ui);
-    changed |= ui
-        .add(
-            egui::Slider::new(&mut b.appearance.font_size, 8.0_f32..=48.0)
-                .step_by(1.0)
-                .fixed_decimals(0)
-                .suffix(" px"),
-        )
+    let mut font_size = b.appearance.font_size;
+    changed |= widgets::slider(ui, &mut font_size, 8.0..=48.0, " px")
         .labelled_by(label)
         .changed();
+    b.appearance.font_size = font_size;
     changed
 }
 
@@ -217,11 +224,14 @@ pub fn appearance_pane(
     pal: &Palette,
     accent: Color32,
 ) -> bool {
+    // Três blocos: o que a tecla diz (rótulo e tamanho), a cor, e o desenho (ícone ou imagem).
     let mut changed = label_section(ui, b, pal);
+    changed |= font_section(ui, b, pal);
+    widgets::divider(ui, pal);
     changed |= color_section(ui, b, pal);
+    widgets::divider(ui, pal);
     changed |= super::icon_picker::icon_section(ui, &mut b.appearance, "normal", pal, accent);
     changed |= image_section(ui, b, pal);
-    changed |= font_section(ui, b, pal);
     changed
 }
 
@@ -238,16 +248,30 @@ pub fn action_pane(
     let mut changed = action_editor(ui, cx, MAIN_ACTION_ID, &mut b.action, rec);
     // Ir até a página (ou pasta) de destino para montar as teclas dela.
     if let ButtonAction::SwitchPage { page } = b.action {
-        if cx.targets.has_page(page) && ui.button(t("Abrir esta página")).clicked() {
+        let kind = widgets::ButtonKind::Secondary;
+        if cx.targets.has_page(page)
+            && widgets::button(
+                ui,
+                Some("lucide:arrow-right"),
+                "Abrir esta página",
+                kind,
+                true,
+                0.0,
+                pal,
+            )
+            .clicked()
+        {
             *open_page = Some(page);
         }
     }
     if matches!(b.action, ButtonAction::LaunchApp { .. }) {
-        changed |= app_buttons(ui, b, picker);
+        changed |= app_buttons(ui, b, picker, pal);
         if let ButtonAction::LaunchApp { path, args } = &mut b.action {
             changed |= launch_advanced(ui, pal, MAIN_ACTION_ID, path, args);
         }
     }
+    // Ação principal em cima; os comportamentos extras (segurar, dois estados) num bloco à parte.
+    widgets::divider(ui, pal);
     let long = b.long_press_action.as_ref().map(|a| {
         super::summary::action_summary(a, cx.targets).unwrap_or_else(|| t("sem ação").into())
     });
@@ -261,10 +285,7 @@ pub fn action_pane(
         pal,
         |ui| {
             let mut has_long = b.long_press_action.is_some();
-            if ui
-                .checkbox(&mut has_long, t("Fazer outra ação ao segurar"))
-                .changed()
-            {
+            if widgets::checkbox(ui, &mut has_long, t("Fazer outra ação ao segurar")).changed() {
                 b.long_press_action = has_long.then_some(ButtonAction::None);
                 changed = true;
             }
@@ -273,12 +294,11 @@ pub fn action_pane(
                 // O tempo só importa com uma ação ao segurar: fica junto dela.
                 let label = widgets::section(ui, "Segurar a partir de", pal);
                 fill_slider_width(ui);
-                changed |= ui
-                    .add(
-                        egui::Slider::new(&mut b.long_press_threshold_ms, 100..=2000).suffix(" ms"),
-                    )
+                let mut threshold = b.long_press_threshold_ms as f32;
+                changed |= widgets::slider(ui, &mut threshold, 100.0..=2000.0, " ms")
                     .labelled_by(label)
                     .changed();
+                b.long_press_threshold_ms = threshold as u64;
             }
         },
     );
@@ -303,12 +323,12 @@ fn states_body(
     let pal = cx.pal;
     let mut changed = false;
     let mut has_toggle = b.toggled_appearance.is_some();
-    if ui
-        .checkbox(
-            &mut has_toggle,
-            t("Cada toque alterna entre normal e ligado"),
-        )
-        .changed()
+    if widgets::checkbox(
+        ui,
+        &mut has_toggle,
+        t("Cada toque alterna entre normal e ligado"),
+    )
+    .changed()
     {
         b.toggled_appearance = has_toggle.then(|| lit_variant(&b.appearance));
         if !has_toggle {
@@ -322,16 +342,14 @@ fn states_body(
         ui.label(widgets::hint(hint, pal));
         return changed;
     };
-    changed |= ui
-        .checkbox(&mut b.toggle_state, t("Mostrar o estado ligado na prévia"))
-        .changed();
+    changed |= widgets::checkbox(
+        ui,
+        &mut b.toggle_state,
+        t("Mostrar o estado ligado na prévia"),
+    )
+    .changed();
     let label = widgets::section(ui, "Rótulo ligado", pal);
-    changed |= ui
-        .add(
-            egui::TextEdit::multiline(&mut lit.text)
-                .desired_rows(1)
-                .desired_width(ui.available_width()),
-        )
+    changed |= widgets::text_area(ui, &mut lit.text, "", pal, 1)
         .labelled_by(label)
         .changed();
     ui.horizontal(|ui| {
@@ -342,10 +360,7 @@ fn states_body(
     changed |= super::icon_picker::icon_section(ui, lit, "lit", pal, cx.accent);
     widgets::section(ui, "Segundo toque", pal);
     let mut other = b.toggled_action.is_some();
-    if ui
-        .checkbox(&mut other, t("Fazer outra ação ao desligar"))
-        .changed()
-    {
+    if widgets::checkbox(ui, &mut other, t("Fazer outra ação ao desligar")).changed() {
         b.toggled_action = other.then_some(ButtonAction::None);
         changed = true;
     }

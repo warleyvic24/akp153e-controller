@@ -167,15 +167,61 @@ pub fn acquire_editor_lock() -> Option<TcpListener> {
     TcpListener::bind(EDITOR_ADDR).ok()
 }
 
-/// Envia um comando ao serviço e devolve a resposta (uma linha), se houver.
+/// Envia um comando ao serviço (JSON versionado) e devolve a resposta parseada, se houver.
 pub fn send(command: &str) -> Option<String> {
+    // Constrói o envelope JSON v1. Comandos de texto legado (ex.: "status", "brightness 50")
+    // vão como o tipo "text" com o texto original no campo "line"; o serviço os
+    // reconhece pelo legacy_to_request.
+    let request = serde_json::json!({
+        "version": 1,
+        "cmd": "text",
+        "line": command
+    });
+    let payload = format!("{}\n", request);
+
     let addr: SocketAddr = SERVICE_ADDR.parse().ok()?;
     let mut stream = TcpStream::connect_timeout(&addr, IPC_TIMEOUT).ok()?;
     stream.set_read_timeout(Some(IPC_TIMEOUT)).ok()?;
-    stream.write_all(format!("{command}\n").as_bytes()).ok()?;
+    stream.write_all(payload.as_bytes()).ok()?;
     let mut reply = String::new();
     BufReader::new(stream).read_line(&mut reply).ok()?;
-    Some(reply.trim().to_string())
+
+    // Parseia resposta JSON e extrai campo relevante
+    let json: serde_json::Value = serde_json::from_str(reply.trim()).ok()?;
+    extract_response_text(&json)
+}
+
+/// Extrai texto legível da resposta JSON para compatibilidade com código existente.
+fn extract_response_text(json: &serde_json::Value) -> Option<String> {
+    match json.get("resp")?.as_str()? {
+        "ok" => Some("ok".into()),
+        "error" => json
+            .get("message")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        "obs-info" => {
+            // Extrai o ObsInfo interno (remove version e resp)
+            let mut obj = json.as_object()?.clone();
+            obj.remove("version");
+            obj.remove("resp");
+            serde_json::to_string(&obj).ok()
+        }
+        "apps" => json
+            .get("apps")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        "status" => {
+            let connected = json.get("connected").and_then(|v| v.as_bool())?;
+            let icon_px = json.get("icon_px").and_then(|v| v.as_u64())?;
+            Some(format!("{} {}", connected as u8, icon_px))
+        }
+        "selftest" => {
+            let ok = json.get("ok").and_then(|v| v.as_bool())?;
+            let msg = json.get("message").and_then(|v| v.as_str()).unwrap_or("");
+            Some(if ok { "ok".into() } else { msg.to_string() })
+        }
+        _ => Some("ok".into()),
+    }
 }
 
 /// Abre o editor como processo separado (se já existir um, ele mesmo se traz para a frente).
