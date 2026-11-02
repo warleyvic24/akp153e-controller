@@ -114,7 +114,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Dependências do sistema (Windows)
         run: |
-          # winresource e outras já vêm com o Rust/MSVC no GitHub Actions
           choco install nsis --no-progress || true
       - name: Build Windows release
         run: cargo build --release --target x86_64-pc-windows-msvc
@@ -124,34 +123,18 @@ jobs:
         run: cargo install cargo-winstaller
       - name: Build instalador MSI
         run: cargo wininstaller --config windows/wininstaller.toml
-      - name: Upload .exe
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        with:
-          upload_url: ${{ github.release.upload_url }}
-          asset_path: target/x86_64-pc-windows-msvc/release/keyforge.exe
-          asset_name: keyforge-x86_64-pc-windows-msvc.exe
-          asset_content_type: application/vnd.microsoft.portable-executable
-      - name: Upload .msi
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        with:
-          upload_url: ${{ github.release.upload_url }}
-          asset_path: keyforge-setup-${{ github.ref_name }}.msi
-          asset_name: keyforge-setup-${{ github.ref_name }}.msi
-          asset_content_type: application/x-msi
-      - name: Criar release no GitHub
+      - name: Criar release no GitHub com assets
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         with:
           tag_name: ${{ github.ref_name }}
           name: Keyforge ${{ github.ref_name }}
           body: |
             ## Keyforge ${{ github.ref_name }}
             
-            ## Baixe para Windows
+            ## Downloads para Windows
             - [keyforge-x86_64-pc-windows-msvc.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/keyforge-x86_64-pc-windows-msvc.exe)
             - [keyforge-setup-${{ github.ref_name }}.msi](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/keyforge-setup-${{ github.ref_name }}.msi)
             
@@ -162,5 +145,17 @@ jobs:
             
             ## ⚠️ Aviso
             Build gerado automaticamente no GitHub Actions (Windows). Não testado com hardware físico no Windows.
+            
+            ---
+            
+            ## Changelog
+            - Segurança P0: confirmação na importação de perfis, tokens removidos dos logs
+            - Controle de porta Unix socket / named pipe com autenticação de usuário
+            - Cache de imagem LRU (50MB), GIF corrigido, save assíncrono
+            - Observabilidade: tracing, endpoint /health, métricas Prometheus
+            - 413 testes unitários + 6 CLI passando
           draft: false
           prerelease: false
+          files: |
+            target/x86_64-pc-windows-msvc/release/keyforge.exe
+            keyforge-setup-${{ github.ref_name }}.msi
