@@ -162,5 +162,5 @@ jobs:
             
             ## ⚠️ Aviso
             Build gerado automaticamente no GitHub Actions (Windows). Não testado com hardware físico no Windows.
-        draft: false
-        prerelease: false
+          draft: false
+          prerelease: false
