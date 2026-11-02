@@ -1,0 +1,3 @@
+# Não é um crate separado. Este diretório contém apenas arquivos de recurso
+# específicos do Windows (ícone, config do instalador).
+# O build.rs na raiz cuida de embutir o ícone no .exe via winresource.

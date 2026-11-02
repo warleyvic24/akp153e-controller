@@ -1,0 +1,25 @@
+# Recursos do Windows: ícone e versão do executável
+# Compilado pelo build.rs via winresource crate
+
+[version]
+FILEVERSION=0,1,0,0
+PRODUCTVERSION=0,1,0,0
+FILEFLAGSMASK=0x3fL
+FILEFLAGS=0x0L
+FILEOS=0x40004L
+FILETYPE=0x1L
+FILESUBTYPE=0x0L
+
+[Var]
+CompanyName=warleyvic24
+FileDescription=Keyforge: open-source software for stream controllers (AJAZZ AKP153E and others)
+FileVersion=0.1.0
+InternalName=keyforge
+LegalCopyright=© 2026 warleyvic24. MIT License.
+OriginalFilename=keyforge.exe
+ProductName=Keyforge
+ProductVersion=0.1.0
+
+[Icon]
+# Ícone do aplicativo (32x32 mínimo, recomendado 256x256)
+ICON KEYFORGE_ICON "../../assets/icon-256.png"

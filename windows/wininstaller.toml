@@ -1,0 +1,54 @@
+# Configuração do cargo-winstaller para Keyforge
+# Instalador MSI do Windows para o Keyforge (stream controller para AKP153E)
+
+[package]
+name = "keyforge"
+version = "0.1.0"
+description = "Keyforge: open-source software for stream controllers (AJAZZ AKP153E and others)"
+author = "warleyvic24"
+copyright = "© 2026 warleyvic24. MIT License."
+contact = "https://github.com/warleyvic24/akp153e-controller"
+
+[target.x86_64-pc-windows-msvc]
+# Executável principal (gerado pelo cargo build --release --target x86_64-pc-windows-msvc)
+bin = "../../target/x86_64-pc-windows-msvc/release/keyforge.exe"
+
+# Ícone do instalador (usa o mesmo ícone do aplicativo)
+icon = "../../assets/icon-256.png"
+
+# Nome do instalador de saída
+output_name = "keyforge-setup-0.1.0"
+
+# Diretório de instalação padrão
+install_dir = "ProgramFiles\\Keyforge"
+
+# Menu Iniciar
+start_menu = true
+
+# Ícone de atalho (usa o ícone do app)
+shortcut_icon = "../../assets/icon-256.png"
+
+# Arquivos adicionais a incluir na instalação
+files = [
+    "../../README.md",
+    "../../README.pt-BR.md",
+    "../../SECURITY.md",
+]
+
+# Atalho para desinstalar
+uninstall = true
+
+# Código de produto (GUID - gere um novo para cada versão)
+product_code = "8e3a1f2b-4c5d-6e7f-8a9b-0c1d2e3f4a5b"
+
+# Código de atualização (mantenha o mesmo entre versões para atualizar)
+upgrade_code = "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
+
+# Versão do produto
+product_version = "0.1.0"
+
+# Compressão do MSI
+compression = "mszip"
+
+# Idioma do instalador
+language = "1034"  # Português (Brasil)
