@@ -3,7 +3,7 @@ name = "keyforge"
 description = "Keyforge: open-source software for stream controllers (AJAZZ AKP153E and others)"
 license = "MIT"
 repository = "https://github.com/warleyvic24/akp153e-controller"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 # `File::lock` (trava da config entre editor e serviço).
 rust-version = "1.89"
@@ -19,20 +19,36 @@ enigo = "0.6"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking"] }
 directories = "6"
 log = "0.4"
-env_logger = "0.11"
+# Observabilidade: logs estruturados (os `log::` antigos chegam pela ponte `tracing-log`),
+# rotação por tamanho, métricas Prometheus (só o renderizador, sem servidor HTTP próprio).
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["std", "fmt", "ansi", "json", "env-filter", "registry", "tracing-log", "smallvec"] }
+file-rotate = "0.8"
+metrics = "0.24"
+metrics-exporter-prometheus = { version = "0.18", default-features = false }
+# Perfilador opcional (`--features profiling`): sem a feature, os escopos somem na compilação.
+puffin = { version = "0.20", optional = true }
+puffin_http = { version = "0.17", optional = true }
 thiserror = "2"
-gif = "0.13"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "ico", "gif"] }
 # Ícones em SVG (temas de ícones do Linux e favicons de sites) viram PNG para a tecla.
 resvg = "0.45"
 ab_glyph = "0.2"
-# Hora local (fuso do sistema) da tecla de relógio; já vinha pelo env_logger.
+# Hora local (fuso do sistema) da tecla de relógio.
 jiff = "0.2"
 tray-icon = "0.26"
 rfd = "0.17"
 tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
 sha2 = "0.11"
 base64 = "0.22"
+lru = "0.19"
+blake3 = "1.8.7"
+
+[features]
+default = []
+# Perfil com puffin: `KEYFORGE_PUFFIN=1` abre o servidor (127.0.0.1:8585) para o puffin_viewer.
+profiling = ["dep:puffin", "dep:puffin_http"]
+puffin = ["profiling"]
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [

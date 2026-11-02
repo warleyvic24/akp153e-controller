@@ -2,6 +2,7 @@
 //! com prefixo "CRT", imagens JPEG. O que muda de um modelo para outro (ids, pacote, tamanho da
 //! imagem, ordem das teclas, tela lateral) vem do arquivo do aparelho (`crate::device`).
 use crate::device::DeviceModel;
+use crate::error::UsbError;
 mod driver;
 use driver::{Driver, DriverResult};
 use hidapi::{HidApi, HidDevice, HidError};
@@ -156,23 +157,23 @@ fn write_init(dev: &HidDevice, p: Profile) -> Result<(), HidError> {
     Ok(())
 }
 
-fn open(api: &mut HidApi) -> Result<(HidDevice, Profile), String> {
-    api.refresh_devices().map_err(|e| e.to_string())?;
+fn open(api: &mut HidApi) -> Result<(HidDevice, Profile), UsbError> {
+    api.refresh_devices()?;
     let known = crate::device::known_ids();
     let mut cands: Vec<_> = api
         .device_list()
         .filter(|d| known.contains(&(d.vendor_id(), d.product_id())))
         .collect();
     cands.sort_by_key(|d| d.usage_page() != USAGE_PAGE);
-    let info = cands.first().ok_or("dispositivo não encontrado")?;
-    let dev = info.open_device(api).map_err(|e| e.to_string())?;
-    let mut last_err = String::from("nenhum perfil de protocolo");
+    let info = cands.first().ok_or(UsbError::NotFound)?;
+    let dev = info.open_device(api)?;
+    let mut last_err = UsbError::NoProfile;
     for profile in profile_candidates(info.vendor_id(), info.product_id()) {
         match write_init(&dev, profile) {
             Ok(()) => return Ok((dev, profile)),
             Err(e) => {
                 log::warn!("perfil {profile:?} recusado: {e}");
-                last_err = e.to_string();
+                last_err = UsbError::Hid(e);
             }
         }
     }
@@ -188,18 +189,25 @@ fn send_image(
     let Some(key) = profile.model.key_hw(ui_index) else {
         return Ok(false);
     };
+    let _span =
+        tracing::debug_span!("usb_send", key = ui_index, hw = key, bytes = jpeg.len()).entered();
+    crate::profile_scope!("usb_send");
     let Some(packets) = image_packets(profile.payload, key, jpeg) else {
-        log::warn!("imagem do botão {ui_index} excede 64 KiB");
+        tracing::warn!(
+            key = ui_index,
+            bytes = jpeg.len(),
+            "imagem do botão excede 64 KiB"
+        );
         return Ok(false);
     };
     for p in &packets {
         dev.write(p)?;
     }
-    log::info!(
-        "botão {ui_index} -> tecla {key}: {} bytes em {} pacote(s) de {}",
-        jpeg.len(),
-        packets.len(),
-        profile.payload
+    // Por quadro: `trace`, nunca `info` (era a origem de ~10 mil linhas por rajada no log).
+    tracing::trace!(
+        packets = packets.len(),
+        payload = profile.payload,
+        "quadro enviado"
     );
     Ok(true)
 }
@@ -216,6 +224,8 @@ fn send_side(dev: &HidDevice, profile: Profile, side: &SideFrame) -> Result<bool
             }
         }
         SideFrame::Strips(strips) => {
+            let _span = tracing::debug_span!("usb_send_side").entered();
+            crate::profile_scope!("usb_send_side");
             for (key, jpeg) in side_slots(profile.model).into_iter().zip(strips) {
                 let Some(packets) = image_packets(profile.payload, key, jpeg) else {
                     log::warn!("faixa da tela lateral excede 64 KiB");
@@ -225,7 +235,7 @@ fn send_side(dev: &HidDevice, profile: Profile, side: &SideFrame) -> Result<bool
                     dev.write(p)?;
                 }
             }
-            log::info!("tela lateral: 3 faixas");
+            tracing::trace!(strips = 3, "tela lateral enviada");
         }
     }
     Ok(true)
@@ -309,25 +319,32 @@ fn expire_held(down: &mut [Option<Instant>; UI_KEYS], tx: &Sender<UsbEvent>) {
 
 /// Thread de hardware: abre o HID, reconecta com backoff (0,5 s a 8 s) e despacha comandos/eventos.
 /// O `HidApi` da thread de hardware, criado sob demanda: uma falha na criação não encerra a thread.
-fn hid_api(api: &mut Option<HidApi>) -> Result<&mut HidApi, String> {
-    if api.is_none() {
-        *api = Some(HidApi::new().map_err(|e| format!("hidapi: {e}"))?);
-    }
-    api.as_mut()
-        .ok_or_else(|| "hidapi indisponível".to_string())
+fn hid_api(slot: &mut Option<HidApi>) -> Result<&mut HidApi, UsbError> {
+    let api = match slot.take() {
+        Some(api) => api,
+        None => HidApi::new().map_err(UsbError::Init)?,
+    };
+    Ok(slot.insert(api))
 }
 
 pub fn spawn(tx: Sender<UsbEvent>, rx: Receiver<UsbCmd>) {
-    std::thread::spawn(move || {
+    crate::telemetry::spawn_tracked("usb-poller", move || {
         let mut api: Option<HidApi> = None;
         let mut backoff = Duration::from_millis(500);
+        // Por que a última conexão terminou (`None` antes da primeira): rótulo das reconexões.
+        let mut last_end: Option<&'static str> = None;
         loop {
+            crate::telemetry::health::beat();
             // Se o HidApi não subir (ou o aparelho não estiver), tenta de novo com espera crescente.
             let opened = hid_api(&mut api).and_then(open);
             let (dev, profile) = match opened {
                 Ok(d) => d,
                 Err(e) => {
-                    log::debug!("sem dispositivo: {e}");
+                    // Aparelho ausente é o estado normal de espera, não erro de USB.
+                    if !matches!(e, UsbError::NotFound) {
+                        crate::telemetry::metrics::usb_error("open");
+                    }
+                    tracing::debug!(error = %e, backoff_ms = backoff.as_millis() as u64, "sem dispositivo");
                     let _ = tx.send(UsbEvent::Status(false));
                     std::thread::sleep(backoff);
                     backoff = (backoff * 2).min(Duration::from_secs(8));
@@ -336,6 +353,17 @@ pub fn spawn(tx: Sender<UsbEvent>, rx: Receiver<UsbCmd>) {
                 }
             };
             backoff = Duration::from_millis(500);
+            if let Some(reason) = last_end {
+                crate::telemetry::metrics::reconnect(reason);
+            }
+            let span = tracing::info_span!(
+                "usb_connection",
+                model = profile.model.id,
+                payload = profile.payload,
+                icon_px = profile.icon_px
+            );
+            let _entered = span.enter();
+            tracing::info!("aparelho conectado");
             let _ = tx.send(UsbEvent::Info {
                 icon_px: profile.icon_px,
             });
@@ -345,8 +373,16 @@ pub fn spawn(tx: Sender<UsbEvent>, rx: Receiver<UsbCmd>) {
                 profile,
                 buf: [0; MAX_PAYLOAD],
             };
-            if let Err(e) = run_connection(&mut driver, &tx, &rx) {
-                log::warn!("conexão perdida: {e}");
+            match run_connection(&mut driver, &tx, &rx) {
+                Ok(()) => {
+                    tracing::info!("reconexão pedida");
+                    last_end = Some("requested");
+                }
+                Err(e) => {
+                    crate::telemetry::metrics::usb_error("io");
+                    tracing::warn!(error = %e, "conexão perdida");
+                    last_end = Some("lost");
+                }
             }
             let _ = tx.send(UsbEvent::Status(false));
         }
@@ -360,46 +396,86 @@ struct Mirabox<'a> {
     buf: [u8; MAX_PAYLOAD],
 }
 
-fn hid(e: HidError) -> String {
-    e.to_string()
-}
-
 impl Driver for Mirabox<'_> {
     fn set_key(&mut self, key: usize, image: &[u8]) -> DriverResult<bool> {
-        send_image(self.dev, self.profile, key, image).map_err(hid)
+        send_image(self.dev, self.profile, key, image).map_err(UsbError::from)
     }
 
     fn set_side(&mut self, side: &SideFrame) -> DriverResult<bool> {
-        send_side(self.dev, self.profile, side).map_err(hid)
+        send_side(self.dev, self.profile, side).map_err(UsbError::from)
     }
 
     fn flush(&mut self) -> DriverResult<()> {
         self.dev
             .write(&command(self.profile.payload, b"STP"))
             .map(drop)
-            .map_err(hid)
+            .map_err(UsbError::from)
     }
 
     fn set_brightness(&mut self, level: u8) -> DriverResult<()> {
         self.dev
             .write(&brightness_command(self.profile.payload, level))
             .map(drop)
-            .map_err(hid)
+            .map_err(UsbError::from)
     }
 
     fn keepalive(&mut self) -> DriverResult<()> {
         self.dev
             .write(&command(self.profile.payload, b"CONNECT"))
             .map(drop)
-            .map_err(hid)
+            .map_err(UsbError::from)
     }
 
     fn poll(&mut self) -> DriverResult<Option<(usize, bool)>> {
-        read_key(self.dev, &mut self.buf, self.profile).map_err(hid)
+        read_key(self.dev, &mut self.buf, self.profile).map_err(UsbError::from)
     }
 
     fn reports_release(&self) -> bool {
         self.profile.both_states
+    }
+}
+
+/// Hash (BLAKE3) do que cada tecla e a tela lateral mostram agora nesta conexão. Um "reload"
+/// redesenha a página inteira (15 teclas + 3 faixas da lateral, ~70 pacotes HID); só o que
+/// mudou de fato vai ao aparelho. Todo envio passa por aqui (página, tecla apertada,
+/// diagnóstico, autoteste), então o hash sempre corresponde ao que está na tela.
+#[derive(Default)]
+struct Shown {
+    keys: [Option<blake3::Hash>; UI_KEYS],
+    side: Option<blake3::Hash>,
+}
+
+impl Shown {
+    fn send_key(&mut self, dev: &mut dyn Driver, index: usize, jpeg: &[u8]) -> DriverResult<bool> {
+        let hash = blake3::hash(jpeg);
+        if self.keys.get(index).copied().flatten() == Some(hash) {
+            return Ok(false);
+        }
+        let sent = dev.set_key(index, jpeg)?;
+        if let Some(slot) = self.keys.get_mut(index) {
+            *slot = sent.then_some(hash);
+        }
+        Ok(sent)
+    }
+
+    fn send_side(&mut self, dev: &mut dyn Driver, side: &SideFrame) -> DriverResult<bool> {
+        let hash = match side {
+            SideFrame::Clear => blake3::hash(b"CLE"),
+            SideFrame::Strips(strips) => {
+                let mut h = blake3::Hasher::new();
+                for strip in strips {
+                    h.update(&(strip.len() as u64).to_le_bytes());
+                    h.update(strip);
+                }
+                h.finalize()
+            }
+        };
+        if self.side == Some(hash) {
+            return Ok(false);
+        }
+        let sent = dev.set_side(side)?;
+        self.side = sent.then_some(hash);
+        Ok(sent)
     }
 }
 
@@ -412,23 +488,39 @@ fn run_connection(
 ) -> DriverResult<()> {
     let mut last_keepalive = Instant::now();
     let mut down = [None; UI_KEYS];
+    // Nova conexão: o aparelho foi apagado no `write_init`, então nada conta como já mostrado.
+    let mut shown = Shown::default();
     loop {
+        crate::telemetry::health::beat();
+        crate::telemetry::profile_frame();
         let mut flush = false;
-        let pending = collect_commands(std::iter::from_fn(|| rx.try_recv().ok()));
+        let mut queued = 0usize;
+        let pending =
+            collect_commands(std::iter::from_fn(|| rx.try_recv().ok()).inspect(|_| queued += 1));
+        crate::telemetry::metrics::commands_queued(queued);
         if pending.reconnect {
             return Ok(());
         }
+        let _batch = (queued > 0).then(|| tracing::debug_span!("usb_commands", queued).entered());
         if let Some(level) = pending.brightness {
             set_brightness(level);
             dev.set_brightness(level)?;
         }
         for (index, data) in pending.frames.iter().enumerate() {
             if let Some(data) = data {
-                flush |= dev.set_key(index, data)?;
+                let sent = shown.send_key(dev, index, data)?;
+                if sent {
+                    crate::telemetry::metrics::frame_sent("key");
+                }
+                flush |= sent;
             }
         }
         if let Some(side) = &pending.side {
-            flush |= dev.set_side(side)?;
+            let sent = shown.send_side(dev, side)?;
+            if sent {
+                crate::telemetry::metrics::frame_sent("side");
+            }
+            flush |= sent;
         }
         if flush {
             dev.flush()?;

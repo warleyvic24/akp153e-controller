@@ -456,24 +456,31 @@ impl Profile {
     }
 
     pub fn add_page(&mut self, name: &str) {
-        let id = self.pages.iter().map(|p| p.id).max().unwrap_or(0) + 1;
-        let mut page = Page::new(name, 3, 5);
-        page.id = id;
+        let page = self.new_page(name);
         self.pages.push(page);
+    }
+
+    /// Página vazia com o próximo id livre deste perfil (ainda fora da lista).
+    fn new_page(&self, name: &str) -> Page {
+        let mut page = Page::new(name, 3, 5);
+        page.id = self.pages.iter().map(|p| p.id).max().unwrap_or(0) + 1;
+        page
     }
 
     /// Cria uma pasta que volta para a página `parent` e devolve o id dela. A tecla "Voltar" já
     /// nasce no primeiro lugar (o canto de cima, à esquerda, como no app da Elgato); é um botão
     /// comum, então dá para mudar de lugar ou de cara.
     pub fn add_folder(&mut self, name: &str, parent: u64, back_label: &str) -> u64 {
-        self.add_page(name);
-        let folder = self.pages.last_mut().expect("acabou de entrar");
+        let mut folder = self.new_page(name);
         folder.folder = true;
-        let back = &mut folder.buttons[0];
-        back.action = ButtonAction::SwitchPage { page: parent };
-        back.appearance.text = back_label.into();
-        back.appearance.icon = Some(BACK_ICON.into());
-        folder.id
+        if let Some(back) = folder.buttons.first_mut() {
+            back.action = ButtonAction::SwitchPage { page: parent };
+            back.appearance.text = back_label.into();
+            back.appearance.icon = Some(BACK_ICON.into());
+        }
+        let id = folder.id;
+        self.pages.push(folder);
+        id
     }
 
     /// Próxima (ou anterior) página que não é pasta, em volta; a atual se não houver outra.

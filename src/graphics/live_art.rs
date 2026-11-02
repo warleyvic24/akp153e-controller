@@ -183,16 +183,18 @@ const GLYPH_MARGIN: f32 = 0.09;
 /// Play/Pause: a capa (escurecida) cobrindo a tecla, o estado no canto e título e artista embaixo.
 fn now_playing(button: &ButtonConfig, p: &NowPlaying, (w, h): (u32, u32)) -> RgbaImage {
     let ap = button.current_appearance();
-    let art = p
-        .art
-        .as_deref()
-        .and_then(|path| image::open(path).ok())
-        .map(trim_letterbox);
+    // A capa já recortada e no tamanho da tecla sai do cache: a tecla viva redesenha a cada
+    // segundo e decodificar/redimensionar a capa toda vez era o grosso do custo.
+    let art = p.art.as_deref().and_then(|path| {
+        super::cache::derived(path, "art-fill", (w, h), |art| {
+            trim_letterbox(art.clone())
+                .resize_to_fill(w, h, imageops::FilterType::Triangle)
+                .to_rgba8()
+        })
+    });
     let mut img = match art {
         Some(art) => {
-            let mut img = art
-                .resize_to_fill(w, h, imageops::FilterType::Triangle)
-                .to_rgba8();
+            let mut img = (*art).clone();
             let dim = if p.playing { ART_DIM } else { ART_DIM_PAUSED };
             shade(&mut img, dim);
             img
@@ -519,24 +521,31 @@ const SIDE_PROGRESS_HEIGHT: f32 = 4.0;
 
 pub fn side_now_playing(img: &mut RgbaImage, playing: Option<&NowPlaying>, muted: RGBAColor) {
     let (w, h) = img.dimensions();
-    let art = playing
-        .and_then(|p| p.art.as_deref())
-        .and_then(|path| image::open(path).ok())
-        .map(trim_letterbox);
-    if let Some(art) = &art {
-        let mut back = art
-            .resize_to_fill(w, h, imageops::FilterType::Triangle)
-            .blur(SIDE_BACKDROP_BLUR)
-            .to_rgba8();
+    let side = w.saturating_sub(2 * SIDE_ART_INSET).max(1);
+    let art_path = playing.and_then(|p| p.art.as_deref());
+    // Fundo desfocado e capa nítida, ambos do cache (desfocar a capa é caro).
+    let back = art_path.and_then(|path| {
+        super::cache::derived(path, "side-backdrop", (w, h), |art| {
+            trim_letterbox(art.clone())
+                .resize_to_fill(w, h, imageops::FilterType::Triangle)
+                .blur(SIDE_BACKDROP_BLUR)
+                .to_rgba8()
+        })
+    });
+    let cover = art_path.and_then(|path| {
+        super::cache::derived(path, "side-cover", (side, side), |art| {
+            trim_letterbox(art.clone())
+                .resize_to_fill(side, side, imageops::FilterType::Lanczos3)
+                .to_rgba8()
+        })
+    });
+    if let (Some(back), Some(cover)) = (back, cover) {
+        let mut back = (*back).clone();
         shade(&mut back, SIDE_BACKDROP_DIM);
         *img = back;
-        let side = w - 2 * SIDE_ART_INSET;
-        let cover = art
-            .resize_to_fill(side, side, imageops::FilterType::Lanczos3)
-            .to_rgba8();
         imageops::overlay(
             img,
-            &cover,
+            &*cover,
             i64::from(SIDE_ART_INSET),
             i64::from(SIDE_ART_TOP),
         );

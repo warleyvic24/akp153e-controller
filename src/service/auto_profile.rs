@@ -72,7 +72,7 @@ fn remember(recent: &mut Vec<String>, app: &str) {
 
 /// Thread do serviço: recebe o app em foco e troca o perfil quando uma regra manda.
 pub fn spawn(state: SharedState, tx: Sender<UsbCmd>, focus: Receiver<String>) {
-    std::thread::spawn(move || {
+    crate::telemetry::spawn_tracked("auto-profile", move || {
         let mut auto = AutoState::default();
         for app in focus {
             let target = {

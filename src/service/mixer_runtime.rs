@@ -60,7 +60,7 @@ pub fn reload(state: &SharedState, tx: &Sender<UsbCmd>) {
         return;
     }
     let (state, tx) = (state.clone(), tx.clone());
-    std::thread::spawn(move || {
+    crate::telemetry::spawn_named("mixer-load", move || {
         let _release = LoadingGuard;
         load_and_publish(&state, &tx);
     });

@@ -2,6 +2,7 @@
 //! `.keyforge.json` leva o perfil e as imagens das teclas dentro dele (em hexadecimal), porque os
 //! caminhos das imagens só valem no PC de origem. Ao importar, as imagens vão para a pasta de ícones.
 use super::schema::{AppConfig, ButtonAction, ButtonAppearance, Profile};
+use crate::error::ConfigError;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -78,10 +79,10 @@ pub fn import(
     cfg: &mut AppConfig,
     text: &str,
     icon_dir: &std::path::Path,
-) -> Result<usize, String> {
-    let bundle: Bundle = serde_json::from_str(text).map_err(|e| e.to_string())?;
+) -> Result<usize, ConfigError> {
+    let bundle: Bundle = serde_json::from_str(text)?;
     if ![FORMAT, LEGACY_FORMAT].contains(&bundle.format.as_str()) || bundle.version > VERSION {
-        return Err("não é um perfil do Keyforge (ou é de uma versão mais nova)".into());
+        return Err(ConfigError::Unsupported);
     }
     let mut profile = bundle.profile;
     let mut saved: BTreeMap<String, Option<String>> = BTreeMap::new();
@@ -187,10 +188,27 @@ mod tests {
     fn other_files_are_refused() {
         let mut cfg = AppConfig::default();
         let dir = temp_dir("refuse");
-        assert!(import(&mut cfg, "{}", &dir).is_err());
-        assert!(import(&mut cfg, "lixo", &dir).is_err());
+        assert!(matches!(
+            import(&mut cfg, "{}", &dir),
+            Err(ConfigError::Parse(_))
+        ));
+        assert!(matches!(
+            import(&mut cfg, "lixo", &dir),
+            Err(ConfigError::Parse(_))
+        ));
         let wrong = r#"{"format":"outro","version":1,"profile":{"name":"x","pages":[]}}"#;
-        assert!(import(&mut cfg, wrong, &dir).is_err());
+        assert!(matches!(
+            import(&mut cfg, wrong, &dir),
+            Err(ConfigError::Unsupported)
+        ));
+        let newer = format!(
+            r#"{{"format":"{FORMAT}","version":{},"profile":{{"name":"x","pages":[]}}}}"#,
+            VERSION + 1
+        );
+        assert!(matches!(
+            import(&mut cfg, &newer, &dir),
+            Err(ConfigError::Unsupported)
+        ));
         assert_eq!(cfg.profiles.len(), 1);
         let _ = std::fs::remove_dir_all(dir);
     }

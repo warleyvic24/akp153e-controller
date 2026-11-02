@@ -7,6 +7,7 @@ mod config;
 mod device;
 mod editor;
 mod engine;
+mod error;
 #[cfg(test)]
 mod fuzz_tests;
 mod graphics;
@@ -15,6 +16,8 @@ mod obs;
 mod platform;
 mod service;
 mod strings;
+mod sync;
+mod telemetry;
 #[cfg(test)]
 mod test_support;
 mod usb;
@@ -28,7 +31,17 @@ fn main() -> eframe::Result {
         usb::probe();
         return Ok(());
     }
-    cli::init_logging();
+    let mode = if has("--editor") {
+        telemetry::Mode::Editor
+    } else if ["--autostart", "--selftest", "--run-action"]
+        .iter()
+        .any(|f| has(f))
+    {
+        telemetry::Mode::Cli
+    } else {
+        telemetry::Mode::Service
+    };
+    cli::init_logging(mode);
     let value_of = |flag: &str| {
         args.iter()
             .position(|a| a == flag)

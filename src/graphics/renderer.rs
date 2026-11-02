@@ -1,9 +1,8 @@
 use crate::config::schema::{ButtonConfig, RGBAColor, TextPosition};
-use crate::graphics::{gif, icon_library};
+use crate::graphics::{cache, gif, icon_library};
 use ab_glyph::{point, Font, FontArc, PxScale, ScaleFont};
 use image::{imageops, Rgba, RgbaImage};
-use std::sync::OnceLock;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::{Arc, OnceLock};
 
 /// Fontes do Windows primeiro; depois as mais comuns nas distribuições Linux.
 const FONT_FILES: [&str; 6] = [
@@ -355,6 +354,31 @@ fn draw_clock(img: &mut RgbaImage, color: RGBAColor) {
     );
 }
 
+/// Imagem (PNG/JPG/ICO) ou quadro atual do GIF da tecla, já reduzida para caber em `fit`
+/// mantendo a proporção. Vem dos caches: o disco só é lido quando o arquivo muda.
+fn picture_icon(path: &str, (fw, fh): (u32, u32)) -> Option<Arc<RgbaImage>> {
+    if fw == 0 || fh == 0 {
+        return None;
+    }
+    if path.to_lowercase().ends_with(".gif") {
+        // GIF animado: o quadro certo para o instante atual (já decodificado e guardado).
+        let (_, frame, _) = gif::frame_at(path, None)?;
+        let (w, h) = frame.dimensions();
+        let scale = (fw as f32 / w as f32).min(fh as f32 / h as f32);
+        let size = (
+            ((w as f32 * scale).round() as u32).max(1),
+            ((h as f32 * scale).round() as u32).max(1),
+        );
+        let resized = imageops::resize(&*frame, size.0, size.1, imageops::FilterType::Triangle);
+        return Some(Arc::new(resized));
+    }
+    cache::derived(path, "key-icon", (fw, fh), |picture| {
+        picture
+            .resize(fw, fh, imageops::FilterType::Triangle)
+            .to_rgba8()
+    })
+}
+
 /// Renderiza o botão em RGBA (usado na prévia da UI e como base do frame de hardware).
 pub fn render_rgba(button: &ButtonConfig, width: u32, height: u32) -> RgbaImage {
     let ap = button.current_appearance();
@@ -399,56 +423,23 @@ pub fn render_rgba(button: &ButtonConfig, width: u32, height: u32) -> RgbaImage 
         );
         has_icon = true;
     } else if let Some(path) = ap.icon_path.as_deref().filter(|p| !p.is_empty()) {
-        if path.to_lowercase().ends_with(".gif") {
-            // GIF animado: devolve o frame certo para o instante atual.
-            let now_ms = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_or(0, |d| d.as_millis() as u64);
-            if let Some((frame, _delay_ms)) = gif::current_frame(path, Some(now_ms)) {
-                let icon = imageops::resize(
-                    &frame,
-                    (width as f32 * IMAGE_ICON_FILL) as u32,
-                    (band_h * IMAGE_ICON_FILL) as u32,
-                    imageops::FilterType::Triangle,
+        let fit = (
+            (width as f32 * IMAGE_ICON_FILL) as u32,
+            (band_h * IMAGE_ICON_FILL) as u32,
+        );
+        if let Some(icon) = picture_icon(path, fit) {
+            let x = (center_x - icon.width() as f32 / 2.0).round() as i64;
+            let y = (band_top + (band_h - icon.height() as f32) / 2.0).round() as i64;
+            if let Some(plate) = plate_for(&icon, bg) {
+                let pad = (icon.width().max(icon.height()) as f32 * PLATE_PAD) as i64;
+                let (w, h) = (
+                    icon.width() as i64 + 2 * pad,
+                    icon.height() as i64 + 2 * pad,
                 );
-                let x = (center_x - icon.width() as f32 / 2.0).round() as i64;
-                let y = (band_top + (band_h - icon.height() as f32) / 2.0).round() as i64;
-                if let Some(plate) = plate_for(&icon, bg) {
-                    let pad = (icon.width().max(icon.height()) as f32 * PLATE_PAD) as i64;
-                    let (w, h) = (
-                        icon.width() as i64 + 2 * pad,
-                        icon.height() as i64 + 2 * pad,
-                    );
-                    fill_rounded(&mut img, (x - pad, y - pad, w, h), plate);
-                }
-                imageops::overlay(&mut img, &icon, x, y);
-                has_icon = true;
+                fill_rounded(&mut img, (x - pad, y - pad, w, h), plate);
             }
-        } else {
-            match image::open(path) {
-                Ok(icon) => {
-                    let icon = icon
-                        .resize(
-                            (width as f32 * IMAGE_ICON_FILL) as u32,
-                            (band_h * IMAGE_ICON_FILL) as u32,
-                            imageops::FilterType::Triangle,
-                        )
-                        .to_rgba8();
-                    let x = (center_x - icon.width() as f32 / 2.0).round() as i64;
-                    let y = (band_top + (band_h - icon.height() as f32) / 2.0).round() as i64;
-                    if let Some(plate) = plate_for(&icon, bg) {
-                        let pad = (icon.width().max(icon.height()) as f32 * PLATE_PAD) as i64;
-                        let (w, h) = (
-                            icon.width() as i64 + 2 * pad,
-                            icon.height() as i64 + 2 * pad,
-                        );
-                        fill_rounded(&mut img, (x - pad, y - pad, w, h), plate);
-                    }
-                    imageops::overlay(&mut img, &icon, x, y);
-                    has_icon = true;
-                }
-                Err(e) => log::warn!("ícone inválido {path}: {e}"),
-            }
+            imageops::overlay(&mut img, &*icon, x, y);
+            has_icon = true;
         }
     }
     if has_text {

@@ -153,9 +153,7 @@ fn ui_icon_texture(ctx: &egui::Context, id: &str, px: u32) -> Option<egui::Textu
         d.get_temp_mut_or_default::<UiIconCache>(egui::Id::unique("ui-icon-textures"))
             .clone()
     });
-    let mut cache = cache
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut cache = crate::sync::lock(&cache);
     if let Some(tex) = cache.get(&(id.to_string(), px)) {
         return Some(tex.id());
     }
@@ -1540,8 +1538,7 @@ mod tests {
             let id = lucide_id(short);
             // Ou é um ícone Lucide real, ou um ícone built-in (como "keyforge") que mapeia para si mesmo
             assert!(
-                crate::graphics::icon_library::find(&id).is_some()
-                    || short == "keyforge",
+                crate::graphics::icon_library::find(&id).is_some() || short == "keyforge",
                 "{short} -> {id}"
             );
         }

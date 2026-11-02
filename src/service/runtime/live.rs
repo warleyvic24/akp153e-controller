@@ -19,18 +19,14 @@ static WAKE: (Mutex<bool>, Condvar) = (Mutex::new(false), Condvar::new());
 /// Faz a thread consultar já, em vez de esperar o fim do `PERIOD`.
 pub fn wake() {
     let (flag, signal) = &WAKE;
-    *flag
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = true;
+    *crate::sync::lock(flag) = true;
     signal.notify_all();
 }
 
 /// Dorme até `PERIOD` ou até um `wake`.
 fn nap() {
     let (flag, signal) = &WAKE;
-    let guard = flag
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let guard = crate::sync::lock(flag);
     let (mut woken, _) = signal
         .wait_timeout_while(guard, PERIOD, |w| !*w)
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -78,7 +74,7 @@ fn changed(old: &Live, new: &Live) -> Wants {
 /// Thread dos dados ao vivo. Com `tx` (o serviço) redesenha no aparelho as teclas afetadas;
 /// sem ele (o editor) só guarda o dado em `Shared::live`, que a prévia usa.
 pub fn spawn(state: SharedState, tx: Option<Sender<UsbCmd>>) {
-    std::thread::spawn(move || {
+    crate::telemetry::spawn_tracked("live-sampler", move || {
         let mut sampler = Sampler::default();
         loop {
             let wanted = wants(&lock(&state));

@@ -188,14 +188,16 @@ fn fill_rect(img: &mut RgbaImage, (x0, y0): (f32, f32), (x1, y1): (f32, f32), c:
 
 fn draw_app_icon(img: &mut RgbaImage, path: Option<&str>, scale: f32, key: &MixerKey) {
     let size = (ICON_SIZE * scale).round() as u32;
-    let icon = path.and_then(|p| image::open(p).ok()).map(|i| {
-        i.resize(size, size, imageops::FilterType::Triangle)
-            .to_rgba8()
+    let icon = path.and_then(|p| {
+        super::cache::derived(p, "mixer-icon", (size, size), |i| {
+            i.resize(size, size, imageops::FilterType::Triangle)
+                .to_rgba8()
+        })
     });
     match icon {
         Some(icon) => {
             let x = (img.width().saturating_sub(icon.width()) / 2) as i64;
-            imageops::overlay(img, &icon, x, (ICON_TOP * scale) as i64);
+            imageops::overlay(img, &*icon, x, (ICON_TOP * scale) as i64);
         }
         None => draw_builtin(img, "app", scale, key.accent),
     }

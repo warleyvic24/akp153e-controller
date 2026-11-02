@@ -85,11 +85,13 @@ pub fn render(side: &SideScreen, info: &SideInfo, live: &Live) -> Option<RgbaIma
             alerts(&mut img, info.alerts);
         }
         SideScreen::Image { path } => {
-            if let Ok(picture) = image::open(path) {
-                let filled = picture
+            let filled = super::cache::derived(path, "side-image", (WIDTH, HEIGHT), |picture| {
+                picture
                     .resize_to_fill(WIDTH, HEIGHT, imageops::FilterType::Triangle)
-                    .to_rgba8();
-                imageops::overlay(&mut img, &filled, 0, 0);
+                    .to_rgba8()
+            });
+            if let Some(filled) = filled {
+                imageops::overlay(&mut img, &*filled, 0, 0);
             } else {
                 log::warn!("tela lateral: imagem ilegível {path}");
             }

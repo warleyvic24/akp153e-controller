@@ -113,3 +113,55 @@ fn no_raw_egui_widgets_outside_widgets_rs() {
         wrong.join("\\n")
     );
 }
+
+/// Todo bloco `unsafe` (só há chamadas de FFI/COM do Windows) tem logo acima um `// SAFETY:`
+/// dizendo por que a chamada é sólida. Lê o arquivo inteiro, inclusive o código só de Windows.
+#[test]
+fn every_unsafe_block_explains_its_safety() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    let mut dirs = vec![root.clone()];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(dir).unwrap().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                dirs.push(path);
+            } else if path.extension().is_some_and(|e| e == "rs")
+                // Este arquivo cita `unsafe` nas próprias buscas.
+                && !path.ends_with("architecture_tests.rs")
+            {
+                files.push(path);
+            }
+        }
+    }
+    let (mut blocks, mut wrong) = (0, Vec::new());
+    for path in files {
+        let src = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = src.lines().collect();
+        for (i, line) in lines.iter().enumerate() {
+            let code = line.split("//").next().unwrap_or("");
+            if !code.contains("unsafe {")
+                && !code.contains("unsafe fn")
+                && !code.contains("unsafe impl")
+            {
+                continue;
+            }
+            blocks += 1;
+            let explained = lines[..i]
+                .iter()
+                .rev()
+                .take_while(|l| l.trim_start().starts_with("//"))
+                .any(|l| l.contains("SAFETY:"));
+            if !explained {
+                let file = path.strip_prefix(&root).unwrap().display();
+                wrong.push(format!("{file}:{}", i + 1));
+            }
+        }
+    }
+    assert!(blocks > 0, "a busca por `unsafe` não achou nada");
+    assert!(
+        wrong.is_empty(),
+        "`unsafe` sem `// SAFETY:` acima:\n{}",
+        wrong.join("\n")
+    );
+}

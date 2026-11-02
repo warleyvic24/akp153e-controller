@@ -56,9 +56,7 @@ pub fn new_state(cfg: AppConfig, icon_px: u32) -> SharedState {
 /// Trava o estado; se outra thread entrou em pânico com ele travado, recupera o valor.
 /// (Só ocorre fora do release: lá `panic = "abort"` encerra o processo antes.)
 pub fn lock(state: &SharedState) -> MutexGuard<'_, Shared> {
-    state
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+    crate::sync::lock(state)
 }
 
 /// Cópia dos botões da página ativa. Desenhar e codificar JPEG é lento: com a cópia, isso roda
@@ -132,19 +130,34 @@ impl Snapshot {
         if super::selftest::running() {
             return;
         }
+        let _span = tracing::debug_span!(
+            "render",
+            frames = self.frames.len(),
+            side = self.side.is_some(),
+            px = self.px
+        )
+        .entered();
+        crate::profile_scope!("render");
         for (index, frame) in &self.frames {
             let index = *index;
-            let data = match frame {
-                Frame::Button(b) => encode_frame(&render_live(b, self.px, self.px, &self.live)),
-                Frame::Mixer(key) => encode_frame(&render_mixer_key(key, self.px)),
+            let started = Instant::now();
+            let (kind, data) = match frame {
+                Frame::Button(b) => (
+                    "key",
+                    encode_frame(&render_live(b, self.px, self.px, &self.live)),
+                ),
+                Frame::Mixer(key) => ("mixer", encode_frame(&render_mixer_key(key, self.px))),
             };
+            crate::telemetry::metrics::render_time(kind, started.elapsed());
             let _ = tx.send(UsbCmd::Frame { index, data });
         }
         if let Some((side, info)) = &self.side {
+            let started = Instant::now();
             let frame = match crate::graphics::side::render(side, info, &self.live) {
                 Some(img) => SideFrame::Strips(crate::graphics::side::strips(&img)),
                 None => SideFrame::Clear,
             };
+            crate::telemetry::metrics::render_time("side", started.elapsed());
             let _ = tx.send(UsbCmd::Side(frame));
         }
     }
@@ -162,9 +175,7 @@ pub fn change_and_draw<R>(
     tx: &Sender<UsbCmd>,
     change: impl FnOnce(&mut Shared) -> (R, bool),
 ) -> R {
-    let _order = DRAW_ORDER
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _order = crate::sync::lock(&DRAW_ORDER);
     let (result, snapshot) = {
         let mut sh = lock(state);
         let (result, draw) = change(&mut sh);
@@ -236,11 +247,13 @@ impl Followup {
 /// Relê o disco e muda só perfil/página ativos (por id): gravar a cópia em memória inteira
 /// apagaria uma edição do editor cujo "reload" ainda não chegou ao serviço.
 fn persist(nav: &Nav) {
+    let _span = tracing::debug_span!("save", what = "nav", profile = nav.profile_id).entered();
     AppConfig::locked(|| persist_unlocked(nav));
 }
 
 /// Grava o brilho mudado por uma tecla, para o editor e o próximo início do serviço o verem.
 fn persist_brightness(level: u8) {
+    let _span = tracing::debug_span!("save", what = "brightness", level).entered();
     AppConfig::locked(|| {
         let Some(mut disk) = AppConfig::load_existing() else {
             return;
@@ -426,9 +439,7 @@ fn press(
     held: Duration,
     is_double_tap: bool,
 ) -> Option<usize> {
-    let _order = DRAW_ORDER
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _order = crate::sync::lock(&DRAW_ORDER);
     let followup = trigger_locked(&mut lock(state), exec, index, held, is_double_tap);
     let mixer_home = followup.mixer_home();
     followup.run(tx);
@@ -446,9 +457,7 @@ pub fn redraw_where(
     tx: &Sender<UsbCmd>,
     pick: impl Fn(usize, &ButtonConfig) -> bool,
 ) {
-    let _order = DRAW_ORDER
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _order = crate::sync::lock(&DRAW_ORDER);
     let snapshot = {
         let sh = lock(state);
         if sh.mixer.is_some() {
@@ -474,9 +483,7 @@ pub fn redraw_where(
 
 /// Redesenha só a tela lateral (relógio dela na virada do minuto).
 pub(super) fn redraw_side(state: &SharedState, tx: &Sender<UsbCmd>) {
-    let _order = DRAW_ORDER
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _order = crate::sync::lock(&DRAW_ORDER);
     let snapshot = {
         let sh = lock(state);
         if sh.mixer.is_some() {
@@ -494,9 +501,7 @@ pub(super) fn redraw_side(state: &SharedState, tx: &Sender<UsbCmd>) {
 
 /// Desenha a tecla `index` "afundada" enquanto o dedo está nela.
 fn show_pressed(state: &SharedState, tx: &Sender<UsbCmd>, index: usize) {
-    let _order = DRAW_ORDER
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _order = crate::sync::lock(&DRAW_ORDER);
     let (button, px, live) = {
         let sh = lock(state);
         if sh.mixer.is_some() {
@@ -511,9 +516,11 @@ fn show_pressed(state: &SharedState, tx: &Sender<UsbCmd>, index: usize) {
         }
         (shown(&sh, b), sh.icon_px, sh.live.clone())
     };
+    let started = Instant::now();
     let data = encode_frame(&crate::graphics::renderer::pressed(&render_live(
         &button, px, px, &live,
     )));
+    crate::telemetry::metrics::render_time("pressed", started.elapsed());
     let _ = tx.send(UsbCmd::Frame { index, data });
 }
 
@@ -575,7 +582,8 @@ fn redraw_clocks(state: &SharedState, tx: &Sender<UsbCmd>) {
 
 /// No editor: consulta o serviço a cada segundo para mostrar o estado do aparelho.
 pub fn spawn_status_poll(state: SharedState) {
-    std::thread::spawn(move || loop {
+    crate::telemetry::spawn_tracked("status-poll", move || loop {
+        crate::telemetry::health::beat();
         let reply = crate::platform::shell::send("status");
         let mut parts = reply.as_deref().unwrap_or("0").split_whitespace();
         let connected = parts.next() == Some("1");
@@ -594,7 +602,7 @@ pub fn spawn_status_poll(state: SharedState) {
 
 /// Thread que consome os eventos do aparelho (vive mesmo com a janela escondida).
 pub fn spawn(state: SharedState, tx: Sender<UsbCmd>, rx: Receiver<UsbEvent>, exec: Executor) {
-    std::thread::spawn(move || {
+    crate::telemetry::spawn_tracked("usb-events", move || {
         let mut down: [Option<Instant>; MAX_KEYS] = [None; MAX_KEYS];
         // Último instante de soltura de cada tecla, para detecção de clique duplo.
         let mut last_release: [Option<Instant>; MAX_KEYS] = [None; MAX_KEYS];
@@ -655,7 +663,7 @@ pub fn spawn(state: SharedState, tx: Sender<UsbCmd>, rx: Receiver<UsbEvent>, exe
                 let mut sh = lock(&state);
                 let minutes = sh.cfg.ui.sleep_minutes;
                 if sh.sleep.sleep_if_due(Instant::now(), minutes, &tx) {
-                    log::info!("tela em descanso após {minutes} min sem uso");
+                    tracing::info!(minutes, "tela em descanso por falta de uso");
                 }
             }
             if mixer_open {

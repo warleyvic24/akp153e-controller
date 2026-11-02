@@ -58,7 +58,7 @@ impl AppIcons {
 fn spawn(ctx: egui::Context) -> (Sender<InstalledApp>, Receiver<Found>) {
     let (jobs, inbox) = channel::<InstalledApp>();
     let (outbox, done) = channel::<Found>();
-    std::thread::spawn(move || {
+    crate::telemetry::spawn_named("app-icons", move || {
         for app in inbox {
             let image = apps::extract_icon(&app)
                 .and_then(|path| image::open(path).ok())

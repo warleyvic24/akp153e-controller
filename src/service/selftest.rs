@@ -250,8 +250,7 @@ impl Run {
 static RUN: Mutex<Option<Run>> = Mutex::new(None);
 
 fn run_lock() -> std::sync::MutexGuard<'static, Option<Run>> {
-    RUN.lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+    crate::sync::lock(&RUN)
 }
 
 /// Há um autoteste na tela: os desenhos normais esperam (`Snapshot::render`).
@@ -369,7 +368,7 @@ fn finish(state: &SharedState, tx: &Sender<UsbCmd>) {
     }
     let state = state.clone();
     let tx = tx.clone();
-    std::thread::spawn(move || {
+    crate::telemetry::spawn_named("selftest-summary", move || {
         std::thread::sleep(SUMMARY_TIME);
         restore(&state, &tx);
     });
@@ -392,7 +391,7 @@ fn restore(state: &SharedState, tx: &Sender<UsbCmd>) {
 
 /// Desiste se ninguém tocar no aparelho por `IDLE_LIMIT` (a página não fica presa no teste).
 fn spawn_watchdog(state: SharedState, tx: Sender<UsbCmd>) {
-    std::thread::spawn(move || loop {
+    crate::telemetry::spawn_named("selftest-watchdog", move || loop {
         std::thread::sleep(Duration::from_secs(1));
         let idle = match run_lock().as_ref() {
             None => return,

@@ -27,9 +27,7 @@ pub(crate) fn texture(ctx: &egui::Context, id: &str, color: Color32) -> Option<e
             .clone()
     });
     let rgb = [color.r(), color.g(), color.b()];
-    let mut cache = cache
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut cache = crate::sync::lock(&cache);
     if let Some(tex) = cache.get(&(id.to_string(), rgb)) {
         return Some(tex.id());
     }

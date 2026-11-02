@@ -9,7 +9,9 @@ use std::io::Read;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-type AudioResult<T> = Result<T, String>;
+use crate::error::AudioError;
+
+type AudioResult<T> = Result<T, AudioError>;
 
 /// Valor de volume do PulseAudio que equivale a 100%.
 const VOLUME_NORM: f64 = 65_536.0;
@@ -81,24 +83,29 @@ fn pactl(args: &[&str]) -> AudioResult<String> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("pactl indisponível: {e}"))?;
+        .map_err(AudioError::Spawn)?;
     let stdout = drain(child.stdout.take());
     let stderr = drain(child.stderr.take());
     let started = Instant::now();
     let status = loop {
-        match child.try_wait().map_err(|e| format!("pactl: {e}"))? {
+        match child.try_wait().map_err(AudioError::Spawn)? {
             Some(status) => break status,
             None if started.elapsed() >= PACTL_TIMEOUT => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err(format!("pactl {}: demorou demais", args.join(" ")));
+                return Err(AudioError::Timeout {
+                    command: args.join(" "),
+                });
             }
             None => std::thread::sleep(WAIT_STEP),
         }
     };
     let (stdout, stderr) = (join_text(stdout), join_text(stderr));
     if !status.success() {
-        return Err(format!("pactl {}: {}", args.join(" "), stderr.trim()));
+        return Err(AudioError::Failed {
+            command: args.join(" "),
+            stderr: stderr.trim().to_string(),
+        });
     }
     Ok(stdout)
 }
@@ -190,6 +197,18 @@ mod tests {
         assert_eq!(first_percent(out), Some(40));
         assert_eq!(first_percent("Volume: 150% / 3 dB"), Some(150));
         assert_eq!(first_percent("lixo"), None);
+    }
+
+    #[test]
+    fn a_refused_pactl_command_is_a_typed_error() {
+        // Com `pactl` instalado o servidor recusa o comando; sem ele, falha ao rodar. Nunca `Ok`.
+        match pactl(&["comando-que-nao-existe"]) {
+            Err(AudioError::Failed { command, .. }) => {
+                assert_eq!(command, "comando-que-nao-existe")
+            }
+            Err(AudioError::Spawn(_) | AudioError::Timeout { .. }) => {}
+            Ok(out) => panic!("pactl aceitou um comando inválido: {out}"),
+        }
     }
 
     #[test]

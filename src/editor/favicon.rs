@@ -191,7 +191,7 @@ impl Favicons {
                 continue;
             }
             let (tx, action, at) = (tx.clone(), b.action.clone(), id.0);
-            std::thread::spawn(move || match fetch(&url) {
+            crate::telemetry::spawn_named("favicon", move || match fetch(&url) {
                 Some(icon) => {
                     let _ = tx.send(IconDone { at, action, icon });
                 }

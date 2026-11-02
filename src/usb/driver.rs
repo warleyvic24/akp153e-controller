@@ -3,7 +3,7 @@
 //! `usb/mod.rs` não sabe de pacotes nem de comandos. Testes usam um aparelho falso.
 use super::SideFrame;
 
-pub type DriverResult<T> = Result<T, String>;
+pub type DriverResult<T> = Result<T, crate::error::UsbError>;
 
 pub trait Driver {
     /// Desenha a imagem (já codificada) na tecla `key` da página; `false` se a tecla não existe.
@@ -73,7 +73,7 @@ pub(super) mod fake {
             // Sem mais eventos: a conexão "cai" e o teste termina.
             self.events
                 .pop_front()
-                .unwrap_or_else(|| Err("fim do roteiro".into()))
+                .unwrap_or(Err(crate::error::UsbError::NotFound))
         }
         fn reports_release(&self) -> bool {
             self.release
@@ -85,9 +85,11 @@ pub(super) mod fake {
 mod tests {
     use super::super::{run_connection, SideFrame, UsbCmd, UsbEvent};
     use super::fake::{Call, FakeDriver};
+    use super::DriverResult;
+    use crate::error::UsbError;
     use std::sync::mpsc::channel;
 
-    fn run(dev: &mut FakeDriver, cmds: Vec<UsbCmd>) -> (Result<(), String>, Vec<UsbEvent>) {
+    fn run(dev: &mut FakeDriver, cmds: Vec<UsbCmd>) -> (DriverResult<()>, Vec<UsbEvent>) {
         let (tx, events) = channel();
         let (cmd_tx, rx) = channel();
         for c in cmds {
@@ -140,6 +142,57 @@ mod tests {
     }
 
     #[test]
+    fn an_unchanged_image_is_not_sent_again() {
+        let mut dev = FakeDriver {
+            keys: 15,
+            has_side: true,
+            ..FakeDriver::default()
+        };
+        let mut shown = super::super::Shown::default();
+        // Página inteira redesenhada duas vezes (um "reload" sem mudança): só a 1ª vai ao aparelho.
+        for _ in 0..2 {
+            for key in 0..15 {
+                shown.send_key(&mut dev, key, &[key as u8; 2000]).unwrap();
+            }
+            let strips = [vec![1; 900], vec![2; 900], vec![3; 900]];
+            shown
+                .send_side(&mut dev, &SideFrame::Strips(strips))
+                .unwrap();
+        }
+        assert_eq!(dev.calls.len(), 16, "15 teclas + lateral, uma vez");
+        // Mudou uma tecla: só ela vai.
+        assert!(shown.send_key(&mut dev, 7, &[0xAA; 2000]).unwrap());
+        assert!(!shown.send_key(&mut dev, 8, &[8; 2000]).unwrap());
+        assert_eq!(dev.calls.last(), Some(&Call::Key(7, vec![0xAA; 2000])));
+        // Tecla que o aparelho não tem nunca conta como mostrada.
+        assert!(!shown.send_key(&mut dev, 99, &[1]).unwrap());
+        assert_eq!(dev.calls.len(), 17);
+        assert!(shown.send_side(&mut dev, &SideFrame::Clear).unwrap());
+        assert!(!shown.send_side(&mut dev, &SideFrame::Clear).unwrap());
+    }
+
+    #[test]
+    fn hashing_a_page_of_frames_is_cheap() {
+        let mut dev = FakeDriver {
+            keys: 15,
+            ..FakeDriver::default()
+        };
+        let mut shown = super::super::Shown::default();
+        let frame = vec![7u8; crate::graphics::renderer::MAX_JPEG_BYTES];
+        let started = std::time::Instant::now();
+        for _ in 0..100 {
+            for key in 0..15 {
+                shown.send_key(&mut dev, key, &frame).unwrap();
+            }
+        }
+        let per_page = started.elapsed() / 100;
+        assert!(
+            per_page < std::time::Duration::from_millis(1),
+            "comparar 15 teclas levou {per_page:?}"
+        );
+    }
+
+    #[test]
     fn nothing_drawn_means_no_flush() {
         let mut dev = FakeDriver {
             keys: 6,
@@ -176,6 +229,27 @@ mod tests {
     fn reconnect_ends_the_connection_cleanly() {
         let mut dev = FakeDriver::default();
         let (result, _) = run(&mut dev, vec![UsbCmd::Reconnect]);
-        assert_eq!(result, Ok(()));
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[test]
+    fn a_hid_error_ends_the_connection_with_that_error() {
+        let mut dev = FakeDriver {
+            keys: 15,
+            events: [
+                Ok(Some((1, true))),
+                Err(UsbError::Hid(hidapi::HidError::HidApiError {
+                    message: "cabo solto".into(),
+                })),
+            ]
+            .into(),
+            ..FakeDriver::default()
+        };
+        let (result, events) = run(&mut dev, vec![]);
+        let err = result.expect_err("o erro do aparelho encerra o laço");
+        assert!(matches!(err, UsbError::Hid(_)), "{err:?}");
+        assert!(err.to_string().contains("cabo solto"));
+        // O aperto lido antes da queda ainda chegou ao serviço.
+        assert_eq!(keys(&events), [(1, true), (1, false)]);
     }
 }

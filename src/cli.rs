@@ -12,37 +12,16 @@ use usb::UsbCmd;
 
 const WINDOW_ICON_PX: u32 = 64;
 const ACTION_CLI_GRACE: Duration = Duration::from_millis(1500);
-const LOG_MAX_BYTES: u64 = 1 << 20;
 /// Menor janela: o layout compacto (`editor::layout`) cabe nela. Um gerenciador lado a lado pode
 /// dar ainda menos, mas o tamanho pedido não deve ser maior que a faixa que a janela costuma ganhar.
 const MIN_WINDOW: [f32; 2] = [640.0, 480.0];
 
-pub(crate) fn init_logging() {
-    // Antes de criar o log: ele cria a pasta nova, e a cópia da antiga só acontece se ela não existe.
+/// Liga o log estruturado (JSON com rotação de 10 MiB x 5 arquivos, ver `telemetry`) na pasta da
+/// config. Antes, migra a pasta antiga: o log cria a nova, e a cópia só acontece se ela não existe.
+pub(crate) fn init_logging(mode: crate::telemetry::Mode) {
     let migrated = AppConfig::migrate_legacy_dir();
-    let file = AppConfig::path()
-        .and_then(|p| p.parent().map(|d| d.join("keyforge.log")))
-        .and_then(|p| {
-            if std::fs::metadata(&p)
-                .map(|m| m.len() > LOG_MAX_BYTES)
-                .unwrap_or(false)
-            {
-                let _ = std::fs::remove_file(&p);
-            }
-            std::fs::create_dir_all(p.parent()?).ok()?;
-            std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(p)
-                .ok()
-        });
-    let mut builder = env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("warn,keyforge=info"),
-    );
-    if let Some(f) = file {
-        builder.target(env_logger::Target::Pipe(Box::new(f)));
-    }
-    builder.init();
+    let dir = AppConfig::path().and_then(|p| p.parent().map(std::path::Path::to_path_buf));
+    crate::telemetry::init(mode, dir.as_deref());
     if let Some(note) = migrated {
         log::warn!("{note}");
     }
@@ -59,11 +38,13 @@ pub(crate) fn run_action_cli(json: Option<&String>) {
             std::process::exit(2);
         }
     };
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(1)
-        .enable_all()
-        .build()
-        .expect("tokio");
+    let rt = match crate::engine::tokio_runtime(1) {
+        Ok(rt) => rt,
+        Err(e) => {
+            log::error!("--run-action: tokio: {e}");
+            std::process::exit(1);
+        }
+    };
     // Fora do serviço não há tecla de origem: os bancos de som vêm da config do disco.
     Executor::new(rt.handle().clone()).run(action, &AppConfig::load());
     std::thread::sleep(ACTION_CLI_GRACE); // dá tempo de a tarefa assíncrona terminar
@@ -89,11 +70,8 @@ pub(crate) fn run_editor() -> eframe::Result {
         shell::show_window();
         return Ok(());
     }
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(1)
-        .enable_all()
-        .build()
-        .expect("tokio");
+    let rt =
+        crate::engine::tokio_runtime(1).map_err(|e| eframe::Error::AppCreation(Box::new(e)))?;
     let exec = Executor::new(rt.handle().clone());
     let first_run = !AppConfig::path().is_some_and(|p| p.exists());
     let mut cfg = AppConfig::load();

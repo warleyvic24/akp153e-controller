@@ -4,12 +4,13 @@
 //! uma capa de música ou uma página inteira mudando).
 use super::{current_minute, is_blank};
 use crate::config::schema::{ButtonAction, ButtonConfig};
-use crate::graphics::{live_art, renderer};
+use crate::graphics::{gif, live_art, renderer};
 use crate::platform::live::Live;
 use eframe::egui;
 use image::RgbaImage;
 use std::collections::HashMap;
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::time::Duration;
 
 /// Tudo de que a imagem de uma tecla depende.
 #[derive(Clone, PartialEq)]
@@ -20,6 +21,8 @@ struct Stamp {
     minute: u64,
     /// Só nas teclas vivas.
     live: Option<Live>,
+    /// Quadro do GIF animado mostrado (só nas teclas com GIF).
+    gif_frame: Option<usize>,
 }
 
 impl Stamp {
@@ -50,7 +53,7 @@ impl Worker {
     fn start(ctx: egui::Context) -> Self {
         let (jobs, inbox) = channel::<Job>();
         let (outbox, done) = channel::<Done>();
-        std::thread::spawn(move || {
+        crate::telemetry::spawn_named("key-textures", move || {
             while let Ok(first) = inbox.recv() {
                 // Digitando um rótulo chegam vários pedidos da mesma tecla: só o último vale.
                 let mut latest: HashMap<usize, Stamp> = HashMap::from([first]);
@@ -76,22 +79,34 @@ pub(super) struct KeyTextures {
     worker: Option<Worker>,
 }
 
-fn upload(ctx: &egui::Context, index: usize, img: &RgbaImage) -> egui::TextureHandle {
+fn color_image(img: &RgbaImage) -> egui::ColorImage {
     let size = [img.width() as usize, img.height() as usize];
-    let image = egui::ColorImage::from_rgba_unmultiplied(size, img.as_raw());
-    ctx.load_texture(format!("key{index}"), image, egui::TextureOptions::LINEAR)
+    egui::ColorImage::from_rgba_unmultiplied(size, img.as_raw())
+}
+
+fn upload(ctx: &egui::Context, index: usize, img: &RgbaImage) -> egui::TextureHandle {
+    ctx.load_texture(
+        format!("key{index}"),
+        color_image(img),
+        egui::TextureOptions::LINEAR,
+    )
+}
+
+/// Troca a imagem de uma textura que já existe (sem alocar outra na GPU a cada mudança).
+fn replace(tex: &mut egui::TextureHandle, img: &RgbaImage) {
+    tex.set(color_image(img), egui::TextureOptions::LINEAR);
 }
 
 impl KeyTextures {
     /// Aplica as imagens que a thread terminou (só as que ainda são as esperadas).
-    fn collect(&mut self, ctx: &egui::Context) {
+    fn collect(&mut self) {
         let Some(worker) = &self.worker else { return };
         for (index, stamp, img) in worker.done.try_iter() {
             let Some(Some(slot)) = self.keys.get_mut(index) else {
                 continue;
             };
             if slot.pending.as_ref() == Some(&stamp) {
-                slot.tex = upload(ctx, index, &img);
+                replace(&mut slot.tex, &img);
                 slot.stamp = stamp;
                 slot.pending = None;
             }
@@ -105,7 +120,7 @@ impl KeyTextures {
         b: &ButtonConfig,
         px: u32,
     ) -> Option<egui::TextureId> {
-        self.collect(ctx);
+        self.collect();
         if self.keys.len() <= index {
             self.keys.resize_with(index + 1, || None);
         }
@@ -113,27 +128,40 @@ impl KeyTextures {
             return None;
         }
 
-        // GIF animado: sempre re-render (o frame muda com o tempo) e pede repaint.
-        let is_gif = b
+        // GIF animado: os quadros já decodificados vêm do cache; a tecla só é redesenhada quando
+        // o quadro muda, e a janela acorda na hora da troca (não a cada quadro da tela).
+        let gif = b
             .appearance
             .icon_path
             .as_deref()
-            .is_some_and(|p| p.to_lowercase().ends_with(".gif"));
-        if is_gif {
-            ctx.request_repaint();
+            .filter(|p| p.to_lowercase().ends_with(".gif"))
+            .and_then(|p| gif::frame_at(p, None));
+        if let Some((frame, _, remaining)) = gif {
+            ctx.request_repaint_after(Duration::from_millis(remaining));
             let stamp = Stamp {
                 button: b.clone(),
                 px,
                 minute: 0,
                 live: None,
+                gif_frame: Some(frame),
             };
-            let tex = upload(ctx, index, &stamp.draw());
             let slot = &mut self.keys[index];
-            *slot = Some(CachedKey {
-                stamp,
-                tex,
-                pending: None,
-            });
+            match slot {
+                Some(cached) if cached.stamp == stamp => {}
+                Some(cached) => {
+                    replace(&mut cached.tex, &stamp.draw());
+                    cached.stamp = stamp;
+                    cached.pending = None;
+                }
+                None => {
+                    let tex = upload(ctx, index, &stamp.draw());
+                    *slot = Some(CachedKey {
+                        stamp,
+                        tex,
+                        pending: None,
+                    });
+                }
+            }
             return slot.as_ref().map(|c| c.tex.id());
         }
 
@@ -146,6 +174,7 @@ impl KeyTextures {
                 0
             },
             live: live_art::wants(b).any().then(|| self.live.clone()),
+            gif_frame: None,
         };
         let slot = &mut self.keys[index];
         match slot {

@@ -52,6 +52,10 @@ pub(super) enum ControlRequest {
         #[serde(default)]
         px: Option<u32>,
     },
+    /// Saúde do serviço: tempo de pé, último erro, threads vivas, último quadro.
+    Health,
+    /// Métricas no formato de exposição do Prometheus.
+    Metrics,
     /// Linha de texto do formato antigo. Depois de [`RequestEnvelope::parse`] só sobra se o
     /// texto não for um comando conhecido.
     Text { line: String },
@@ -73,6 +77,55 @@ pub(super) enum ControlResponse {
     Status { connected: bool, icon_px: u32 },
     /// Resultado do pedido de autoteste (`ok` = iniciou).
     Selftest { ok: bool, message: String },
+    /// Saúde (os campos de `Health` vão no nível de cima da resposta).
+    Health(crate::telemetry::health::Health),
+    /// Métricas no formato de exposição do Prometheus.
+    Metrics { text: String },
+}
+
+impl ControlRequest {
+    /// Nome fixo do pedido (rótulo de métrica e campo do log; nunca o texto do cliente).
+    pub fn name(&self) -> &'static str {
+        match self {
+            ControlRequest::Show => "show",
+            ControlRequest::Reconnect => "reconnect",
+            ControlRequest::Reload => "reload",
+            ControlRequest::ObsInfo => "obs-info",
+            ControlRequest::ObsRun { .. } => "obs-run",
+            ControlRequest::Apps => "apps",
+            ControlRequest::Brightness { .. } => "brightness",
+            ControlRequest::Selftest => "selftest",
+            ControlRequest::Status => "status",
+            ControlRequest::Calib { .. } => "calib",
+            ControlRequest::Pattern { .. } => "pattern",
+            ControlRequest::Health => "health",
+            ControlRequest::Metrics => "metrics",
+            ControlRequest::Text { .. } => "unknown",
+        }
+    }
+}
+
+/// Pedido HTTP na mesma porta (`curl http://127.0.0.1:47153/health`), para sondas e o Prometheus.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum HttpRoute {
+    Health,
+    Metrics,
+    NotFound,
+}
+
+/// Reconhece a linha de pedido HTTP (`GET /health HTTP/1.1`); `None` se não for HTTP.
+pub(super) fn http_route(line: &str) -> Option<HttpRoute> {
+    let mut parts = line.trim_end_matches('\r').split(' ');
+    let (method, target, version) = (parts.next()?, parts.next()?, parts.next()?);
+    if !(method == "GET" || method == "HEAD") || !version.starts_with("HTTP/1.") {
+        return None;
+    }
+    let path = target.split('?').next().unwrap_or(target);
+    Some(match path {
+        "/health" | "/healthz" => HttpRoute::Health,
+        "/metrics" => HttpRoute::Metrics,
+        _ => HttpRoute::NotFound,
+    })
 }
 
 /// Pedido com a versão do protocolo.
@@ -162,6 +215,8 @@ fn legacy_to_request(line: &str) -> ControlRequest {
         ("apps", "") => Some(ControlRequest::Apps),
         ("selftest", "") => Some(ControlRequest::Selftest),
         ("status", "") => Some(ControlRequest::Status),
+        ("health", "") => Some(ControlRequest::Health),
+        ("metrics", "") => Some(ControlRequest::Metrics),
         ("obs-run", rest) if !rest.is_empty() => {
             let (command, target) = rest.split_once(' ').unwrap_or((rest, ""));
             Some(ControlRequest::ObsRun {
@@ -352,6 +407,10 @@ mod tests {
                 ok: true,
                 message: String::new(),
             },
+            ControlResponse::Health(crate::telemetry::health::snapshot(true)),
+            ControlResponse::Metrics {
+                text: "# HELP x\n".into(),
+            },
         ];
         for v in variants {
             let label = format!("{v:?}");
@@ -375,5 +434,51 @@ mod tests {
         .unwrap();
         assert_eq!(apps["resp"], "apps");
         assert_eq!(apps["apps"], "firefox\tkitty");
+    }
+
+    #[test]
+    fn health_and_metrics_parse_as_text_and_json() {
+        assert_eq!(parse("health"), ControlRequest::Health);
+        assert_eq!(parse("metrics"), ControlRequest::Metrics);
+        assert_eq!(
+            parse(r#"{"version":1,"cmd":"health"}"#),
+            ControlRequest::Health
+        );
+        assert_eq!(ControlRequest::Health.name(), "health");
+        assert_eq!(ControlRequest::Text { line: "x".into() }.name(), "unknown");
+    }
+
+    #[test]
+    fn health_response_flattens_its_fields() {
+        let json: Value = serde_json::from_str(
+            &ResponseEnvelope::new(ControlResponse::Health(crate::telemetry::health::snapshot(
+                false,
+            )))
+            .to_json(),
+        )
+        .unwrap();
+        assert_eq!(json["resp"], "health");
+        assert!(json["uptime_ms"].is_u64());
+        assert!(json["threads"].is_array());
+    }
+
+    #[test]
+    fn http_request_lines_are_routed() {
+        assert_eq!(
+            http_route("GET /health HTTP/1.1\r"),
+            Some(HttpRoute::Health)
+        );
+        assert_eq!(
+            http_route("GET /metrics?x=1 HTTP/1.0"),
+            Some(HttpRoute::Metrics)
+        );
+        assert_eq!(
+            http_route("HEAD /healthz HTTP/1.1"),
+            Some(HttpRoute::Health)
+        );
+        assert_eq!(http_route("GET / HTTP/1.1"), Some(HttpRoute::NotFound));
+        assert_eq!(http_route("POST /health HTTP/1.1"), None);
+        assert_eq!(http_route("status"), None);
+        assert_eq!(http_route("brightness 40"), None);
     }
 }

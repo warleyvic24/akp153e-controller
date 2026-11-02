@@ -5,7 +5,11 @@ const ICON_PNG: &[u8] = include_bytes!("../../assets/icon-256.png");
 
 /// Imagem `px` x `px` em RGBA; redimensionada do PNG de 256x256.
 pub fn rgba(px: u32) -> Vec<u8> {
-    let img = load_from_memory(ICON_PNG).expect("ícone do app embutido");
+    // Só falha com um PNG corrompido no build, e o teste abaixo pega isso: fica sem ícone, sem
+    // cair. (Este arquivo também entra no `build.rs`, que não tem `log`.)
+    let Ok(img) = load_from_memory(ICON_PNG) else {
+        return vec![0; (px * px * 4) as usize];
+    };
     let resized = img.resize_exact(px, px, image::imageops::FilterType::Lanczos3);
     let rgba = resized.to_rgba8();
     rgba.into_raw()

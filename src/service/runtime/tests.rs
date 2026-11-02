@@ -221,7 +221,7 @@ async fn a_key_press_waits_for_a_drawing_in_progress() {
     });
     {
         // Um desenho em andamento já soltou o estado, mas ainda segura a ordem dos quadros.
-        let _drawing = DRAW_ORDER.lock().unwrap();
+        let _drawing = crate::sync::lock(&DRAW_ORDER);
         pressed_tx.send(()).unwrap();
         std::thread::sleep(Duration::from_millis(100));
         assert_eq!(

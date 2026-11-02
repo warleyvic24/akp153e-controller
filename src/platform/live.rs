@@ -98,8 +98,9 @@ pub struct SystemStats {
 #[derive(Default)]
 pub struct Sampler {
     cpu_before: Option<(u64, u64)>,
+    /// Capas já baixadas (endereço -> arquivo), com o instante da busca: valem por `ART_TTL`.
     #[cfg_attr(windows, allow(dead_code))]
-    art: HashMap<String, Option<String>>,
+    art: HashMap<String, (std::time::Instant, Option<String>)>,
     /// Desde quando a música está em pausa (para saber quando ela ficou parada de vez).
     paused_since: Option<std::time::Instant>,
 }
@@ -109,6 +110,10 @@ pub struct Sampler {
 const MAX_ART_BYTES: u64 = 2 * 1024 * 1024;
 #[cfg(not(windows))]
 const ART_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(4);
+/// Por quanto tempo uma capa (ou a falha em buscá-la) vale antes de ser buscada de novo. Sem
+/// prazo, uma capa que falhou uma vez nunca mais aparecia e o mapa crescia sem limite.
+#[cfg_attr(windows, allow(dead_code))]
+const ART_TTL: std::time::Duration = std::time::Duration::from_secs(60 * 60);
 
 impl Sampler {
     pub fn sample(&mut self, wants: Wants) -> Live {
@@ -136,6 +141,26 @@ impl Sampler {
         p
     }
 
+    /// A capa de `url`: a guardada, se ainda valer, ou buscada com `fetch`. Tira as vencidas.
+    #[cfg_attr(windows, allow(dead_code))]
+    fn art_for(
+        &mut self,
+        url: &str,
+        now: std::time::Instant,
+        fetch: impl FnOnce(&str) -> Option<String>,
+    ) -> Option<String> {
+        let fresh = |at: &std::time::Instant| now.saturating_duration_since(*at) < ART_TTL;
+        if let Some((at, art)) = self.art.get(url) {
+            if fresh(at) {
+                return art.clone();
+            }
+        }
+        self.art.retain(|_, (at, _)| fresh(at));
+        let art = fetch(url);
+        self.art.insert(url.to_string(), (now, art.clone()));
+        art
+    }
+
     fn system(&mut self) -> Option<SystemStats> {
         let (busy, total) = cpu_times()?;
         let cpu = match self.cpu_before.replace((busy, total)) {
@@ -160,11 +185,7 @@ impl Sampler {
     fn now_playing(&mut self) -> Option<NowPlaying> {
         let (mut playing, art_url) = mpris::current()?;
         if let Some(url) = art_url {
-            let cached = self
-                .art
-                .entry(url.clone())
-                .or_insert_with(|| fetch_art(&url));
-            playing.art = cached.clone();
+            playing.art = self.art_for(&url, std::time::Instant::now(), fetch_art);
         }
         Some(playing)
     }
@@ -333,22 +354,59 @@ fn cpu_temp() -> Option<i16> {
 mod mpris {
     use super::NowPlaying;
     use serde_json::Value;
-    use std::process::Command;
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
 
     const PREFIX: &str = "org.mpris.MediaPlayer2.";
     const PATH: &str = "/org/mpris/MediaPlayer2";
     const PLAYER: &str = "org.mpris.MediaPlayer2.Player";
 
+    /// Um player travado no D-Bus não pode prender a thread das teclas vivas.
+    pub(super) const BUSCTL_TIMEOUT: Duration = Duration::from_secs(5);
+    const WAIT_STEP: Duration = Duration::from_millis(10);
+
     fn busctl(args: &[&str]) -> Option<Value> {
-        let out = Command::new("busctl")
-            .args(["--user", "--json=short"])
-            .args(args)
-            .output()
+        let mut cmd = Command::new("busctl");
+        cmd.args(["--user", "--json=short"])
+            // O próprio busctl também desiste da chamada D-Bus no mesmo prazo.
+            .arg(format!("--timeout={}", BUSCTL_TIMEOUT.as_secs()))
+            .args(args);
+        let stdout = run_with_timeout(&mut cmd, BUSCTL_TIMEOUT)?;
+        serde_json::from_slice(&stdout).ok()
+    }
+
+    /// Roda `cmd` e devolve a saída se terminar com sucesso dentro de `limit`; senão mata o
+    /// processo e devolve `None`.
+    pub(super) fn run_with_timeout(cmd: &mut Command, limit: Duration) -> Option<Vec<u8>> {
+        let mut child = cmd
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
             .ok()?;
-        out.status
-            .success()
-            .then(|| serde_json::from_slice(&out.stdout).ok())
-            .flatten()
+        // Lê a saída numa thread: com o cano cheio o processo pararia antes de terminar.
+        let mut pipe = child.stdout.take()?;
+        let reader = std::thread::spawn(move || {
+            let mut out = Vec::new();
+            let _ = pipe.read_to_end(&mut out);
+            out
+        });
+        let started = Instant::now();
+        let status = loop {
+            match child.try_wait().ok()? {
+                Some(status) => break status,
+                None if started.elapsed() >= limit => {
+                    log::warn!("{:?} passou de {limit:?}; encerrado", cmd.get_program());
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return None;
+                }
+                None => std::thread::sleep(WAIT_STEP),
+            }
+        };
+        let out = reader.join().ok()?;
+        status.success().then_some(out)
     }
 
     /// Players no barramento (Spotify, navegador, mpv com o plugin...).
@@ -541,5 +599,38 @@ mod tests {
             "/home/a/Capa Nova.jpg"
         );
         assert_eq!(percent_decode("100%"), "100%");
+    }
+
+    #[test]
+    fn cover_art_is_fetched_again_after_the_ttl() {
+        let mut s = Sampler::default();
+        let t0 = std::time::Instant::now();
+        let calls = std::cell::Cell::new(0);
+        let fetch = |_: &str| {
+            calls.set(calls.get() + 1);
+            Some("/capa.png".to_string())
+        };
+        assert_eq!(s.art_for("u", t0, fetch).as_deref(), Some("/capa.png"));
+        s.art_for("u", t0 + ART_TTL / 2, fetch);
+        assert_eq!(calls.get(), 1, "dentro do prazo vem do cache");
+        s.art_for("u", t0 + ART_TTL, fetch);
+        assert_eq!(calls.get(), 2, "vencida: busca de novo");
+        // Uma falha também vence, e capas velhas de outras músicas saem do mapa.
+        s.art_for("outra", t0 + ART_TTL * 3, |_| None);
+        assert_eq!(s.art.len(), 1);
+    }
+
+    #[test]
+    fn a_hung_command_is_killed_at_the_timeout() {
+        let started = std::time::Instant::now();
+        let mut cmd = std::process::Command::new("sleep");
+        cmd.arg("10");
+        let out = mpris::run_with_timeout(&mut cmd, std::time::Duration::from_millis(200));
+        assert!(out.is_none());
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        let mut echo = std::process::Command::new("echo");
+        echo.arg("oi");
+        let out = mpris::run_with_timeout(&mut echo, mpris::BUSCTL_TIMEOUT).unwrap();
+        assert_eq!(out, b"oi\n");
     }
 }

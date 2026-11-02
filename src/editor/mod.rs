@@ -23,6 +23,7 @@ mod panes;
 mod picker;
 mod preview_shot;
 mod profile_ui;
+mod saver;
 mod settings;
 pub(crate) use settings::selftest_reply_text;
 mod side_ui;
@@ -66,6 +67,8 @@ pub(crate) struct App {
     dirty_since: Option<Instant>,
     /// Último erro ao gravar a config; some quando uma gravação der certo.
     save_error: Option<String>,
+    /// Grava a config numa thread à parte (o quadro da janela nunca espera o disco).
+    saver: saver::Saver,
     presets: Vec<library::Preset>,
     history: history::History<AppConfig>,
     edited: bool,
@@ -119,6 +122,7 @@ impl App {
             baseline: None,
             dirty_since: None,
             save_error: None,
+            saver: saver::Saver::for_editor(),
             presets: library::presets(),
             history: history::History::new(),
             edited: false,
@@ -256,20 +260,26 @@ impl App {
         self.touch();
     }
 
-    /// Grava e avisa o serviço para recarregar e redesenhar o aparelho. Sem navegação feita aqui,
-    /// mantém o perfil/página que o arquivo já tem: o aparelho pode ter trocado de página nesse meio-tempo.
+    /// Manda gravar e avisar o serviço para recarregar e redesenhar o aparelho, sem esperar: a
+    /// gravação (com `fsync`) e o "reload" rodam em `saver`. Sem navegação feita aqui, mantém o
+    /// perfil/página que o arquivo já tem: o aparelho pode ter trocado de página nesse meio-tempo.
     fn save(&mut self, cfg: &AppConfig) {
-        let mut out = cfg.clone();
-        // Ler e gravar sob a trava: o serviço pode estar gravando uma troca de página agora.
-        let saved = AppConfig::locked(|| {
-            if !self.nav_dirty {
-                if let Some(disk) = AppConfig::load_existing() {
-                    out.adopt_active_from(&disk);
-                }
-            }
-            out.save()
-        });
-        match saved {
+        if self.saver.submit(cfg.clone(), self.nav_dirty) {
+            self.dirty = false;
+            self.nav_dirty = false;
+            self.dirty_since = None;
+        } else {
+            // A thread de gravação morreu: grava aqui mesmo, como antes.
+            self.save_now(cfg);
+        }
+    }
+
+    /// Grava na hora (fechando o editor): espera as gravações pendentes e grava `cfg` por cima.
+    fn save_now(&mut self, cfg: &AppConfig) {
+        for done in self.saver.finish() {
+            self.nav_dirty |= done.result.is_err() && done.nav;
+        }
+        match saver::write(cfg.clone(), self.nav_dirty) {
             Ok(()) => {
                 self.dirty = false;
                 self.nav_dirty = false;
@@ -280,14 +290,34 @@ impl App {
             Err(e) => {
                 log::error!("salvar: {e}");
                 self.save_error = Some(e.to_string());
-                // Instante no futuro: `autosave` só tenta de novo depois da espera, em vez de a cada quadro.
-                self.dirty_since = Some(Instant::now() + SAVE_RETRY_DELAY);
             }
         }
     }
 
+    /// Aplica o resultado das gravações que terminaram desde o último quadro.
+    fn collect_saves(&mut self) {
+        for done in self.saver.poll() {
+            match done.result {
+                Ok(()) => self.save_error = None,
+                Err(e) => {
+                    self.save_error = Some(e);
+                    self.dirty = true;
+                    self.nav_dirty |= done.nav;
+                    // Instante no futuro: `autosave` só tenta de novo depois da espera, em vez de a cada quadro.
+                    self.dirty_since = Some(Instant::now() + SAVE_RETRY_DELAY);
+                }
+            }
+        }
+    }
+
+    /// Há edição ainda não gravada (pendente ou em gravação).
+    fn unsaved(&self) -> bool {
+        self.dirty || self.saver.busy()
+    }
+
     /// Grava logo após a última alteração (debounce).
     fn autosave(&mut self, cfg: &AppConfig) {
+        self.collect_saves();
         if !self.dirty {
             return;
         }
@@ -368,11 +398,18 @@ impl App {
 
 impl Drop for App {
     fn drop(&mut self) {
+        // Espera a gravação em andamento antes de sair; uma falha nela vira gravação agora.
+        for done in self.saver.finish() {
+            if done.result.is_err() {
+                self.dirty = true;
+                self.nav_dirty |= done.nav;
+            }
+        }
         if !self.dirty {
             return;
         }
         let cfg = runtime::lock(&self.sh).cfg.clone();
-        self.save(&cfg);
+        self.save_now(&cfg);
     }
 }
 
@@ -422,6 +459,8 @@ pub(crate) fn current_minute() -> u64 {
 
 impl eframe::App for App {
     fn ui(&mut self, root: &mut egui::Ui, _: &mut eframe::Frame) {
+        crate::telemetry::profile_frame();
+        crate::profile_scope!("editor_ui");
         let ctx = &root.ctx().clone();
         let sh = self.sh.clone();
         let mut guard = runtime::lock(&sh);

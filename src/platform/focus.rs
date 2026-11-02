@@ -14,7 +14,7 @@ const RECONNECT: Duration = Duration::from_secs(3);
 
 /// Inicia a thread que observa o foco; não faz nada onde o foco não pode ser observado.
 pub fn spawn_watch(tx: Sender<String>) {
-    std::thread::spawn(move || watch(tx));
+    crate::telemetry::spawn_tracked("focus-watch", move || watch(tx));
 }
 
 #[cfg(windows)]

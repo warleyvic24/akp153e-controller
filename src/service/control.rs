@@ -3,7 +3,9 @@
 //!
 //! Qualquer processo local conecta na porta, então toda entrada é limitada em tamanho, tempo e
 //! valores antes de chegar ao aparelho.
-use super::protocol::{ControlRequest, ControlResponse, RequestEnvelope, ResponseEnvelope};
+use super::protocol::{
+    http_route, ControlRequest, ControlResponse, HttpRoute, RequestEnvelope, ResponseEnvelope,
+};
 use super::runtime::{self, SharedState};
 use super::selftest;
 use crate::config::schema::AppConfig;
@@ -23,6 +25,8 @@ const CONTROL_DEADLINE: Duration = Duration::from_millis(500);
 const MAX_COMMAND_BYTES: usize = 256;
 /// Conexões atendidas ao mesmo tempo; as demais são descartadas.
 const MAX_CONNECTIONS: usize = 8;
+/// Cabeçalhos HTTP lidos (e descartados) antes de responder; o resto fecha a conexão.
+const MAX_HTTP_HEADER_BYTES: usize = 8 * 1024;
 /// Tamanhos aceitos por `calib`/`pattern` (px), checados antes de alocar a imagem.
 const DIAGNOSTIC_PX: std::ops::RangeInclusive<u32> = 16..=256;
 
@@ -42,7 +46,7 @@ pub(super) fn spawn(
     usb: Sender<UsbCmd>,
     obs: Sender<ObsCall>,
 ) {
-    std::thread::spawn(move || {
+    crate::telemetry::spawn_tracked("control", move || {
         let active = Arc::new(AtomicUsize::new(0));
         for conn in listener.incoming().flatten() {
             if active.fetch_add(1, Ordering::SeqCst) >= MAX_CONNECTIONS {
@@ -52,7 +56,8 @@ pub(super) fn spawn(
             }
             let (state, usb, obs, active) =
                 (state.clone(), usb.clone(), obs.clone(), active.clone());
-            std::thread::spawn(move || {
+            let active_on_fail = active.clone();
+            let spawned = crate::telemetry::spawn_named("control-conn", move || {
                 let ports = Ports {
                     state: &state,
                     usb: &usb,
@@ -61,6 +66,9 @@ pub(super) fn spawn(
                 handle(conn, &ports);
                 active.fetch_sub(1, Ordering::SeqCst);
             });
+            if spawned.is_none() {
+                active_on_fail.fetch_sub(1, Ordering::SeqCst);
+            }
         }
     });
 }
@@ -91,7 +99,11 @@ fn handle(mut conn: TcpStream, ports: &Ports) {
         log::warn!("conexão de controle de outro usuário recusada");
         return;
     }
-    let response = match read_command(&mut conn) {
+    let line = read_command(&mut conn);
+    if let Some(route) = line.as_deref().and_then(http_route) {
+        return respond_http(conn, route, ports);
+    }
+    let response = match line {
         None => ResponseEnvelope::error("comando inválido ou muito longo"),
         Some(line) => match RequestEnvelope::parse(&line) {
             Ok(env) => ResponseEnvelope::new(dispatch(env.request, ports)),
@@ -104,15 +116,80 @@ fn handle(mut conn: TcpStream, ports: &Ports) {
     let _ = writeln!(conn, "{}", response.to_json());
 }
 
+/// Lê e descarta os cabeçalhos HTTP (até a linha vazia, com teto de tamanho e o mesmo prazo):
+/// fechar com dados por ler faz o sistema mandar RST e o cliente perder a resposta.
+fn drain_http_headers(conn: &mut TcpStream) {
+    let deadline = Instant::now() + CONTROL_DEADLINE;
+    let (mut seen, mut tail) = (0usize, [0u8; 4]);
+    let mut byte = [0u8; 1];
+    while seen < MAX_HTTP_HEADER_BYTES {
+        let Some(left) = deadline.checked_duration_since(Instant::now()) else {
+            return;
+        };
+        if conn.set_read_timeout(Some(left)).is_err() {
+            return;
+        }
+        match conn.read(&mut byte) {
+            Ok(1) => {
+                seen += 1;
+                tail = [tail[1], tail[2], tail[3], byte[0]];
+                // A linha do pedido já foi lida: a primeira linha vazia encerra os cabeçalhos.
+                if tail[2..] == *b"\n\n" || tail == *b"\r\n\r\n" || (seen <= 2 && byte[0] == b'\n')
+                {
+                    return;
+                }
+            }
+            _ => return,
+        }
+    }
+}
+
+/// Responde `GET /health` (JSON; 503 se degradado) e `GET /metrics` (texto do Prometheus).
+fn respond_http(mut conn: TcpStream, route: HttpRoute, ports: &Ports) {
+    drain_http_headers(&mut conn);
+    let (status, kind, body) = match route {
+        HttpRoute::Health => match dispatch(ControlRequest::Health, ports) {
+            ControlResponse::Health(h) => (
+                if h.is_ok() {
+                    "200 OK"
+                } else {
+                    "503 Service Unavailable"
+                },
+                "application/json",
+                serde_json::to_string(&h).unwrap_or_default(),
+            ),
+            _ => ("500 Internal Server Error", "text/plain", String::new()),
+        },
+        HttpRoute::Metrics => match dispatch(ControlRequest::Metrics, ports) {
+            ControlResponse::Metrics { text } => {
+                ("200 OK", "text/plain; version=0.0.4; charset=utf-8", text)
+            }
+            _ => ("500 Internal Server Error", "text/plain", String::new()),
+        },
+        HttpRoute::NotFound => ("404 Not Found", "text/plain", "not found\n".to_string()),
+    };
+    let _ = write!(
+        conn,
+        "HTTP/1.1 {status}\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+}
+
 /// Executa um pedido já validado no formato e devolve a resposta.
 fn dispatch(request: ControlRequest, ports: &Ports) -> ControlResponse {
     let Ports { state, usb, obs } = *ports;
+    let cmd = request.name();
+    crate::telemetry::metrics::control_request(cmd);
+    let _span = tracing::info_span!("control_command", cmd).entered();
+    // `status` chega do editor a cada segundo: só em `trace`, para não encher o log.
+    tracing::trace!("pedido de controle");
     match request {
         ControlRequest::Show => {
             shell::open_editor();
             ControlResponse::Ok
         }
         ControlRequest::Reconnect => {
+            tracing::info!("reconexão pedida pela porta de controle");
             let _ = usb.send(UsbCmd::Reconnect);
             ControlResponse::Ok
         }
@@ -153,6 +230,16 @@ fn dispatch(request: ControlRequest, ports: &Ports) -> ControlResponse {
             ControlResponse::Status {
                 connected: sh.connected,
                 icon_px: sh.icon_px,
+            }
+        }
+        ControlRequest::Health => {
+            let connected = runtime::lock(state).connected;
+            ControlResponse::Health(crate::telemetry::health::snapshot(connected))
+        }
+        ControlRequest::Metrics => {
+            let connected = runtime::lock(state).connected;
+            ControlResponse::Metrics {
+                text: crate::telemetry::metrics::render(connected),
             }
         }
         ControlRequest::Calib { px } => diagnostic(state, usb, px, Diagnostic::Calibration),
@@ -240,6 +327,13 @@ mod tests {
 
     /// Manda `request` à porta como um cliente faria; devolve a resposta (JSON) e o que foi ao USB.
     fn command(request: &[u8], connected: bool) -> (Value, Vec<UsbCmd>) {
+        let (reply, sent) = raw(request, connected);
+        let json = serde_json::from_str(reply.trim()).expect("resposta JSON válida");
+        (json, sent)
+    }
+
+    /// Como `command`, devolvendo a resposta crua (HTTP).
+    fn raw(request: &[u8], connected: bool) -> (String, Vec<UsbCmd>) {
         let state = runtime::new_state(AppConfig::default(), 100);
         runtime::lock(&state).connected = connected;
         let (usb, rx) = channel();
@@ -262,8 +356,7 @@ mod tests {
         };
         handle(server, &ports);
         let reply = client.join().unwrap();
-        let json = serde_json::from_str(reply.trim()).expect("resposta JSON válida");
-        (json, rx.try_iter().collect())
+        (reply, rx.try_iter().collect())
     }
 
     fn frames(sent: &[UsbCmd]) -> usize {
@@ -437,5 +530,41 @@ mod tests {
             frames(&rx.try_iter().collect::<Vec<_>>()),
             current.page().buttons.len()
         );
+    }
+
+    #[test]
+    fn health_answers_with_uptime_threads_and_connection() {
+        let (json, sent) = command(b"health\n", true);
+        assert_eq!(json["resp"], "health");
+        assert_eq!(json["connected"], true);
+        assert!(json["uptime_ms"].is_u64());
+        assert!(json["threads_alive"].is_u64());
+        assert!(json.get("last_error").is_some());
+        assert!(json.get("last_frame_ms").is_some());
+        assert!(sent.is_empty());
+    }
+
+    #[test]
+    fn http_get_health_and_metrics_work_on_the_control_port() {
+        let (reply, _) = raw(
+            b"GET /health HTTP/1.1\r\nHost: x\r\nAccept: */*\r\n\r\n",
+            false,
+        );
+        assert!(
+            reply.starts_with("HTTP/1.1 200 OK") || reply.starts_with("HTTP/1.1 503"),
+            "{reply}"
+        );
+        assert!(reply.contains("Content-Type: application/json"));
+        let body = reply.split("\r\n\r\n").nth(1).unwrap();
+        let json: Value = serde_json::from_str(body).unwrap();
+        assert!(json["uptime_ms"].is_u64());
+        assert_eq!(json["connected"], false);
+
+        let (reply, _) = raw(b"GET /metrics HTTP/1.0\r\n\r\n", true);
+        assert!(reply.starts_with("HTTP/1.1 200 OK"), "{reply}");
+        assert!(reply.contains("text/plain; version=0.0.4"));
+
+        let (reply, _) = raw(b"GET /nada HTTP/1.1\r\n\r\n", true);
+        assert!(reply.starts_with("HTTP/1.1 404"), "{reply}");
     }
 }

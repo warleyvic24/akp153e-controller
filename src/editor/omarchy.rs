@@ -8,7 +8,7 @@ use crate::editor::tokens::TEXT_MIN_CONTRAST;
 use crate::platform::omarchy as source;
 use eframe::egui::Color32;
 use std::collections::HashMap;
-use std::sync::{Mutex, PoisonError};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 /// De quanto em quanto tempo se confere se o Omarchy trocou de tema.
@@ -163,7 +163,7 @@ static CACHE: Mutex<Cache> = Mutex::new(Cache {
 });
 
 fn lock() -> std::sync::MutexGuard<'static, Cache> {
-    CACHE.lock().unwrap_or_else(PoisonError::into_inner)
+    crate::sync::lock(&CACHE)
 }
 
 /// Nada a mudar: o texto é o mesmo, ou o arquivo sumiu. Ao trocar de tema o Omarchy troca a pasta,

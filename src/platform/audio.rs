@@ -17,7 +17,9 @@ use windows::Win32::System::Threading::{
 
 pub use super::audio_model::AudioSession;
 use super::audio_model::{group, RawSession};
+use crate::error::AudioError;
 
+/// Resultado das chamadas COM internas; as funções públicas devolvem `AudioError`.
 type AudioResult<T> = windows::core::Result<T>;
 
 thread_local! {
@@ -58,7 +60,7 @@ pub fn mic_muted() -> Option<bool> {
 }
 
 /// Liga ou desliga o mudo do microfone padrão.
-pub fn toggle_mic_mute() -> AudioResult<()> {
+pub fn toggle_mic_mute() -> Result<(), AudioError> {
     let device = default_endpoint(eCapture)?;
     // SAFETY: interfaces do Core Audio, contadas por referência; `SetMute` aceita contexto nulo.
     unsafe {
@@ -193,19 +195,21 @@ fn volume_of_processes(
     }
 }
 
-pub fn set_session_volume(pids: &[u32], volume: f32) -> AudioResult<()> {
+pub fn set_session_volume(pids: &[u32], volume: f32) -> Result<(), AudioError> {
     let volume = volume.clamp(0.0, 1.0);
     // SAFETY: `level` é uma interface válida e o contexto de evento nulo é permitido.
     with_processes_volume(pids, |level| unsafe {
         level.SetMasterVolume(volume, std::ptr::null())
     })
+    .map_err(AudioError::from)
 }
 
-pub fn set_session_mute(pids: &[u32], muted: bool) -> AudioResult<()> {
+pub fn set_session_mute(pids: &[u32], muted: bool) -> Result<(), AudioError> {
     // SAFETY: igual a `set_session_volume`.
     with_processes_volume(pids, |level| unsafe {
         level.SetMute(BOOL::from(muted), std::ptr::null())
     })
+    .map_err(AudioError::from)
 }
 
 #[cfg(test)]

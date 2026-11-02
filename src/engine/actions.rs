@@ -334,13 +334,12 @@ fn type_text(text: &str) -> Result<(), String> {
 static ENIGO: std::sync::Mutex<Option<Enigo>> = std::sync::Mutex::new(None);
 
 fn with_enigo(job: impl FnOnce(&mut Enigo) -> Result<(), String>) -> Result<(), String> {
-    let mut slot = ENIGO
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if slot.is_none() {
-        *slot = Some(Enigo::new(&Settings::default()).map_err(|e| e.to_string())?);
-    }
-    let result = job(slot.as_mut().expect("criado acima"));
+    let mut slot = crate::sync::lock(&ENIGO);
+    let enigo = match slot.take() {
+        Some(enigo) => enigo,
+        None => Enigo::new(&Settings::default()).map_err(|e| e.to_string())?,
+    };
+    let result = job(slot.insert(enigo));
     if result.is_err() {
         *slot = None;
     }

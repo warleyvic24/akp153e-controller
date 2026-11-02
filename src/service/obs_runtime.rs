@@ -25,7 +25,7 @@ const HANDSHAKE_DEADLINE: Duration = Duration::from_secs(5);
 type Socket = WebSocket<TcpStream>;
 
 pub fn spawn(state: SharedState, tx: Sender<UsbCmd>, calls: Receiver<ObsCall>) {
-    std::thread::spawn(move || {
+    crate::telemetry::spawn_tracked("obs", move || {
         let mut retry = RETRY_MIN;
         let mut pending: Vec<ObsCall> = Vec::new();
         loop {

@@ -54,9 +54,7 @@ fn icon_cache() -> &'static IconCache {
 
 /// `None` = nunca tentado; `Some(None)` = tentado e sem ícone.
 fn cached_icon(path: &str) -> Option<Option<String>> {
-    let cache = icon_cache()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let cache = crate::sync::lock(icon_cache());
     cache.get(path).cloned()
 }
 
@@ -85,10 +83,7 @@ impl MixerData {
             }
             let icon = extract_icon(&InstalledApp::exe(&app.session.name, &path));
             found |= icon.is_some();
-            icon_cache()
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .insert(path, icon.clone());
+            crate::sync::lock(icon_cache()).insert(path, icon.clone());
             app.icon_path = icon;
         }
         found

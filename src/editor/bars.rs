@@ -140,7 +140,7 @@ impl App {
             ("Desconectado", pal.bad)
         } else if self.save_error.is_some() {
             ("Falha ao salvar", pal.bad)
-        } else if self.dirty {
+        } else if self.unsaved() {
             ("Enviando…", pal.muted)
         } else {
             ("No aparelho", pal.ok)

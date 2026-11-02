@@ -133,10 +133,10 @@ pub fn strokes(name: &str) -> Vec<Polyline> {
             arc(12.0, 21.0, 8.0, 8.0, 180.0, 360.0),
         ],
         "keyforge" => vec![
-            vec![(6.0, 5.0), (6.0, 19.0)], // K vertical
+            vec![(6.0, 5.0), (6.0, 19.0)],                // K vertical
             vec![(6.0, 12.0), (10.0, 8.0), (10.0, 16.0)], // K diagonals
-            vec![(13.0, 5.0), (17.0, 19.0)], // F diagonal
-            vec![(13.0, 12.0), (17.0, 12.0)], // F middle
+            vec![(13.0, 5.0), (17.0, 19.0)],              // F diagonal
+            vec![(13.0, 12.0), (17.0, 12.0)],             // F middle
         ],
         _ => ui_strokes(name),
     }

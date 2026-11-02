@@ -1,6 +1,7 @@
 //! Integração com o sistema: instância única, controle entre serviço e editor (TCP local),
 //! bandeja, laço de eventos e início automático. Windows e Linux diferem só nos trechos com `cfg`.
 use super::hide_console;
+use crate::error::ShellError;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::process::Command;
@@ -168,7 +169,15 @@ pub fn acquire_editor_lock() -> Option<TcpListener> {
 }
 
 /// Envia um comando ao serviço (JSON versionado) e devolve a resposta parseada, se houver.
+/// Serviço fora do ar é normal (editor aberto antes dele): o motivo só vai para o log de depuração.
 pub fn send(command: &str) -> Option<String> {
+    try_send(SERVICE_ADDR, command)
+        .inspect_err(|e| log::debug!("comando {command:?}: {e}"))
+        .ok()
+}
+
+/// `send` com o motivo da falha, para um endereço qualquer (os testes usam uma porta livre).
+fn try_send(addr: &str, command: &str) -> Result<String, ShellError> {
     // Constrói o envelope JSON v1. Comandos de texto legado (ex.: "status", "brightness 50")
     // vão como o tipo "text" com o texto original no campo "line"; o serviço os
     // reconhece pelo legacy_to_request.
@@ -179,16 +188,18 @@ pub fn send(command: &str) -> Option<String> {
     });
     let payload = format!("{}\n", request);
 
-    let addr: SocketAddr = SERVICE_ADDR.parse().ok()?;
-    let mut stream = TcpStream::connect_timeout(&addr, IPC_TIMEOUT).ok()?;
-    stream.set_read_timeout(Some(IPC_TIMEOUT)).ok()?;
-    stream.write_all(payload.as_bytes()).ok()?;
+    let addr: SocketAddr = addr.parse().map_err(|e| {
+        ShellError::Connect(std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
+    })?;
+    let mut stream = TcpStream::connect_timeout(&addr, IPC_TIMEOUT).map_err(ShellError::Connect)?;
+    stream.set_read_timeout(Some(IPC_TIMEOUT))?;
+    stream.write_all(payload.as_bytes())?;
     let mut reply = String::new();
-    BufReader::new(stream).read_line(&mut reply).ok()?;
+    BufReader::new(stream).read_line(&mut reply)?;
 
     // Parseia resposta JSON e extrai campo relevante
-    let json: serde_json::Value = serde_json::from_str(reply.trim()).ok()?;
-    extract_response_text(&json)
+    let json: serde_json::Value = serde_json::from_str(reply.trim())?;
+    extract_response_text(&json).ok_or(ShellError::EmptyReply)
 }
 
 /// Extrai texto legível da resposta JSON para compatibilidade com código existente.
@@ -407,7 +418,7 @@ pub fn create_tray() -> Option<TrayIcon> {
         "open" => open_editor(),
         // `reg` roda duas vezes: fora da thread do menu, para a bandeja não travar.
         "autostart" => {
-            std::thread::spawn(|| set_autostart(!autostart_enabled()));
+            crate::telemetry::spawn_named("autostart", || set_autostart(!autostart_enabled()));
         }
         "quit" => std::process::exit(0),
         _ => {}
@@ -429,6 +440,51 @@ pub fn create_tray() -> Option<TrayIcon> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Serviço de mentira numa porta livre: responde `reply` ao primeiro pedido.
+    fn fake_service(reply: &'static str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        std::thread::spawn(move || {
+            let (mut conn, _) = listener.accept().unwrap();
+            let mut request = String::new();
+            BufReader::new(&conn).read_line(&mut request).unwrap();
+            conn.write_all(reply.as_bytes()).unwrap();
+        });
+        addr
+    }
+
+    #[test]
+    fn an_offline_service_is_a_connect_error() {
+        let addr = {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.local_addr().unwrap().to_string()
+        };
+        let err = try_send(&addr, "status").unwrap_err();
+        assert!(matches!(err, ShellError::Connect(_)), "{err:?}");
+        assert!(matches!(
+            try_send("não é endereço", "status"),
+            Err(ShellError::Connect(_))
+        ));
+    }
+
+    #[test]
+    fn a_garbled_reply_is_a_json_error() {
+        let err = try_send(&fake_service("lixo\n"), "status").unwrap_err();
+        assert!(matches!(err, ShellError::Json(_)), "{err:?}");
+    }
+
+    #[test]
+    fn a_reply_without_text_is_reported() {
+        let err = try_send(&fake_service("{\"version\":1}\n"), "status").unwrap_err();
+        assert!(matches!(err, ShellError::EmptyReply), "{err:?}");
+    }
+
+    #[test]
+    fn a_good_reply_comes_back_as_text() {
+        let reply = try_send(&fake_service("{\"version\":1,\"resp\":\"ok\"}\n"), "reload");
+        assert_eq!(reply.unwrap(), "ok");
+    }
 
     #[test]
     fn tray_icon_buffer_matches_dimensions() {

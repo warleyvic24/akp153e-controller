@@ -177,7 +177,7 @@ impl App {
         let result = text.and_then(|text| {
             let icons = icons.ok_or_else(|| t("sem pasta de configuração").to_string())?;
             let mut cfg: AppConfig = g.cfg.clone();
-            let index = profile_io::import(&mut cfg, &text, &icons)?;
+            let index = profile_io::import(&mut cfg, &text, &icons).map_err(|e| e.to_string())?;
             Ok((cfg, index))
         });
         match result {

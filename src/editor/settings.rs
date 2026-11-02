@@ -273,7 +273,7 @@ impl App {
         if self.autostart != before {
             let on = self.autostart;
             // O registro pode demorar: fora da thread da interface, como faz a bandeja.
-            std::thread::spawn(move || shell::set_autostart(on));
+            crate::telemetry::spawn_named("autostart", move || shell::set_autostart(on));
         }
     }
 

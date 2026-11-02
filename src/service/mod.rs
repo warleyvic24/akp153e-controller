@@ -101,15 +101,22 @@ pub fn run(open_editor: bool) {
         log::error!("pânico: {info}");
         relaunch_after_panic();
     }));
-    std::thread::spawn(|| {
+    crate::telemetry::spawn_named("stable-timer", || {
         std::thread::sleep(STABLE_AFTER);
         STABLE.store(true, Ordering::SeqCst);
     });
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .enable_all()
-        .build()
-        .expect("tokio");
+    tracing::info!(
+        version = env!("CARGO_PKG_VERSION"),
+        restarts = restarts_so_far(),
+        "serviço iniciado"
+    );
+    let rt = match crate::engine::tokio_runtime(2) {
+        Ok(rt) => rt,
+        Err(e) => {
+            log::error!("tokio: {e}; serviço não iniciado");
+            return;
+        }
+    };
     let (obs_tx, obs_rx) = channel();
     let exec = Executor::new(rt.handle().clone()).with_obs(obs_tx.clone());
     let (event_tx, event_rx) = channel();

@@ -203,7 +203,7 @@ fn tcp_owner(table: &str, from: std::net::SocketAddr, to: std::net::SocketAddr) 
 pub(crate) fn spawn_detached(cmd: &mut Command) -> std::io::Result<u32> {
     let mut child = cmd.spawn()?;
     let pid = child.id();
-    std::thread::spawn(move || child.wait());
+    crate::telemetry::spawn_named("child-reaper", move || child.wait());
     Ok(pid)
 }
 

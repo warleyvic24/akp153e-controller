@@ -49,7 +49,7 @@ impl AppPicker {
             return;
         }
         let (tx, rx) = channel();
-        std::thread::spawn(move || {
+        crate::telemetry::spawn_named("app-scan", move || {
             let _ = tx.send(apps::scan());
         });
         self.scan = Some(rx);
@@ -74,7 +74,7 @@ pub fn apply_app(b: &mut ButtonConfig, app: &apps::InstalledApp, at: ButtonSlot,
     b.appearance.icon = None;
     b.appearance.icon_path = None;
     let (tx, app, action) = (jobs.tx.clone(), app.clone(), b.action.clone());
-    std::thread::spawn(move || {
+    crate::telemetry::spawn_named("app-icon", move || {
         if let Some(icon) = apps::extract_icon(&app) {
             let _ = tx.send(IconDone { at, action, icon });
         }

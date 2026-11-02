@@ -133,8 +133,8 @@ pub(super) fn migrate_control_ids(config: &mut AppConfig) {
                 }
                 if idx < keys.len() {
                     button.control_id = Some(keys[idx].id.clone());
-                } else if strip.is_some() && idx == keys.len() {
-                    button.control_id = Some(strip.unwrap().id.clone());
+                } else if let Some(strip) = strip.filter(|_| idx == keys.len()) {
+                    button.control_id = Some(strip.id.clone());
                 } else {
                     // Índice além do que o modelo suporta: deixa vazio (sanitized vai limpar)
                     button.control_id = None;
