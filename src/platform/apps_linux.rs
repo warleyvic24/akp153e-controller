@@ -277,7 +277,7 @@ mod tests {
 
     #[test]
     fn a_hidden_user_copy_hides_the_system_app_and_same_names_stay_apart() {
-        let root = std::env::temp_dir().join(format!("akp153e-apps-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("keyforge-apps-{}", std::process::id()));
         let (user, system) = (root.join("user"), root.join("system"));
         for dir in [&user, &system] {
             std::fs::create_dir_all(dir).unwrap();

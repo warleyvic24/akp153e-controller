@@ -18,7 +18,7 @@ O Keyforge compila e roda no Windows, mas **não há máquina Windows disponíve
 ### No Windows:
 ```powershell
 git clone https://github.com/warleyvic24/akp153e-controller.git
-cd akp153e-controller
+cd keyforge-controller
 git checkout linux-port
 cargo build --release
 # O .exe estará em: target/release/keyforge.exe

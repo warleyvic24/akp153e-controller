@@ -19,7 +19,7 @@ Obrigado por se interessar em contribuir com o Keyforge! Este guia explica como 
 
 ```bash
 git clone https://github.com/warleyvic24/akp153e-controller.git
-cd akp153e-controller
+cd keyforge-controller
 ```
 
 ### 2. Crie uma branch para sua feature

@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn picks_the_sharpest_hicolor_icon_then_svg_then_other_themes() {
-        let root = std::env::temp_dir().join(format!("akp153e-icons-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("keyforge-icons-{}", std::process::id()));
         let icons = root.join("icons");
         touch(&icons.join("hicolor/16x16/apps/a.png"));
         touch(&icons.join("hicolor/256x256/apps/a.png"));
